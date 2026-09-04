@@ -65,6 +65,22 @@ impl Serialize for AppError {
 
 pub type AppResult<T> = Result<T, AppError>;
 
+impl From<vault_io::Error> for AppError {
+    fn from(error: vault_io::Error) -> Self {
+        match error {
+            vault_io::Error::Io(error) => Self::Io(error),
+            vault_io::Error::Path(message) => Self::Path(message),
+            vault_io::Error::NotFound(message) => Self::NotFound(message),
+            vault_io::Error::AtomicWriteConflict(message) => Self::AtomicWriteConflict(message),
+            vault_io::Error::AtomicWriteNotCommitted(message) => {
+                Self::AtomicWriteNotCommitted(message)
+            }
+            vault_io::Error::AtomicWriteCommitted(message) => Self::AtomicWriteCommitted(message),
+            vault_io::Error::Other(message) => Self::Other(message),
+        }
+    }
+}
+
 pub fn ensure_not_cancelled(cancel: Option<&AtomicBool>) -> AppResult<()> {
     if cancel.is_some_and(|flag| flag.load(Ordering::Acquire)) {
         Err(AppError::Cancelled)

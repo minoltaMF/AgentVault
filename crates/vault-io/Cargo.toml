@@ -1,0 +1,16 @@
+[package]
+name = "vault-io"
+version = "0.1.0"
+description = "AgentVault atomic file and path-safety primitives"
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+libc = "0.2"
+sha2 = "0.10"
+thiserror = "2"
+walkdir = "2"
+
+[dev-dependencies]
+chrono = "0.4"

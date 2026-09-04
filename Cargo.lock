@@ -508,6 +508,7 @@ dependencies = [
  "tiny_http",
  "toml 0.8.2",
  "url",
+ "vault-io",
  "walkdir",
  "windows-sys 0.61.2",
  "winreg",
@@ -5188,6 +5189,17 @@ dependencies = [
  "js-sys",
  "serde_core",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "vault-io"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "libc",
+ "sha2",
+ "thiserror 2.0.18",
+ "walkdir",
 ]
 
 [[package]]

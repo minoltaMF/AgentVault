@@ -11,7 +11,7 @@
     "build": "tsc -b && vite build --config vite.config.ts",
     "test": "npm run test:frontend && npm run test:rust",
     "test:frontend": "tsx --test \"src/lib/*.test.ts\"",
-    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml --all-targets",
+    "test:rust": "cargo test --workspace --all-targets",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",

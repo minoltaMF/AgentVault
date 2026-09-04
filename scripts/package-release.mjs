@@ -27,7 +27,7 @@ const cargoTargetRoot = args.cargoTargetDir
   ? path.resolve(repoRoot, args.cargoTargetDir)
   : process.env.CARGO_TARGET_DIR
   ? path.resolve(repoRoot, process.env.CARGO_TARGET_DIR)
-  : path.join(repoRoot, "src-tauri", "target");
+  : path.join(repoRoot, "target");
 
 await ensureDir(outputRoot);
 await cleanDir(tempRoot);
@@ -116,6 +116,8 @@ async function createSourcePackage() {
   await cleanDir(stage);
 
   const directories = [
+    "crates",
+    "docs",
     "img",
     "src",
     "src-tauri/capabilities",
@@ -128,8 +130,12 @@ async function createSourcePackage() {
   const files = [
     ".gitattributes",
     ".gitignore",
+    "AGENTS.md",
+    "Cargo.lock",
+    "Cargo.toml",
     "LICENSE",
     "README.md",
+    "THIRD_PARTY_NOTICES.md",
     "app-icon.svg",
     "components.json",
     "index.html",
@@ -141,7 +147,6 @@ async function createSourcePackage() {
     "tsconfig.node.json",
     "vite.config.ts",
     "src-tauri/build.rs",
-    "src-tauri/Cargo.lock",
     "src-tauri/Cargo.toml",
     "src-tauri/tauri.conf.json",
   ];

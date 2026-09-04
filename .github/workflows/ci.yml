@@ -46,7 +46,7 @@ jobs:
         run: npm ci
 
       - name: Check Rust formatting
-        run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+        run: cargo fmt --all -- --check
 
       - name: Build frontend
         run: npm run build
@@ -55,7 +55,7 @@ jobs:
         run: npm test
 
       - name: Check all Rust targets
-        run: cargo check --manifest-path src-tauri/Cargo.toml --all-targets
+        run: cargo check --workspace --all-targets
 
   windows:
     name: Windows checks
@@ -79,7 +79,7 @@ jobs:
         run: npm ci
 
       - name: Check Rust formatting
-        run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+        run: cargo fmt --all -- --check
 
       - name: Build frontend
         run: npm run build
@@ -88,4 +88,4 @@ jobs:
         run: npm test
 
       - name: Check all Rust targets
-        run: cargo check --manifest-path src-tauri/Cargo.toml --all-targets
+        run: cargo check --workspace --all-targets

@@ -21,7 +21,7 @@
 ## 验证
 
 - 修改后必须运行与改动对应的最小测试，再按风险扩大到前端构建、Rust 测试、格式检查、全目标检查或 Tauri 构建。
-- 前端至少运行 `npm run test:frontend` 和 `npm run build`；Rust 至少运行相关 `cargo test`，格式改动运行 `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check`。
+- 前端至少运行 `npm run test:frontend` 和 `npm run build`；Rust 至少运行相关 `cargo test`，格式改动运行 `cargo fmt --all -- --check`。
 - 不得为了通过测试而删除、跳过、放宽或弱化现有测试，也不得硬编码测试结果或绕过安全检查。
 - 区分上游已有失败、宿主环境限制和本轮引入的回归；交付时记录实际命令、结果和未覆盖风险。
 

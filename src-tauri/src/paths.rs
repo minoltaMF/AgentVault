@@ -2,17 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{AppError, AppResult};
 
-/// 剥离 Windows 长路径前缀 `\\?\` 以及 UNC 变体 `\\?\UNC\`。
-/// 实测 `threads.cwd` 中大量此类前缀需要清理。
-pub fn strip_verbatim(s: &str) -> String {
-    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
-        return format!(r"\\{}", rest);
-    }
-    if let Some(rest) = s.strip_prefix(r"\\?\") {
-        return rest.to_string();
-    }
-    s.to_string()
-}
+pub use vault_io::path_safety::strip_verbatim;
 
 pub fn basename_display(s: &str) -> String {
     let stripped = strip_verbatim(s);
@@ -300,44 +290,7 @@ pub fn sanitize_slug(s: &str) -> String {
 
 /// 校验外部 manifest / zip 中声明的相对路径，拒绝绝对路径和目录穿越。
 pub fn checked_relative_path(raw: &str) -> AppResult<PathBuf> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return Err(AppError::Path("相对路径不能为空".into()));
-    }
-    if trimmed.contains('\0') {
-        return Err(AppError::Path(format!("路径包含 NUL 字符: {raw}")));
-    }
-    if trimmed.starts_with('/') || trimmed.starts_with('\\') {
-        return Err(AppError::Path(format!("拒绝绝对路径: {raw}")));
-    }
-
-    let normalized = trimmed.replace('\\', "/");
-    let bytes = normalized.as_bytes();
-    if bytes.len() >= 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic() {
-        return Err(AppError::Path(format!("拒绝 Windows 盘符路径: {raw}")));
-    }
-
-    let mut out = PathBuf::new();
-    for segment in normalized.split('/') {
-        if segment.is_empty() || segment == "." {
-            continue;
-        }
-        if segment == ".." {
-            return Err(AppError::Path(format!("拒绝目录穿越路径: {raw}")));
-        }
-        if segment.contains(':') {
-            return Err(AppError::Path(format!("路径片段包含冒号: {raw}")));
-        }
-        if segment.chars().any(|c| c.is_control()) {
-            return Err(AppError::Path(format!("路径包含控制字符: {raw}")));
-        }
-        out.push(segment);
-    }
-
-    if out.as_os_str().is_empty() {
-        return Err(AppError::Path(format!("相对路径无有效片段: {raw}")));
-    }
-    Ok(out)
+    vault_io::path_safety::checked_relative_path(raw).map_err(Into::into)
 }
 
 #[cfg(test)]

@@ -427,7 +427,7 @@ npm run tauri:dev
 ```bash
 npm run build
 npm run cli:check
-cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --lib
+cargo test --workspace --no-default-features --lib
 ```
 
 ### 打包
@@ -442,7 +442,7 @@ cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --lib
 
 打包结果位于 `release/`，该目录不会提交到仓库。
 
-发布前需要保持 `package.json`、`package-lock.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock` 和 `src-tauri/tauri.conf.json` 中的项目版本一致。上游工作流可构建 Windows、Linux、macOS Apple Silicon 和 macOS Intel 产物。当前 fork 只配置 `upstream` 远程，没有 AgentVault 发布目标；在单独建立发布与签名流程前不要创建或推送 release tag。
+Rust 代码现在由根目录 `Cargo.toml` 管理 workspace；`src-tauri` 保留桌面应用和兼容 binary，`crates/vault-io` 提供原子文件、路径安全和文件指纹原语。发布前需要保持 `package.json`、`package-lock.json`、`src-tauri/Cargo.toml`、根目录 `Cargo.lock` 和 `src-tauri/tauri.conf.json` 中的项目版本一致。上游工作流可构建 Windows、Linux、macOS Apple Silicon 和 macOS Intel 产物。当前 fork 只配置 `upstream` 远程，没有 AgentVault 发布目标；在单独建立发布与签名流程前不要创建或推送 release tag。
 
 ## 上游项目致谢
 
