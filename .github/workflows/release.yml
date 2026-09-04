@@ -96,7 +96,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: CC Sessions ${{ github.ref_name }}
+          releaseName: AgentVault ${{ github.ref_name }}
           generateReleaseNotes: true
           releaseDraft: false
           prerelease: false

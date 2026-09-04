@@ -504,7 +504,7 @@ function ConversionOriginBadge({ origin }: { origin: SessionConversionOrigin }) 
         </Badge>
       </TooltipTrigger>
       <TooltipContent className="max-w-80 space-y-1">
-        <div>由 CC Sessions 从 {source.label} 会话转换 · {mode}</div>
+        <div>由 AgentVault 从 {source.label} 会话转换 · {mode}</div>
         <div className="font-mono text-[11px] opacity-80">原会话 {origin.source_id}</div>
         <div className="text-[11px] opacity-70">转换于 {formatConversionTime(origin.converted_at)}</div>
       </TooltipContent>

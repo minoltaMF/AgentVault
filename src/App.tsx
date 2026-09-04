@@ -172,7 +172,7 @@ function BootCard({
           </svg>
         </div>
         <div className="boot-copy">
-          <div className="boot-title">CC Sessions</div>
+          <div className="boot-title">AgentVault</div>
           <div className="boot-subtitle">{subtitle}</div>
         </div>
       </div>

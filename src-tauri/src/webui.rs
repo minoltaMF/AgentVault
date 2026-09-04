@@ -100,7 +100,7 @@ pub fn run(config: WebuiConfig) -> AppResult<()> {
         config.host.as_str()
     };
     println!(
-        "CC Sessions Web UI 已启动: http://{}:{}",
+        "AgentVault Web UI 已启动: http://{}:{}",
         display_host, config.port
     );
     println!("监听地址: {listen_addr}");

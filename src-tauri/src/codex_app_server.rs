@@ -80,7 +80,7 @@ impl CodexAppServer {
             json!({
                 "clientInfo": {
                     "name": "cc_sessions",
-                    "title": "CC Sessions",
+                    "title": "AgentVault",
                     "version": env!("CARGO_PKG_VERSION")
                 },
                 "capabilities": {}

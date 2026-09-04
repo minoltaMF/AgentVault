@@ -1,16 +1,18 @@
-# CC Sessions
+# AgentVault
 
-[![Version](https://img.shields.io/github/v/release/ccpopy/cc-sessions?label=version&sort=semver)](https://github.com/ccpopy/cc-sessions/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/ccpopy/cc-sessions/total?label=downloads)](https://github.com/ccpopy/cc-sessions/releases)
-[![Stars](https://img.shields.io/github/stars/ccpopy/cc-sessions?style=flat)](https://github.com/ccpopy/cc-sessions/stargazers)
+[![Upstream Version](https://img.shields.io/github/v/release/ccpopy/cc-sessions?label=upstream%20version&sort=semver)](https://github.com/ccpopy/cc-sessions/releases/latest)
+[![Upstream Downloads](https://img.shields.io/github/downloads/ccpopy/cc-sessions/total?label=upstream%20downloads)](https://github.com/ccpopy/cc-sessions/releases)
+[![Upstream Stars](https://img.shields.io/github/stars/ccpopy/cc-sessions?style=flat&label=upstream%20stars)](https://github.com/ccpopy/cc-sessions/stargazers)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-CC Sessions 用来管理 Codex、Claude Code、OpenCode 和 Cursor 保存在本机的会话。你可以在一个界面里查找对话、预览内容、备份恢复、移动会话目录，也可以修复部分索引和可见性问题。
+AgentVault 用来管理 Codex、Claude Code、OpenCode 和 Cursor 保存在本机的会话。你可以在一个界面里查找对话、预览内容、备份恢复、移动会话目录，也可以修复部分索引和可见性问题。
 
-[下载最新版](https://github.com/ccpopy/cc-sessions/releases/latest) · [查看功能](#功能模块) · [进阶功能](#进阶功能) · [常见问题](#常见问题) · [开发与打包](#开发与打包)
+当前仓库以 [cc-sessions](https://github.com/ccpopy/cc-sessions) 的锁定 commit 为 fork 基线，尚未配置独立的 AgentVault 发布源。上方徽章和下方 Releases 链接只指向上游兼容基线；来源、许可证和验证范围见 [上游基线](docs/upstream-baseline.md) 与 [第三方声明](THIRD_PARTY_NOTICES.md)。
 
-![CC Sessions 模拟数据截图](img/readme-screenshot.png)
+[查看功能](#功能模块) · [进阶功能](#进阶功能) · [常见问题](#常见问题) · [开发与打包](#开发与打包)
+
+![AgentVault 模拟数据截图](img/readme-screenshot.png)
 
 ## 适合谁
 
@@ -20,7 +22,7 @@ CC Sessions 用来管理 Codex、Claude Code、OpenCode 和 Cursor 保存在本�
 | 在 WSL、服务器或 SSH 环境中管理会话 | `cc-sessions` 命令行或自带网页界面 | [命令行与 WSL](#命令行与-wsl) |
 | 想修改源码或自行构建安装包 | 从源码运行 | [开发与打包](#开发与打包) |
 
-会话读取、搜索、编辑和备份都在本机完成。应用检查更新时会访问 GitHub Releases。
+会话读取、搜索、编辑和备份都在本机完成。当前兼容基线的更新检查仍会访问 cc-sessions 的 GitHub Releases。
 
 ## 功能模块
 
@@ -47,7 +49,7 @@ Cursor 的会话存在一个共享数据库里，改动方式和其他三个工�
 
 ## 安装
 
-前往 [Releases](https://github.com/ccpopy/cc-sessions/releases/latest)，按系统和使用方式选择文件。下表中的 `<版本号>` 对应 Release 显示的版本数字，例如 `0.5.3`。
+AgentVault 目前没有独立发布包。若要验证上游兼容基线，可前往 [cc-sessions Releases](https://github.com/ccpopy/cc-sessions/releases/latest)；下列制品名称是为兼容而保留的上游名称，本轮不迁移包名、binary 名或安装标识。
 
 | 系统与用途 | 推荐下载 | 说明 |
 | --- | --- | --- |
@@ -89,7 +91,7 @@ Release 最下方的 `Source code (zip)` 和 `Source code (tar.gz)` 是 GitHub �
 ## 数据与安全
 
 - 浏览、搜索和预览不会修改会话。
-- CC Sessions 不要求账号，也不会把会话上传到第三方服务。只有检查更新或打开发布页时会访问 GitHub。
+- AgentVault 不要求账号，也不会把会话上传到第三方服务。当前基线只有检查更新或打开发布页时会访问 GitHub。
 - 编辑前会保存快照，可以逐步撤销，也可以恢复到编辑前状态。
 - 移动目录会检查目标冲突和写入结果。失败时会尝试恢复原状态。
 - OpenCode 和 Cursor 的会话包只包含所选会话的数据，不包含账号信息、登录凭据或本机分享密钥。Cursor 的 `state.vscdb` 里混有凭据和全部工作区状态，因此备份和会话包都只取该会话自己的记录，不会整库复制。
@@ -141,7 +143,7 @@ Cursor 的会话不是一个会话一个文件，而是全部存在 `state.vscdb
 
 **子会话跟着主会话走。** 详见[子代理与 Codex 分支](#子代理与-codex-分支)。
 
-**删除会真正清干净。** Cursor 自己删会话时，检查点、代码差异、文件快照等数据会留在库里不再回收。CC Sessions 删除时会把这些一并带走。
+**删除会真正清干净。** Cursor 自己删会话时，检查点、代码差异、文件快照等数据会留在库里不再回收。AgentVault 删除时会把这些一并带走。
 
 **数据库可能比你以为的大得多。** 长期使用后，库里会积压大量已删会话的残留。修复页的“Cursor 数据库残留”可以先诊断再清理：
 
@@ -172,7 +174,7 @@ Cursor 的会话不是一个会话一个文件，而是全部存在 `state.vscdb
 | 清理无效记录 | 列表指向的会话文件已经不存在 | 不会删除仍存在的会话文件 |
 | 清理分支残留 | Codex 分支状态冲突，或当前分支记录丢失 | 不会改写会话正文 |
 | 克隆到当前模型服务 | Codex 切换模型服务配置后，旧会话无法直接使用 | 创建副本，不改来源 |
-| 补全归档来源标记 | 旧版归档会话缺少来源记录，自动识别切换模型服务产生的克隆分支和回溯分支 | 只写 CC Sessions 自己的来源记录，不改会话文件 |
+| 补全归档来源标记 | 旧版归档会话缺少来源记录，自动识别切换模型服务产生的克隆分支和回溯分支 | 只写 AgentVault 沿用的来源记录，不改会话文件 |
 | Claude 列表可见性修复 | Claude Code 能续聊，但会话列表不显示标题 | 会在文件末尾补充标题记录 |
 | Cursor 数据库残留 | Cursor 数据库越用越大，里面积压了已删会话的数据 | 只删已经没有会话的记录 |
 | 压缩 Cursor 数据库 | 清理之后磁盘占用没有回落 | 不会改会话数据 |
@@ -267,7 +269,7 @@ WSL2 通常可以通过 `http://localhost:17888` 访问。如果必须绑定 `0.
 ## 常见问题
 
 <details>
-<summary>CC Sessions 默认从哪里读取会话？</summary>
+<summary>AgentVault 默认从哪里读取会话？</summary>
 
 Codex 默认读取 `~/.codex`，Claude Code 默认读取 `~/.claude`，OpenCode 读取当前安装使用的 `opencode.db`。Cursor 读取用户数据目录下的 `globalStorage/state.vscdb`（macOS 在 `~/Library/Application Support/Cursor/User`，Windows 在 `%APPDATA%\Cursor\User`，Linux 在 `~/.config/Cursor/User`），另外还会读取 `~/.cursor/chats` 里 cursor-agent 命令行产生的会话。实际路径可以在设置页查看和修改，CLI 也可以通过目录参数覆盖。
 
@@ -276,7 +278,7 @@ Codex 默认读取 `~/.codex`，Claude Code 默认读取 `~/.claude`，OpenCode 
 <details>
 <summary>会话包和 Markdown 导出有什么区别？</summary>
 
-会话包用于备份和迁移，可以再次导入 CC Sessions。Markdown 适合阅读、归档或分享文本，不用于恢复原会话。
+会话包用于备份和迁移，可以再次导入 AgentVault。Markdown 适合阅读、归档或分享文本，不用于恢复原会话。
 
 </details>
 
@@ -297,21 +299,21 @@ Codex 默认读取 `~/.codex`，Claude Code 默认读取 `~/.claude`，OpenCode 
 <details>
 <summary>归档视图里的“归档来源”是什么意思？</summary>
 
-Codex 归档视图会按归档来源分组：我的归档（手动归档，以及没有来源标识的归档）、切换模型服务时自动归档的同步分支、备份恢复或会话包导入产生的迁移记录。来源记录保存在 CC Sessions 自己的数据里，不会改动会话文件。旧版本升级后已有的归档可能没有来源记录，可以在修复工具里用“补全归档来源标记”补齐（切换模型服务产生的克隆分支会自动识别为同步归档）。
+Codex 归档视图会按归档来源分组：我的归档（手动归档，以及没有来源标识的归档）、切换模型服务时自动归档的同步分支、备份恢复或会话包导入产生的迁移记录。来源记录保存在 AgentVault 沿用的辅助数据里，不会改动会话文件。旧版本升级后已有的归档可能没有来源记录，可以在修复工具里用“补全归档来源标记”补齐（切换模型服务产生的克隆分支会自动识别为同步归档）。
 
 </details>
 
 <details>
 <summary>OpenCode 本身有归档功能吗？</summary>
 
-有。OpenCode 官方客户端提供归档操作，并把归档时间保存为会话状态。CC Sessions 使用的是这项原生状态，不是另外创建的标签。可以查看 OpenCode 官方源码中的 [归档操作](https://github.com/anomalyco/opencode/blob/dev/packages/app/src/pages/home-session-archive.ts) 和 [会话状态定义](https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/session/session.ts)。
+有。OpenCode 官方客户端提供归档操作，并把归档时间保存为会话状态。AgentVault 使用的是这项原生状态，不是另外创建的标签。可以查看 OpenCode 官方源码中的 [归档操作](https://github.com/anomalyco/opencode/blob/dev/packages/app/src/pages/home-session-archive.ts) 和 [会话状态定义](https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/session/session.ts)。
 
 </details>
 
 <details>
 <summary>移动会话目录后还能继续对话吗？</summary>
 
-可以。CC Sessions 会同步更新会话和项目之间的关联，并在完成后检查结果。Claude Code 的相关会话文件和历史记录会一起处理，OpenCode 的子会话也会跟随主会话移动。这个功能不会移动你的项目源码，只会调整会话数据。建议移动前先创建备份。
+可以。AgentVault 会同步更新会话和项目之间的关联，并在完成后检查结果。Claude Code 的相关会话文件和历史记录会一起处理，OpenCode 的子会话也会跟随主会话移动。这个功能不会移动你的项目源码，只会调整会话数据。建议移动前先创建备份。
 
 </details>
 
@@ -325,14 +327,14 @@ Codex 归档视图会按归档来源分组：我的归档（手动归档，以�
 <details>
 <summary>为什么看不到旧版 OpenCode storage 目录里的会话？</summary>
 
-CC Sessions 读取当前 OpenCode 使用的数据库，不会把旧版 `storage/` JSON 与当前数据混在一起。如果旧会话还没有迁入当前 OpenCode，请先用 OpenCode 自身提供的方式处理。
+AgentVault 读取当前 OpenCode 使用的数据库，不会把旧版 `storage/` JSON 与当前数据混在一起。如果旧会话还没有迁入当前 OpenCode，请先用 OpenCode 自身提供的方式处理。
 
 </details>
 
 <details>
 <summary>为什么修改 Cursor 会话前一定要退出 Cursor？</summary>
 
-Cursor 把会话状态缓存在内存里，退出或空闲时才写回数据库。它在运行时改数据库，改动很可能被它按内存中的旧状态覆盖回去，反而更容易出问题。所以 CC Sessions 检测到 Cursor 在运行时会直接拒绝写入，而不是先改了再看运气。后台进程也要一起退出。
+Cursor 把会话状态缓存在内存里，退出或空闲时才写回数据库。它在运行时改数据库，改动很可能被它按内存中的旧状态覆盖回去，反而更容易出问题。所以 AgentVault 检测到 Cursor 在运行时会直接拒绝写入，而不是先改了再看运气。后台进程也要一起退出。
 
 </details>
 
@@ -362,23 +364,23 @@ Cursor 的子会话由主会话持有引用，单独删掉会让主会话指向�
 </details>
 
 <details>
-<summary>CC Sessions 会管理 Codex Memory 吗？</summary>
+<summary>AgentVault 会管理 Codex Memory 吗？</summary>
 
-不会。Codex 自己负责本地 Memory 的生成和生命周期。CC Sessions 只提供 Claude Code 项目 Memory 的文件管理。Codex 的说明见 [Codex Memories 官方文档](https://learn.chatgpt.com/docs/customization/memories)。
+不会。Codex 自己负责本地 Memory 的生成和生命周期。AgentVault 只提供 Claude Code 项目 Memory 的文件管理。Codex 的说明见 [Codex Memories 官方文档](https://learn.chatgpt.com/docs/customization/memories)。
 
 </details>
 
 <details>
 <summary>Windows 提示“已保护你的电脑”怎么办？</summary>
 
-请先确认文件来自本项目的 [Releases](https://github.com/ccpopy/cc-sessions/releases/latest)。确认无误后，可以在提示窗口中选择“更多信息”，再选择继续运行；如果文件来源不明，请取消运行。
+若要验证上游兼容制品，请先确认文件来自 [cc-sessions Releases](https://github.com/ccpopy/cc-sessions/releases/latest)。确认无误后，可以在提示窗口中选择“更多信息”，再选择继续运行；如果文件来源不明，请取消运行。
 
 </details>
 
 <details>
 <summary>macOS 提示应用无法打开怎么办？</summary>
 
-如果系统阻止未签名应用，可以在确认文件来自本项目 Release 后移除隔离标记：
+如果系统阻止未签名应用，可以在确认文件来自可信 Release 后移除隔离标记。下列路径对应当前上游兼容制品；未来 AgentVault 独立制品的应用名可能不同：
 
 ```bash
 xattr -d com.apple.quarantine "/Applications/CC Sessions.app"
@@ -396,13 +398,13 @@ Codex 修复主要处理本地索引和列表可见性，不会重写对话正�
 <details>
 <summary>为什么有些推理内容只能删除，不能修改？</summary>
 
-Codex 的部分推理内容经过加密，Claude Code 的部分思考内容带有签名。改写这些数据会让原工具无法识别，因此 CC Sessions 只允许整段删除。
+Codex 的部分推理内容经过加密，Claude Code 的部分思考内容带有签名。改写这些数据会让原工具无法识别，因此 AgentVault 只允许整段删除。
 
 </details>
 
 ## 反馈问题
 
-如果遇到无法读取、导入失败或迁移后无法继续对话，请到 [GitHub Issues](https://github.com/ccpopy/cc-sessions/issues) 提交问题，并附上操作系统、CC Sessions 版本、所管理的工具、复现步骤和完整错误信息。会话内容可能含有隐私，上传日志或截图前请先删除敏感信息。
+当前 fork 尚未配置独立 Issue 地址。若问题可在锁定的 cc-sessions 基线上复现，可到[上游 GitHub Issues](https://github.com/ccpopy/cc-sessions/issues) 反馈并注明上游版本；AgentVault 特有问题不要误报为上游问题。会话内容可能含有隐私，上传日志或截图前请先删除敏感信息。
 
 ## 开发与打包
 
@@ -440,15 +442,9 @@ cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --lib
 
 打包结果位于 `release/`，该目录不会提交到仓库。
 
-发布前需要保持 `package.json`、`package-lock.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock` 和 `src-tauri/tauri.conf.json` 中的项目版本一致。推送版本 tag 后，GitHub Actions 会构建 Windows、Linux、macOS Apple Silicon 和 macOS Intel 产物。
+发布前需要保持 `package.json`、`package-lock.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock` 和 `src-tauri/tauri.conf.json` 中的项目版本一致。上游工作流可构建 Windows、Linux、macOS Apple Silicon 和 macOS Intel 产物。当前 fork 只配置 `upstream` 远程，没有 AgentVault 发布目标；在单独建立发布与签名流程前不要创建或推送 release tag。
 
-```bash
-git tag -a vX.Y.Z -m "vX.Y.Z"
-git push origin main
-git push origin vX.Y.Z
-```
-
-## 特别感谢
+## 上游项目致谢
 
 - [linux.do](https://linux.do) 社区提供了讨论、测试和问题反馈。
 - [codex-session-cloner](https://github.com/goodnightzsj/codex-session-cloner) 为会话修复和导入导出实现提供了参考。
@@ -456,7 +452,7 @@ git push origin vX.Y.Z
 - [firesahc](https://github.com/firesahc) 为对话预览、时间线和过程消息交互提供建议，并持续参与测试。
 - L 站用户 fengtang 参与了会话编辑、删除和归档功能测试。
 
-## Star 历史
+## 上游 Star 历史
 
 [![CC Sessions Star 历史](img/star-history.svg)](https://github.com/ccpopy/cc-sessions/stargazers)
 
@@ -464,4 +460,4 @@ git push origin vX.Y.Z
 
 ## License
 
-本项目使用 [MIT License](LICENSE)。
+AgentVault 基于 cc-sessions 继续开发，保留其 [MIT License](LICENSE) 和上游版权声明；实际复用来源见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

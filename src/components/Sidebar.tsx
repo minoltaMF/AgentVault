@@ -146,7 +146,7 @@ export function Sidebar() {
           <Terminal className="relative h-4 w-4" />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[13px] font-semibold leading-tight tracking-tight text-foreground">CC Sessions</div>
+          <div className="truncate text-[13px] font-semibold leading-tight tracking-tight text-foreground">AgentVault</div>
           <div className="mt-0.5 truncate text-[9.5px] font-semibold uppercase leading-tight tracking-[0.14em] text-muted-foreground/75">
             Multi-agent workspace
           </div>

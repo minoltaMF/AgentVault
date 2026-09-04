@@ -536,7 +536,7 @@ export default function MemoryRoute() {
       <DangerDialog
         open={closeRequested}
         onOpenChange={setCloseRequested}
-        title="关闭 CC Sessions"
+        title="关闭 AgentVault"
         confirmText="放弃并关闭"
         onConfirm={async () => {
           allowWindowCloseRef.current = true;

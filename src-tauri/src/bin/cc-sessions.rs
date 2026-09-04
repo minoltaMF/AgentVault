@@ -202,7 +202,7 @@ fn run_cli() -> CliResult<()> {
 
 fn print_help() {
     println!(
-        r#"cc-sessions - CC Sessions 命令行版本
+        r#"cc-sessions - AgentVault 命令行版本
 
 用法:
   cc-sessions [全局选项] <命令> [命令选项]

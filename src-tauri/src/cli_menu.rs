@@ -97,7 +97,7 @@ pub fn run(
 
 fn main_menu(ctx: &mut MenuContext) -> MenuResult<Flow> {
     print_header(
-        "CC Sessions",
+        "AgentVault",
         &[
             ("Codex 目录", ctx.codex_dir.as_str()),
             ("Claude 目录", ctx.claude_dir.as_str()),

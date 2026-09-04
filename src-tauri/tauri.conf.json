@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "CC Sessions",
+  "productName": "AgentVault",
   "version": "0.6.3",
   "identifier": "dev.cc.session-manager",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "CC Sessions",
+        "title": "AgentVault",
         "width": 1280,
         "height": 820,
         "minWidth": 960,

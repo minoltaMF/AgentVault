@@ -977,7 +977,7 @@ function CodexRepairRoute() {
                       </TooltipTrigger>
                       <TooltipContent className="max-w-sm text-xs">
                         为 <code>archived_sessions/</code> 下缺少记录的归档会话补写来源标记
-                        （Fork / ProviderSync / 未知）。只写 CC Sessions 自己的归档账本，
+                        （Fork / ProviderSync / 未知）。只写 AgentVault 沿用的归档账本，
                         不修改任何官方会话数据。
                       </TooltipContent>
                     </Tooltip>
@@ -1237,7 +1237,7 @@ function CodexRepairRoute() {
               </b>{" "}
               个归档会话写入来源标记（Fork {(backfillPreview?.fork_marked ?? 0)}、
               ProviderSync {(backfillPreview?.provider_sync_marked ?? 0)}、未知{" "}
-              {(backfillPreview?.unknown_marked ?? 0)}）。该标记写入 CC Sessions 自己的归档
+              {(backfillPreview?.unknown_marked ?? 0)}）。该标记写入 AgentVault 沿用的归档
               账本，不修改任何官方会话数据；已有记录不会被覆盖。
             </AlertDialogDescription>
           </AlertDialogHeader>
