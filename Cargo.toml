@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/vault-io", "src-tauri"]
+members = ["crates/provider-sdk", "crates/vault-io", "src-tauri"]
 resolver = "2"
 
 [workspace.package]

@@ -1,0 +1,7 @@
+[package]
+name = "provider-sdk"
+version = "0.1.0"
+description = "Provider contracts and capability declarations for AgentVault"
+edition.workspace = true
+license.workspace = true
+publish = false
