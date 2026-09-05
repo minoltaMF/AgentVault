@@ -1,5 +1,7 @@
 use provider_sdk::{
-    ConsistencyClass, ProviderCapabilities, ProviderDescriptor, SessionProvider, SourceKind,
+    ConsistencyClass, DetectionContext, DetectionResult, DiscoveryPage, DiscoveryResult,
+    ProviderCapabilities, ProviderContext, ProviderDescriptor, ScanCursor, SessionProvider,
+    SessionRoot, SourceKind,
 };
 
 #[test]
@@ -73,6 +75,22 @@ impl SessionProvider for ExampleProvider {
             source_kinds: vec![SourceKind::ExternalProcess],
             health_probe_timeout_ms: 500,
         }
+    }
+
+    fn detect(&self, _context: &DetectionContext<'_>) -> DiscoveryResult<DetectionResult> {
+        Ok(DetectionResult::from_evidence(Vec::new()))
+    }
+
+    fn roots(&self, _context: &ProviderContext<'_>) -> DiscoveryResult<Vec<SessionRoot>> {
+        Ok(Vec::new())
+    }
+
+    fn discover(
+        &self,
+        _context: &ProviderContext<'_>,
+        _cursor: Option<ScanCursor>,
+    ) -> DiscoveryResult<DiscoveryPage> {
+        Ok(DiscoveryPage::complete(Vec::new()))
     }
 }
 

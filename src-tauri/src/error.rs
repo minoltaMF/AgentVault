@@ -81,6 +81,25 @@ impl From<vault_io::Error> for AppError {
     }
 }
 
+impl From<provider_sdk::DiscoveryError> for AppError {
+    fn from(error: provider_sdk::DiscoveryError) -> Self {
+        match error {
+            provider_sdk::DiscoveryError::Cancelled => Self::Cancelled,
+            provider_sdk::DiscoveryError::Io { source, .. } => Self::Io(source),
+            provider_sdk::DiscoveryError::UnsafePath { path, reason } => {
+                Self::Path(format!("{}: {reason}", path.to_string_lossy()))
+            }
+            provider_sdk::DiscoveryError::Traversal { path, message } => Self::Other(format!(
+                "扫描原生 Session 目录失败 {}: {message}",
+                path.to_string_lossy()
+            )),
+            provider_sdk::DiscoveryError::UnsupportedCursor(cursor) => {
+                Self::Other(format!("不支持的 provider 扫描游标: {}", cursor.as_str()))
+            }
+        }
+    }
+}
+
 pub fn ensure_not_cancelled(cancel: Option<&AtomicBool>) -> AppResult<()> {
     if cancel.is_some_and(|flag| flag.load(Ordering::Acquire)) {
         Err(AppError::Cancelled)

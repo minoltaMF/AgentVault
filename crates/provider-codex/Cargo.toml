@@ -1,0 +1,12 @@
+[package]
+name = "provider-codex"
+version = "0.1.0"
+description = "Read-only Codex session discovery for AgentVault"
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+provider-sdk = { path = "../provider-sdk" }
+vault-io = { path = "../vault-io" }
+walkdir = "2"

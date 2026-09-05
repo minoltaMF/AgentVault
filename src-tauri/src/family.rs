@@ -13,10 +13,11 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
+use provider_sdk::{ProviderContext, SessionRootKind};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-use crate::error::{ensure_not_cancelled, AppError, AppResult};
+use crate::error::{AppError, AppResult};
 use crate::models::{
     ArchiveOrigin, BranchStatus, Family, FamilyBranch, FamilyIntegrityItem, FamilyIntegrityReport,
     FamilyOverlay, FamilyStore,
@@ -841,61 +842,36 @@ pub fn read_session_meta(rollout: &Path) -> AppResult<Value> {
     Ok(v)
 }
 
-fn scan_rollouts_in(root: PathBuf, cancel: Option<&AtomicBool>) -> AppResult<Vec<PathBuf>> {
-    let mut out = Vec::new();
-    ensure_not_cancelled(cancel)?;
-    let metadata = match fs::symlink_metadata(&root) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(out),
-        Err(error) => return Err(error.into()),
+fn discover_rollouts(
+    codex_dir: &Path,
+    kind: SessionRootKind,
+    cancel: Option<&AtomicBool>,
+) -> AppResult<Vec<PathBuf>> {
+    let context = match cancel {
+        Some(cancel) => ProviderContext::new(codex_dir).with_cancellation(cancel),
+        None => ProviderContext::new(codex_dir),
     };
-    if !metadata.is_dir() || crate::path_safety::metadata_is_link_or_reparse(&metadata) {
-        return Err(AppError::Path(format!(
-            "rollout 根目录不是普通目录或属于链接/junction: {}",
-            root.to_string_lossy()
-        )));
-    }
-    for entry in walkdir::WalkDir::new(&root).follow_links(false) {
-        ensure_not_cancelled(cancel)?;
-        let entry = entry.map_err(|error| {
-            AppError::Other(format!(
-                "扫描 rollout 目录失败 {}: {error}",
-                root.to_string_lossy()
-            ))
-        })?;
-        let metadata = fs::symlink_metadata(entry.path())?;
-        if crate::path_safety::metadata_is_link_or_reparse(&metadata) {
-            return Err(AppError::Path(format!(
-                "rollout 目录包含链接/junction: {}",
-                entry.path().to_string_lossy()
-            )));
-        }
-        if !entry.file_type().is_file() {
-            continue;
-        }
-        let name = entry.file_name().to_string_lossy();
-        if name.starts_with("rollout-") && name.ends_with(".jsonl") {
-            out.push(entry.path().to_path_buf());
-        }
-    }
-    Ok(out)
+    Ok(provider_codex::discover_rollouts(&context, kind)?
+        .into_iter()
+        .map(|session| session.source_path)
+        .collect())
 }
 
 /// 扫描 sessions/ 目录下所有 active `rollout-*.jsonl`。
 pub fn scan_rollouts(codex_dir: &Path) -> AppResult<Vec<PathBuf>> {
-    scan_rollouts_in(paths::sessions_dir(codex_dir), None)
+    discover_rollouts(codex_dir, SessionRootKind::Active, None)
 }
 
 /// 扫描 archived_sessions/ 目录下所有 archived `rollout-*.jsonl`。
 pub fn scan_archived_rollouts(codex_dir: &Path) -> AppResult<Vec<PathBuf>> {
-    scan_rollouts_in(paths::archived_sessions_dir(codex_dir), None)
+    discover_rollouts(codex_dir, SessionRootKind::Archived, None)
 }
 
 pub(crate) fn scan_archived_rollouts_cancellable(
     codex_dir: &Path,
     cancel: &AtomicBool,
 ) -> AppResult<Vec<PathBuf>> {
-    scan_rollouts_in(paths::archived_sessions_dir(codex_dir), Some(cancel))
+    discover_rollouts(codex_dir, SessionRootKind::Archived, Some(cancel))
 }
 
 pub fn get_family_store_with_lock(codex_dir: String, lock: &FamilyLock) -> AppResult<FamilyStore> {

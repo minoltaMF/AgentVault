@@ -492,6 +492,9 @@ dependencies = [
  "getrandom 0.2.17",
  "hex",
  "libc",
+ "provider-claude",
+ "provider-codex",
+ "provider-sdk",
  "reqwest",
  "rusqlite",
  "same-file",
@@ -3182,6 +3185,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8fd00f0bb2e90d81d1044c2b32617f68fcb9fa3bb7640c23e9c748e53fb30934"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "provider-claude"
+version = "0.1.0"
+dependencies = [
+ "provider-sdk",
+ "serde_json",
+ "vault-io",
+ "walkdir",
+]
+
+[[package]]
+name = "provider-codex"
+version = "0.1.0"
+dependencies = [
+ "provider-sdk",
+ "vault-io",
+ "walkdir",
 ]
 
 [[package]]

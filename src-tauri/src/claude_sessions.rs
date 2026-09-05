@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use chrono::{DateTime, FixedOffset};
+use provider_claude::ClaudeProvider;
+use provider_sdk::{ProviderContext, SessionProvider};
 use serde_json::Value;
 
 use crate::error::{ensure_not_cancelled, AppError, AppResult};
@@ -32,13 +34,15 @@ fn scan_sessions_impl(
     cancel: Option<&AtomicBool>,
 ) -> AppResult<Vec<SessionSummary>> {
     ensure_not_cancelled(cancel)?;
-    let root = paths::claude_projects_dir(claude_dir);
-    if !root.is_dir() {
-        return Ok(Vec::new());
-    }
-
-    let mut files = Vec::new();
-    collect_jsonl_files(&root, &mut files, cancel)?;
+    let context = match cancel {
+        Some(cancel) => ProviderContext::new(claude_dir).with_cancellation(cancel),
+        None => ProviderContext::new(claude_dir),
+    };
+    let files = ClaudeProvider
+        .discover(&context, None)?
+        .sessions
+        .into_iter()
+        .map(|session| session.source_path);
 
     let mut sessions = Vec::new();
     for file in files {
@@ -545,24 +549,6 @@ fn claude_non_message_summary(raw: &Value) -> String {
         .and_then(Value::as_str)
         .unwrap_or("事件")
         .to_string()
-}
-
-fn collect_jsonl_files(
-    root: &Path,
-    files: &mut Vec<PathBuf>,
-    cancel: Option<&AtomicBool>,
-) -> AppResult<()> {
-    for entry in fs::read_dir(root)? {
-        ensure_not_cancelled(cancel)?;
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_dir() {
-            collect_jsonl_files(&path, files, cancel)?;
-        } else if path.extension().and_then(|ext| ext.to_str()) == Some("jsonl") {
-            files.push(path);
-        }
-    }
-    Ok(())
 }
 
 fn infer_session_id_from_filename(path: &Path) -> Option<String> {

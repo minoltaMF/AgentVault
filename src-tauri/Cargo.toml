@@ -60,6 +60,9 @@ url = "2"
 getrandom = "0.2"
 base64 = "0.22"
 libc = "0.2"
+provider-claude = { path = "../crates/provider-claude" }
+provider-codex = { path = "../crates/provider-codex" }
+provider-sdk = { path = "../crates/provider-sdk" }
 vault-io = { path = "../crates/vault-io" }
 
 [target.'cfg(windows)'.dependencies]

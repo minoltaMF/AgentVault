@@ -1,0 +1,13 @@
+[package]
+name = "provider-claude"
+version = "0.1.0"
+description = "Read-only Claude Code session discovery for AgentVault"
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+provider-sdk = { path = "../provider-sdk" }
+serde_json = "1"
+vault-io = { path = "../vault-io" }
+walkdir = "2"
