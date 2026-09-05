@@ -428,6 +428,7 @@ npm run tauri:dev
 npm run build
 npm run cli:check
 cargo test --workspace --no-default-features --lib
+cargo test -p registry --test registry_contract
 ```
 
 ### 打包
@@ -442,7 +443,7 @@ cargo test --workspace --no-default-features --lib
 
 打包结果位于 `release/`，该目录不会提交到仓库。
 
-Rust 代码现在由根目录 `Cargo.toml` 管理 workspace；`src-tauri` 保留桌面应用和兼容 binary，`crates/provider-sdk` 定义 Provider descriptor、capability、发现合同、基础 trait 和 provider-neutral 分支图，`crates/provider-claude` 与 `crates/provider-codex` 提供只读原生 Session 发现，`crates/provider-pi` 提供只读 Pi Session 发现、v1/v2/v3 解析和分支图构建，`crates/vault-io` 提供原子文件、路径安全和文件指纹原语。Pi Provider 本提交只作为 workspace 能力交付，尚未接入旧 Tauri 列表；统一接入由后续 canonical registry 承担。摘要解析、数据库/索引合并和所有写入业务仍保留在应用层，后续按独立提交迁移。发布前需要保持 `package.json`、`package-lock.json`、`src-tauri/Cargo.toml`、根目录 `Cargo.lock` 和 `src-tauri/tauri.conf.json` 中的项目版本一致。上游工作流可构建 Windows、Linux、macOS Apple Silicon 和 macOS Intel 产物。当前 fork 只配置 `upstream` 远程，没有 AgentVault 发布目标；在单独建立发布与签名流程前不要创建或推送 release tag。
+Rust 代码现在由根目录 `Cargo.toml` 管理 workspace；`src-tauri` 保留桌面应用和兼容 binary，`crates/provider-sdk` 定义 Provider descriptor、capability、发现合同、基础 trait 和 provider-neutral 分支图，`crates/provider-claude` 与 `crates/provider-codex` 提供只读原生 Session 发现，`crates/provider-pi` 提供只读 Pi Session 发现、v1/v2/v3 解析和分支图构建，`crates/registry` 提供可重建的 canonical SQLite 投影、复合 native identity 和逐 source file 增量游标，`crates/vault-io` 提供原子文件、路径安全和文件指纹原语。Registry 只写调用方明确指定的 AgentVault 自有数据库，不读取或改写原生 Session；本提交不设默认数据库路径，也不迁移现有 Tauri 数据目录。Pi 与新 Registry 尚未接入旧 Tauri 列表，FTS、统一查询和应用层编排仍由后续独立提交完成。摘要解析、旧数据库/索引合并和所有原生写入业务仍保留在应用层。发布前需要保持 `package.json`、`package-lock.json`、`src-tauri/Cargo.toml`、根目录 `Cargo.lock` 和 `src-tauri/tauri.conf.json` 中的项目版本一致。上游工作流可构建 Windows、Linux、macOS Apple Silicon 和 macOS Intel 产物。当前 fork 只配置 `upstream` 远程，没有 AgentVault 发布目标；在单独建立发布与签名流程前不要创建或推送 release tag。
 
 ## 上游项目致谢
 

@@ -1,0 +1,13 @@
+[package]
+name = "registry"
+version = "0.1.0"
+description = "Rebuildable canonical session registry for AgentVault"
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+provider-sdk = { path = "../provider-sdk" }
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+thiserror = "2"

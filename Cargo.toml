@@ -4,6 +4,7 @@ members = [
     "crates/provider-codex",
     "crates/provider-pi",
     "crates/provider-sdk",
+    "crates/registry",
     "crates/vault-io",
     "src-tauri",
 ]
