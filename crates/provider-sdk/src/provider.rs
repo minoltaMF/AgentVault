@@ -1,6 +1,7 @@
 use crate::{
     DetectionContext, DetectionResult, DiscoveryPage, DiscoveryResult, ProviderCapabilities,
-    ProviderContext, ProviderDescriptor, ScanCursor, SessionRoot,
+    ProviderContext, ProviderDescriptor, ResumeError, ResumeOptions, ResumePlan, ResumeResult,
+    ScanCursor, SessionRoot,
 };
 
 /// Base contract implemented by every in-process session provider.
@@ -19,6 +20,17 @@ pub trait SessionProvider: Send + Sync {
         context: &ProviderContext<'_>,
         cursor: Option<ScanCursor>,
     ) -> DiscoveryResult<DiscoveryPage>;
+
+    /// Describe how to resume a native session without launching the provider CLI.
+    fn resume_plan(
+        &self,
+        _native: &crate::NativeSessionRef,
+        _options: &ResumeOptions,
+    ) -> ResumeResult<ResumePlan> {
+        Err(ResumeError::NativeResumeUnsupported {
+            provider_id: self.descriptor().id,
+        })
+    }
 
     fn supports(&self, capability: ProviderCapabilities) -> bool {
         self.descriptor().supports(capability)

@@ -5,6 +5,7 @@
 //! record's raw JSON value so extension events are not discarded.
 
 use std::error::Error;
+use std::ffi::OsString;
 use std::fmt;
 use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader};
@@ -13,8 +14,9 @@ use std::path::{Path, PathBuf};
 use provider_sdk::{
     BranchGraph, BranchGraphError, BranchNode, ConsistencyClass, DetectionContext, DetectionResult,
     DiscoveryError, DiscoveryPage, DiscoveryResult, NativeSessionKind, NativeSessionRef,
-    ProviderCapabilities, ProviderContext, ProviderDescriptor, ScanCursor, SessionProvider,
-    SessionRoot, SessionRootKind, SourceKind,
+    ProviderCapabilities, ProviderContext, ProviderDescriptor, ResumeError, ResumeOptions,
+    ResumePlan, ResumeResult, ScanCursor, SessionProvider, SessionRoot, SessionRootKind,
+    SourceKind,
 };
 use serde_json::{Map, Value};
 
@@ -67,6 +69,7 @@ impl SessionProvider for PiProvider {
             native_cli: Some("pi".into()),
             capabilities: ProviderCapabilities::DISCOVER
                 | ProviderCapabilities::PARSE
+                | ProviderCapabilities::NATIVE_RESUME
                 | ProviderCapabilities::BRANCH_GRAPH,
             consistency_classes: vec![
                 ConsistencyClass::AppendOnlyJsonl,
@@ -121,6 +124,35 @@ impl SessionProvider for PiProvider {
         }
         sessions.sort_by(|left, right| left.source_path.cmp(&right.source_path));
         Ok(DiscoveryPage::complete(sessions))
+    }
+
+    fn resume_plan(
+        &self,
+        native: &NativeSessionRef,
+        options: &ResumeOptions,
+    ) -> ResumeResult<ResumePlan> {
+        if native.provider_id != PROVIDER_ID {
+            return Err(ResumeError::ProviderMismatch {
+                expected: PROVIDER_ID.into(),
+                actual: native.provider_id.clone(),
+            });
+        }
+        if native.kind != NativeSessionKind::Primary {
+            return Err(ResumeError::NativeSessionKindUnsupported {
+                provider_id: PROVIDER_ID.into(),
+            });
+        }
+        let native_id = native.native_session_id.as_ref().ok_or_else(|| {
+            ResumeError::MissingNativeSessionId {
+                provider_id: PROVIDER_ID.into(),
+            }
+        })?;
+        ResumePlan::native_command(
+            &self.descriptor(),
+            native,
+            options,
+            vec![OsString::from("--session"), OsString::from(native_id)],
+        )
     }
 }
 

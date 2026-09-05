@@ -1,0 +1,14 @@
+[package]
+name = "resume"
+version = "0.1.0"
+description = "Native resume planning and project cwd mapping for AgentVault"
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+provider-sdk = { path = "../provider-sdk" }
+registry = { path = "../registry" }
+
+[dev-dependencies]
+provider-claude = { path = "../provider-claude" }

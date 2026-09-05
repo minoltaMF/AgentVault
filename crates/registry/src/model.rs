@@ -30,6 +30,23 @@ pub struct ProjectRecord {
     pub updated_at_ms: i64,
 }
 
+/// One observed checkout or worktree for a canonical project.
+///
+/// Moving a project creates another record; the original path remains as history.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectLocationRecord {
+    pub id: String,
+    pub project_id: String,
+    pub machine_id: String,
+    pub path: String,
+    pub git_common_dir: Option<String>,
+    pub worktree_name: Option<String>,
+    pub branch: Option<String>,
+    pub first_seen_at_ms: i64,
+    pub last_seen_at_ms: i64,
+    pub status: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NativeSessionRecord {
     pub machine_id: String,

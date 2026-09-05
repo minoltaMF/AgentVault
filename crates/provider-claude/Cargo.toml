@@ -1,7 +1,7 @@
 [package]
 name = "provider-claude"
 version = "0.1.0"
-description = "Read-only Claude Code session discovery for AgentVault"
+description = "Read-only Claude Code discovery and native resume planning for AgentVault"
 edition.workspace = true
 license.workspace = true
 publish = false

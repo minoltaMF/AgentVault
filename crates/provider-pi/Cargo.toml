@@ -1,7 +1,7 @@
 [package]
 name = "provider-pi"
 version = "0.1.0"
-description = "Read-only Pi session discovery and branch graph parsing for AgentVault"
+description = "Read-only Pi discovery, parsing, and native resume planning for AgentVault"
 edition.workspace = true
 license.workspace = true
 publish = false

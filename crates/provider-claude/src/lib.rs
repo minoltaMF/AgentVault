@@ -1,5 +1,6 @@
 //! Read-only Claude Code native transcript discovery.
 
+use std::ffi::OsString;
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -7,7 +8,8 @@ use std::path::{Path, PathBuf};
 use provider_sdk::{
     ConsistencyClass, DetectionContext, DetectionResult, DiscoveryError, DiscoveryPage,
     DiscoveryResult, NativeSessionKind, NativeSessionRef, ProviderCapabilities, ProviderContext,
-    ProviderDescriptor, ScanCursor, SessionProvider, SessionRoot, SessionRootKind, SourceKind,
+    ProviderDescriptor, ResumeError, ResumeOptions, ResumePlan, ResumeResult, ScanCursor,
+    SessionProvider, SessionRoot, SessionRootKind, SourceKind,
 };
 
 const PROVIDER_ID: &str = "claude";
@@ -22,7 +24,9 @@ impl SessionProvider for ClaudeProvider {
             display_name: "Claude Code".into(),
             version: env!("CARGO_PKG_VERSION").into(),
             native_cli: Some("claude".into()),
-            capabilities: ProviderCapabilities::DISCOVER | ProviderCapabilities::SUBAGENT_LINEAGE,
+            capabilities: ProviderCapabilities::DISCOVER
+                | ProviderCapabilities::NATIVE_RESUME
+                | ProviderCapabilities::SUBAGENT_LINEAGE,
             consistency_classes: vec![
                 ConsistencyClass::AppendOnlyJsonl,
                 ConsistencyClass::DirectoryTree,
@@ -87,6 +91,35 @@ impl SessionProvider for ClaudeProvider {
         }
         sessions.sort_by(|left, right| left.source_path.cmp(&right.source_path));
         Ok(DiscoveryPage::complete(sessions))
+    }
+
+    fn resume_plan(
+        &self,
+        native: &NativeSessionRef,
+        options: &ResumeOptions,
+    ) -> ResumeResult<ResumePlan> {
+        if native.provider_id != PROVIDER_ID {
+            return Err(ResumeError::ProviderMismatch {
+                expected: PROVIDER_ID.into(),
+                actual: native.provider_id.clone(),
+            });
+        }
+        if native.kind != NativeSessionKind::Primary {
+            return Err(ResumeError::NativeSessionKindUnsupported {
+                provider_id: PROVIDER_ID.into(),
+            });
+        }
+        let native_id = native.native_session_id.as_ref().ok_or_else(|| {
+            ResumeError::MissingNativeSessionId {
+                provider_id: PROVIDER_ID.into(),
+            }
+        })?;
+        ResumePlan::native_command(
+            &self.descriptor(),
+            native,
+            options,
+            vec![OsString::from("--resume"), OsString::from(native_id)],
+        )
     }
 }
 

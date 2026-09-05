@@ -11,8 +11,8 @@ mod search;
 pub use error::{RegistryError, RegistryResult};
 pub use model::{
     CanonicalEvent, FileProjection, FullScanReason, MachineRecord, NativeSessionRecord,
-    ProjectRecord, ProjectionMode, SearchDocument, SearchHit, SourceCursor, SourceInstanceRecord,
-    SourceObservation, SourceScanDecision,
+    ProjectLocationRecord, ProjectRecord, ProjectionMode, SearchDocument, SearchHit, SourceCursor,
+    SourceInstanceRecord, SourceObservation, SourceScanDecision,
 };
 pub use schema::LATEST_SCHEMA_VERSION;
 
@@ -175,6 +175,114 @@ impl Registry {
             ],
         )?;
         Ok(())
+    }
+
+    /// Insert or refresh one project path without rebinding its historical identity.
+    pub fn upsert_project_location(
+        &mut self,
+        location: &ProjectLocationRecord,
+    ) -> RegistryResult<()> {
+        validate_project_location(location)?;
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let path_owner: Option<String> = transaction
+            .query_row(
+                "SELECT id FROM project_locations WHERE machine_id = ?1 AND path = ?2",
+                params![location.machine_id, location.path],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if path_owner
+            .as_deref()
+            .is_some_and(|owner| owner != location.id)
+        {
+            return Err(RegistryError::IdentityConflict {
+                kind: "project location",
+                id: location.id.clone(),
+            });
+        }
+
+        let changed = transaction.execute(
+            "INSERT INTO project_locations (
+                 id, project_id, machine_id, path, git_common_dir, worktree_name, branch,
+                 first_seen_at, last_seen_at, status
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+             ON CONFLICT(id) DO UPDATE SET
+                 git_common_dir = CASE
+                     WHEN excluded.last_seen_at >= project_locations.last_seen_at
+                     THEN excluded.git_common_dir ELSE project_locations.git_common_dir END,
+                 worktree_name = CASE
+                     WHEN excluded.last_seen_at >= project_locations.last_seen_at
+                     THEN excluded.worktree_name ELSE project_locations.worktree_name END,
+                 branch = CASE
+                     WHEN excluded.last_seen_at >= project_locations.last_seen_at
+                     THEN excluded.branch ELSE project_locations.branch END,
+                 first_seen_at = MIN(project_locations.first_seen_at, excluded.first_seen_at),
+                 last_seen_at = MAX(project_locations.last_seen_at, excluded.last_seen_at),
+                 status = CASE
+                     WHEN excluded.last_seen_at >= project_locations.last_seen_at
+                     THEN excluded.status ELSE project_locations.status END
+             WHERE project_locations.project_id = excluded.project_id
+               AND project_locations.machine_id = excluded.machine_id
+               AND project_locations.path = excluded.path",
+            params![
+                location.id,
+                location.project_id,
+                location.machine_id,
+                location.path,
+                location.git_common_dir,
+                location.worktree_name,
+                location.branch,
+                location.first_seen_at_ms,
+                location.last_seen_at_ms,
+                location.status,
+            ],
+        )?;
+        if changed == 0 {
+            return Err(RegistryError::IdentityConflict {
+                kind: "project location",
+                id: location.id.clone(),
+            });
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub fn project_location(
+        &self,
+        location_id: &str,
+    ) -> RegistryResult<Option<ProjectLocationRecord>> {
+        require_non_empty("project_location.id", location_id)?;
+        Ok(self
+            .connection
+            .query_row(
+                "SELECT id, project_id, machine_id, path, git_common_dir, worktree_name,
+                        branch, first_seen_at, last_seen_at, status
+                 FROM project_locations WHERE id = ?1",
+                [location_id],
+                project_location_from_row,
+            )
+            .optional()?)
+    }
+
+    /// List path history newest-first for one canonical project.
+    pub fn project_locations(
+        &self,
+        project_id: &str,
+    ) -> RegistryResult<Vec<ProjectLocationRecord>> {
+        require_non_empty("project_location.project_id", project_id)?;
+        let mut statement = self.connection.prepare(
+            "SELECT id, project_id, machine_id, path, git_common_dir, worktree_name,
+                    branch, first_seen_at, last_seen_at, status
+             FROM project_locations
+             WHERE project_id = ?1
+             ORDER BY last_seen_at DESC, id",
+        )?;
+        let locations = statement
+            .query_map([project_id], project_location_from_row)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(locations)
     }
 
     /// Insert or refresh one native session while preserving its composite native identity.
@@ -675,6 +783,35 @@ fn validate_native_session(session: &NativeSessionRecord) -> RegistryResult<()> 
         ));
     }
     Ok(())
+}
+
+fn validate_project_location(location: &ProjectLocationRecord) -> RegistryResult<()> {
+    require_non_empty("project_location.id", &location.id)?;
+    require_non_empty("project_location.project_id", &location.project_id)?;
+    require_non_empty("project_location.machine_id", &location.machine_id)?;
+    require_non_empty("project_location.path", &location.path)?;
+    require_non_empty("project_location.status", &location.status)?;
+    if location.first_seen_at_ms > location.last_seen_at_ms {
+        return Err(invalid_record(
+            "project_location.first_seen_at_ms cannot exceed last_seen_at_ms",
+        ));
+    }
+    Ok(())
+}
+
+fn project_location_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProjectLocationRecord> {
+    Ok(ProjectLocationRecord {
+        id: row.get(0)?,
+        project_id: row.get(1)?,
+        machine_id: row.get(2)?,
+        path: row.get(3)?,
+        git_common_dir: row.get(4)?,
+        worktree_name: row.get(5)?,
+        branch: row.get(6)?,
+        first_seen_at_ms: row.get(7)?,
+        last_seen_at_ms: row.get(8)?,
+        status: row.get(9)?,
+    })
 }
 
 fn validate_projection(projection: &FileProjection) -> RegistryResult<()> {

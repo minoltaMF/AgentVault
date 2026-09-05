@@ -258,7 +258,7 @@ fn descriptor_claims_only_implemented_read_capabilities() {
     assert!(descriptor.supports(ProviderCapabilities::DISCOVER));
     assert!(descriptor.supports(ProviderCapabilities::PARSE));
     assert!(descriptor.supports(ProviderCapabilities::BRANCH_GRAPH));
-    assert!(!descriptor.supports(ProviderCapabilities::NATIVE_RESUME));
+    assert!(descriptor.supports(ProviderCapabilities::NATIVE_RESUME));
     assert!(!descriptor.supports(ProviderCapabilities::NATIVE_FORK));
     assert!(!descriptor.supports(ProviderCapabilities::WRITE_NATIVE_UNSAFE));
 }
