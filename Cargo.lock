@@ -5247,6 +5247,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "vault"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "provider-sdk",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "vault-io",
+]
+
+[[package]]
 name = "vault-io"
 version = "0.1.0"
 dependencies = [

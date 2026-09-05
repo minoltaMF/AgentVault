@@ -1,0 +1,18 @@
+[package]
+name = "vault"
+version = "0.1.0"
+description = "Immutable snapshot manifests for AgentVault"
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+chrono = "0.4"
+provider-sdk = { path = "../provider-sdk" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+vault-io = { path = "../vault-io" }
+
+[dev-dependencies]
+tempfile = "3"

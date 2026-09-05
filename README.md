@@ -432,6 +432,7 @@ cargo test -p registry --test registry_contract
 cargo test -p registry --test search_contract
 cargo test -p registry --test project_locations
 cargo test -p resume
+cargo test -p vault
 ```
 
 ### 打包
@@ -446,7 +447,7 @@ cargo test -p resume
 
 打包结果位于 `release/`，该目录不会提交到仓库。
 
-Rust 代码现在由根目录 `Cargo.toml` 管理 workspace；`src-tauri` 保留桌面应用和兼容 binary，`crates/provider-sdk` 定义 Provider descriptor、capability、发现合同、基础 trait、provider-neutral 分支图和不执行进程的 ResumePlan 合同，`crates/provider-claude`、`crates/provider-codex` 与 `crates/provider-pi` 可以按 native ID 生成无 prompt 的原生续接参数，`crates/provider-pi` 还提供只读 Pi v1/v2/v3 解析和分支图构建。`crates/registry` 提供可重建的 canonical SQLite 投影、复合 native identity、ProjectLocation 路径历史、逐 source file 增量游标，以及 unicode61/trigram 搜索索引；`crates/resume` 只在同一 canonical project 和当前 machine 范围内生成 cwd 候选，歧义路径保持未选择；`crates/vault-io` 提供原子文件、路径安全和文件指纹原语。ResumePlan 只保存 executable 与参数数组并声明 preflight，不启动 CLI、不发送消息、不修改原生 cwd/index 或 Session。Registry 只写调用方明确指定的 AgentVault 自有数据库，不读取或改写原生 Session；搜索投影只接收调用方筛选后的可搜索文本，短于三个 Unicode 字符的查询使用字面量子串回退。本提交不设默认数据库路径，不升级 schema，也不迁移现有 Tauri 数据目录。Pi 与新 Registry/Search/Resume 尚未接入旧 Tauri 列表，搜索过滤、排序、终端执行和应用层编排仍由后续独立提交完成。摘要解析、旧数据库/索引合并和所有原生写入业务仍保留在应用层。发布前需要保持 `package.json`、`package-lock.json`、`src-tauri/Cargo.toml`、根目录 `Cargo.lock` 和 `src-tauri/tauri.conf.json` 中的项目版本一致。上游工作流可构建 Windows、Linux、macOS Apple Silicon 和 macOS Intel 产物。当前 fork 只配置 `upstream` 远程，没有 AgentVault 发布目标；在单独建立发布与签名流程前不要创建或推送 release tag。
+Rust 代码现在由根目录 `Cargo.toml` 管理 workspace；`src-tauri` 保留桌面应用和兼容 binary，`crates/provider-sdk` 定义 Provider descriptor、capability、发现合同、基础 trait、provider-neutral 分支图和不执行进程的 ResumePlan 合同，`crates/provider-claude`、`crates/provider-codex` 与 `crates/provider-pi` 可以按 native ID 生成无 prompt 的原生续接参数，`crates/provider-pi` 还提供只读 Pi v1/v2/v3 解析和分支图构建。`crates/registry` 提供可重建的 canonical SQLite 投影、复合 native identity、ProjectLocation 路径历史、逐 source file 增量游标，以及 unicode61/trigram 搜索索引；`crates/resume` 只在同一 canonical project 和当前 machine 范围内生成 cwd 候选，歧义路径保持未选择；`crates/vault-io` 提供原子文件、路径安全和文件指纹原语；`crates/vault` 定义经过校验且不可外部修改的 snapshot manifest v1，并以原子 create-if-absent 语义写入调用方明确指定的 snapshots 根目录。Manifest 目前只引用对象 ID，不创建或验证 content-addressed objects，也不读取或改写原生 Session。ResumePlan 只保存 executable 与参数数组并声明 preflight，不启动 CLI、不发送消息、不修改原生 cwd/index 或 Session。Registry 只写调用方明确指定的 AgentVault 自有数据库，不读取或改写原生 Session；搜索投影只接收调用方筛选后的可搜索文本，短于三个 Unicode 字符的查询使用字面量子串回退。本提交不设默认数据库或 Vault 路径，不升级 schema，也不迁移现有 Tauri 数据目录。Pi 与新 Registry/Search/Resume/Vault 尚未接入旧 Tauri 列表，搜索过滤、排序、终端执行和应用层编排仍由后续独立提交完成。摘要解析、旧数据库/索引合并和所有原生写入业务仍保留在应用层。发布前需要保持 `package.json`、`package-lock.json`、`src-tauri/Cargo.toml`、根目录 `Cargo.lock` 和 `src-tauri/tauri.conf.json` 中的项目版本一致。上游工作流可构建 Windows、Linux、macOS Apple Silicon 和 macOS Intel 产物。当前 fork 只配置 `upstream` 远程，没有 AgentVault 发布目标；在单独建立发布与签名流程前不要创建或推送 release tag。
 
 ## 上游项目致谢
 
