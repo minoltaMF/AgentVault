@@ -3207,6 +3207,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "provider-pi"
+version = "0.1.0"
+dependencies = [
+ "provider-sdk",
+ "serde_json",
+ "vault-io",
+ "walkdir",
+]
+
+[[package]]
 name = "provider-sdk"
 version = "0.1.0"
 

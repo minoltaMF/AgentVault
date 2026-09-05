@@ -442,7 +442,7 @@ cargo test --workspace --no-default-features --lib
 
 打包结果位于 `release/`，该目录不会提交到仓库。
 
-Rust 代码现在由根目录 `Cargo.toml` 管理 workspace；`src-tauri` 保留桌面应用和兼容 binary，`crates/provider-sdk` 定义 Provider descriptor、capability、发现合同和基础 trait，`crates/provider-claude` 与 `crates/provider-codex` 提供只读原生 Session 发现，`crates/vault-io` 提供原子文件、路径安全和文件指纹原语。摘要解析、数据库/索引合并和所有写入业务仍保留在应用层，后续按独立提交迁移。发布前需要保持 `package.json`、`package-lock.json`、`src-tauri/Cargo.toml`、根目录 `Cargo.lock` 和 `src-tauri/tauri.conf.json` 中的项目版本一致。上游工作流可构建 Windows、Linux、macOS Apple Silicon 和 macOS Intel 产物。当前 fork 只配置 `upstream` 远程，没有 AgentVault 发布目标；在单独建立发布与签名流程前不要创建或推送 release tag。
+Rust 代码现在由根目录 `Cargo.toml` 管理 workspace；`src-tauri` 保留桌面应用和兼容 binary，`crates/provider-sdk` 定义 Provider descriptor、capability、发现合同、基础 trait 和 provider-neutral 分支图，`crates/provider-claude` 与 `crates/provider-codex` 提供只读原生 Session 发现，`crates/provider-pi` 提供只读 Pi Session 发现、v1/v2/v3 解析和分支图构建，`crates/vault-io` 提供原子文件、路径安全和文件指纹原语。Pi Provider 本提交只作为 workspace 能力交付，尚未接入旧 Tauri 列表；统一接入由后续 canonical registry 承担。摘要解析、数据库/索引合并和所有写入业务仍保留在应用层，后续按独立提交迁移。发布前需要保持 `package.json`、`package-lock.json`、`src-tauri/Cargo.toml`、根目录 `Cargo.lock` 和 `src-tauri/tauri.conf.json` 中的项目版本一致。上游工作流可构建 Windows、Linux、macOS Apple Silicon 和 macOS Intel 产物。当前 fork 只配置 `upstream` 远程，没有 AgentVault 发布目标；在单独建立发布与签名流程前不要创建或推送 release tag。
 
 ## 上游项目致谢
 

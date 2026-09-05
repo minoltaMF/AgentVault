@@ -34,6 +34,7 @@ fn complete_page_preserves_native_identity_and_provenance() {
         NativeSessionKind::Primary,
     )
     .with_parent_native_session_id("parent-1");
+    let native = native.with_source_format_version("3");
 
     let page = DiscoveryPage::complete(vec![native.clone()]);
 
@@ -43,6 +44,7 @@ fn complete_page_preserves_native_identity_and_provenance() {
         page.sessions[0].parent_native_session_id.as_deref(),
         Some("parent-1")
     );
+    assert_eq!(page.sessions[0].source_format_version.as_deref(), Some("3"));
     assert!(page.next_cursor.is_none());
     assert_eq!(ScanCursor::new("next").as_str(), "next");
 }

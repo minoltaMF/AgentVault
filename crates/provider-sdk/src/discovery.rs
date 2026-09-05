@@ -120,6 +120,7 @@ pub struct NativeSessionRef {
     pub provider_id: String,
     pub native_session_id: Option<String>,
     pub parent_native_session_id: Option<String>,
+    pub source_format_version: Option<String>,
     pub source_path: PathBuf,
     pub session_root: SessionRoot,
     pub kind: NativeSessionKind,
@@ -137,6 +138,7 @@ impl NativeSessionRef {
             provider_id: provider_id.into(),
             native_session_id,
             parent_native_session_id: None,
+            source_format_version: None,
             source_path: source_path.into(),
             session_root,
             kind,
@@ -145,6 +147,11 @@ impl NativeSessionRef {
 
     pub fn with_parent_native_session_id(mut self, parent: impl Into<String>) -> Self {
         self.parent_native_session_id = Some(parent.into());
+        self
+    }
+
+    pub fn with_source_format_version(mut self, version: impl Into<String>) -> Self {
+        self.source_format_version = Some(version.into());
         self
     }
 }

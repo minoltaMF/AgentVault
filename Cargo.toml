@@ -2,6 +2,7 @@
 members = [
     "crates/provider-claude",
     "crates/provider-codex",
+    "crates/provider-pi",
     "crates/provider-sdk",
     "crates/vault-io",
     "src-tauri",

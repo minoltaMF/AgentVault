@@ -1,0 +1,13 @@
+[package]
+name = "provider-pi"
+version = "0.1.0"
+description = "Read-only Pi session discovery and branch graph parsing for AgentVault"
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+provider-sdk = { path = "../provider-sdk" }
+serde_json = { version = "1", features = ["preserve_order"] }
+vault-io = { path = "../vault-io" }
+walkdir = "2"
