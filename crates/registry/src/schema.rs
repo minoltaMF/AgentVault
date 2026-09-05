@@ -2,7 +2,7 @@ use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 
 use crate::{RegistryError, RegistryResult};
 
-pub const LATEST_SCHEMA_VERSION: i64 = 1;
+pub const LATEST_SCHEMA_VERSION: i64 = 2;
 
 const MIGRATION_1: &str = r#"
 CREATE TABLE schema_migrations (
@@ -131,8 +131,130 @@ CREATE INDEX session_events_session_ordinal_idx
   ON session_events(native_session_pk, ordinal, event_id);
 "#;
 
+const MIGRATION_2: &str = r#"
+CREATE TABLE session_search_projection (
+  rowid INTEGER PRIMARY KEY REFERENCES native_sessions(pk) ON DELETE CASCADE,
+  title TEXT NOT NULL DEFAULT '',
+  project TEXT NOT NULL DEFAULT '',
+  provider TEXT NOT NULL,
+  content TEXT NOT NULL DEFAULT '',
+  tool_names TEXT NOT NULL DEFAULT '',
+  paths TEXT NOT NULL DEFAULT ''
+);
+
+CREATE VIRTUAL TABLE session_events_fts USING fts5(
+  title,
+  project,
+  provider,
+  content,
+  tool_names,
+  paths,
+  content='session_search_projection',
+  content_rowid='rowid',
+  tokenize='unicode61 remove_diacritics 2',
+  prefix='2 3'
+);
+
+CREATE VIRTUAL TABLE session_events_trigram USING fts5(
+  content,
+  paths,
+  content='session_search_projection',
+  content_rowid='rowid',
+  tokenize='trigram'
+);
+
+CREATE TRIGGER session_search_projection_ai
+AFTER INSERT ON session_search_projection BEGIN
+  INSERT INTO session_events_fts(
+    rowid, title, project, provider, content, tool_names, paths
+  ) VALUES (
+    new.rowid, new.title, new.project, new.provider, new.content, new.tool_names, new.paths
+  );
+  INSERT INTO session_events_trigram(rowid, content, paths)
+  VALUES (new.rowid, new.content, new.paths);
+END;
+
+CREATE TRIGGER session_search_projection_ad
+AFTER DELETE ON session_search_projection BEGIN
+  INSERT INTO session_events_fts(
+    session_events_fts, rowid, title, project, provider, content, tool_names, paths
+  ) VALUES (
+    'delete', old.rowid, old.title, old.project, old.provider, old.content,
+    old.tool_names, old.paths
+  );
+  INSERT INTO session_events_trigram(
+    session_events_trigram, rowid, content, paths
+  ) VALUES ('delete', old.rowid, old.content, old.paths);
+END;
+
+CREATE TRIGGER session_search_projection_au
+AFTER UPDATE ON session_search_projection BEGIN
+  INSERT INTO session_events_fts(
+    session_events_fts, rowid, title, project, provider, content, tool_names, paths
+  ) VALUES (
+    'delete', old.rowid, old.title, old.project, old.provider, old.content,
+    old.tool_names, old.paths
+  );
+  INSERT INTO session_events_fts(
+    rowid, title, project, provider, content, tool_names, paths
+  ) VALUES (
+    new.rowid, new.title, new.project, new.provider, new.content, new.tool_names, new.paths
+  );
+  INSERT INTO session_events_trigram(
+    session_events_trigram, rowid, content, paths
+  ) VALUES ('delete', old.rowid, old.content, old.paths);
+  INSERT INTO session_events_trigram(rowid, content, paths)
+  VALUES (new.rowid, new.content, new.paths);
+END;
+
+CREATE TRIGGER native_sessions_search_ai
+AFTER INSERT ON native_sessions BEGIN
+  INSERT INTO session_search_projection(
+    rowid, title, project, provider, content, tool_names, paths
+  ) VALUES (
+    new.pk,
+    COALESCE(new.title, ''),
+    COALESCE((SELECT display_name FROM projects WHERE id = new.project_id), ''),
+    new.provider_id,
+    '', '', ''
+  );
+END;
+
+CREATE TRIGGER native_sessions_search_au
+AFTER UPDATE OF title, project_id, provider_id ON native_sessions BEGIN
+  UPDATE session_search_projection
+  SET title = COALESCE(new.title, ''),
+      project = COALESCE(
+        (SELECT display_name FROM projects WHERE id = new.project_id),
+        ''
+      ),
+      provider = new.provider_id
+  WHERE rowid = new.pk;
+END;
+
+CREATE TRIGGER projects_search_au
+AFTER UPDATE OF display_name ON projects BEGIN
+  UPDATE session_search_projection
+  SET project = new.display_name
+  WHERE rowid IN (
+    SELECT pk FROM native_sessions WHERE project_id = new.id
+  );
+END;
+
+INSERT INTO session_search_projection(
+  rowid, title, project, provider, content, tool_names, paths
+)
+SELECT native_sessions.pk,
+       COALESCE(native_sessions.title, ''),
+       COALESCE(projects.display_name, ''),
+       native_sessions.provider_id,
+       '', '', ''
+FROM native_sessions
+LEFT JOIN projects ON projects.id = native_sessions.project_id;
+"#;
+
 pub(crate) fn migrate(connection: &mut Connection) -> RegistryResult<()> {
-    let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    let mut version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
     if version > LATEST_SCHEMA_VERSION {
         return Err(RegistryError::SchemaTooNew {
             found: version,
@@ -143,21 +265,44 @@ pub(crate) fn migrate(connection: &mut Connection) -> RegistryResult<()> {
         if has_application_tables(connection)? {
             return Err(RegistryError::ConflictingSchema);
         }
-        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        transaction.execute_batch(MIGRATION_1)?;
-        transaction.execute(
-            "INSERT INTO schema_migrations(version, name, applied_at)
-             VALUES (?1, ?2, CAST(strftime('%s', 'now') AS INTEGER) * 1000)",
-            params![
-                LATEST_SCHEMA_VERSION,
-                "canonical registry and source cursors"
-            ],
+        apply_migration(
+            connection,
+            1,
+            "canonical registry and source cursors",
+            MIGRATION_1,
         )?;
-        transaction.pragma_update(None, "user_version", LATEST_SCHEMA_VERSION)?;
-        transaction.commit()?;
-        return Ok(());
+        version = 1;
+    } else {
+        validate_recorded_version(connection, version)?;
     }
 
+    if version == 1 {
+        apply_migration(connection, 2, "unicode61 and trigram search", MIGRATION_2)?;
+        version = 2;
+    }
+
+    validate_recorded_version(connection, version)
+}
+
+fn apply_migration(
+    connection: &mut Connection,
+    version: i64,
+    name: &str,
+    sql: &str,
+) -> RegistryResult<()> {
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    transaction.execute_batch(sql)?;
+    transaction.execute(
+        "INSERT INTO schema_migrations(version, name, applied_at)
+         VALUES (?1, ?2, CAST(strftime('%s', 'now') AS INTEGER) * 1000)",
+        params![version, name],
+    )?;
+    transaction.pragma_update(None, "user_version", version)?;
+    transaction.commit()?;
+    Ok(())
+}
+
+fn validate_recorded_version(connection: &Connection, version: i64) -> RegistryResult<()> {
     let recorded: Option<i64> = connection
         .query_row("SELECT MAX(version) FROM schema_migrations", [], |row| {
             row.get(0)

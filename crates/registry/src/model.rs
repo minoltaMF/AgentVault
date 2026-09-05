@@ -133,3 +133,23 @@ pub struct FileProjection {
     pub cursor: SourceCursor,
     pub events: Vec<CanonicalEvent>,
 }
+
+/// Searchable text derived from one canonical session.
+///
+/// Raw provider payloads do not belong here. Callers supply only text that is safe and useful to
+/// index; canonical title, project, and provider metadata are resolved by the registry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SearchDocument {
+    pub native_session_pk: i64,
+    pub content: String,
+    pub tool_names: Vec<String>,
+    pub paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SearchHit {
+    pub native_session_pk: i64,
+    pub title: Option<String>,
+    pub project: Option<String>,
+    pub provider_id: String,
+}

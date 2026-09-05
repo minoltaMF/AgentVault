@@ -6,12 +6,13 @@
 mod error;
 mod model;
 mod schema;
+mod search;
 
 pub use error::{RegistryError, RegistryResult};
 pub use model::{
     CanonicalEvent, FileProjection, FullScanReason, MachineRecord, NativeSessionRecord,
-    ProjectRecord, ProjectionMode, SourceCursor, SourceInstanceRecord, SourceObservation,
-    SourceScanDecision,
+    ProjectRecord, ProjectionMode, SearchDocument, SearchHit, SourceCursor, SourceInstanceRecord,
+    SourceObservation, SourceScanDecision,
 };
 pub use schema::LATEST_SCHEMA_VERSION;
 
@@ -69,6 +70,8 @@ impl Registry {
         let mut statement = self.connection.prepare(
             "SELECT name FROM sqlite_schema
              WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+               AND name NOT GLOB 'session_events_fts_*'
+               AND name NOT GLOB 'session_events_trigram_*'
              ORDER BY name",
         )?;
         let names = statement
@@ -510,6 +513,20 @@ impl Registry {
             Ok(event)
         })
         .collect()
+    }
+
+    /// Replace the explicitly searchable text for one canonical session.
+    pub fn replace_search_document(&mut self, document: &SearchDocument) -> RegistryResult<()> {
+        search::replace_document(&mut self.connection, document)
+    }
+
+    /// Search canonical sessions without interpreting the input as FTS query syntax.
+    ///
+    /// Queries shorter than three Unicode scalar values use a literal substring fallback because
+    /// the trigram tokenizer cannot match them. Ranking and filters are intentionally left to the
+    /// next search-layer change.
+    pub fn search_sessions(&self, query: &str, limit: u32) -> RegistryResult<Vec<SearchHit>> {
+        search::search_sessions(&self.connection, query, limit)
     }
 }
 

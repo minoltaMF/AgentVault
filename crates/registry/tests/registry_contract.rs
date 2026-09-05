@@ -104,6 +104,9 @@ fn initializes_versioned_core_schema_with_foreign_keys() {
             "projects",
             "schema_migrations",
             "session_events",
+            "session_events_fts",
+            "session_events_trigram",
+            "session_search_projection",
             "source_files",
             "source_instances",
         ]
