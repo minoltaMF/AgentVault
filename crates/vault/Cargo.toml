@@ -1,7 +1,7 @@
 [package]
 name = "vault"
 version = "0.1.0"
-description = "Immutable snapshot manifests and content-addressed objects for AgentVault"
+description = "Immutable snapshots, content-addressed objects, and verification for AgentVault"
 edition.workspace = true
 license.workspace = true
 publish = false

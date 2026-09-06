@@ -299,7 +299,8 @@ fn decode_object(encoded: &[u8]) -> ObjectStoreResult<Vec<u8>> {
     decoder
         .by_ref()
         .take(expected.saturating_add(1))
-        .read_to_end(&mut bytes)?;
+        .read_to_end(&mut bytes)
+        .map_err(|_| ObjectStoreError::InvalidEnvelope("zlib payload could not be decoded"))?;
     let actual = bytes.len() as u64;
     if actual != expected {
         return Err(ObjectStoreError::ObjectLengthMismatch { expected, actual });
