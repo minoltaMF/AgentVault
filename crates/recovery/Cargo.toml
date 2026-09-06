@@ -1,0 +1,11 @@
+[package]
+name = "recovery"
+version = "0.1.0"
+description = "Deterministic Recovery Capsule generation for AgentVault"
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+chrono = "0.4"
+thiserror = "2"

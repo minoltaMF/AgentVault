@@ -4,6 +4,7 @@ members = [
     "crates/provider-codex",
     "crates/provider-pi",
     "crates/provider-sdk",
+    "crates/recovery",
     "crates/registry",
     "crates/resume",
     "crates/vault",

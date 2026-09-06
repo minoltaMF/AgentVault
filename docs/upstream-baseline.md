@@ -101,6 +101,7 @@ npm run tauri:build
 - Claude、Codex、Pi 的 shell-free、无 prompt 原生 ResumePlan，以及基于同 project、同 machine 的 ProjectLocation cwd 候选和保守选择。
 - 经过结构校验且不可外部修改的 snapshot manifest v1：包含来源身份、捕获一致性、前序快照、捕获时 ResumePlan、成员摘要与对象引用；manifest 只能原子新建，不能覆盖已有清单。
 - 只读 snapshot verification：重新加载 manifest，逐个读取 whole-object 或 ordered chunks，核对成员逻辑大小与聚合 SHA-256，并结构化报告缺失/损坏对象；验证不写入状态。
+- 确定性 Recovery Capsule v1：从调用方提供的结构化身份、事件、Git 摘要、事项、Artifact、checkpoint 和 provenance 离线生成固定 Markdown；选择规则、排序、去重、换行和证据质量标记均可复现，不调用 LLM、Git、文件系统或系统时钟。
 
 这些是兼容基线，不代表后续 AgentVault 的默认策略；后续新增流程必须遵循原生 Session 默认只读的边界。
 
@@ -130,14 +131,14 @@ npm run tauri:build
 - 多个辅助元数据文件仍写在 Codex 根目录，尚未迁移到独立 Vault；路径和所有权需要后续兼容设计。
 - Cursor 将大量状态放在共享 `state.vscdb`，且运行时会回写缓存；任何写操作都必须确认 Cursor 已退出并保持事务/冲突保护。
 - 更新检查、发布页链接和制品文件名仍指向或沿用 cc-sessions。当前没有 AgentVault 发布源，不能把上游 release 当作 AgentVault release。
-- Provider SDK、canonical registry、新搜索、Resume API、manifest/object store 和 snapshot verifier 尚未接入旧 Tauri/CLI 路径；ResumePlan 尚无 terminal adapter，执行前仍须由后续层完成 CLI/native source/cwd preflight。当前 verifier 只读取调用方显式指定的 manifest/object store，尚未持久化验证状态；还没有固定 4 MiB 的 append-only JSONL 分块、搜索过滤/排序、restore、Recovery Capsule 或新的默认数据目录。
+- Provider SDK、canonical registry、新搜索、Resume API、manifest/object store、snapshot verifier 和 Recovery Capsule 尚未接入旧 Tauri/CLI 路径；ResumePlan 尚无 terminal adapter，执行前仍须由后续层完成 CLI/native source/cwd preflight。当前 verifier 只读取调用方显式指定的 manifest/object store，尚未持久化验证状态；Capsule 只处理调用方提供的数据，不自动读取 registry、Git 或 snapshot，也不落盘或启动目标 Agent。还没有固定 4 MiB 的 append-only JSONL 分块、搜索过滤/排序、restore、Git checkpoint 或新的默认数据目录。
 - npm 基线审计存在 1 个 low、1 个 high；本次不升级依赖，需在独立依赖维护任务中确认可利用性和兼容性。
 - `vendor-charts` 生产 chunk 超过 Vite 默认提示阈值；当前只是体积警告。
 - 本机 Windows ARM64 未覆盖原生 Tauri 桌面链接/打包；CI 或受支持的原生环境仍是发布前必需验证。
 
 ## 后续重构边界
 
-- 下一步只增加 deterministic Recovery Capsule，不同时实现 restore、Git checkpoint 或原生 Session 写回；append-only JSONL 的固定 4 MiB 分块与增量捕获仍保持独立边界。
+- 下一步只增加 Git checkpoint，不同时实现 restore、Capsule 应用层接入或原生 Session 写回；append-only JSONL 的固定 4 MiB 分块与增量捕获仍保持独立边界。
 - Provider SDK、Pi、registry 已作为独立 workspace crate 建立，但尚未替换旧 Tauri 业务路径；接入必须保持兼容且不得触碰原生 Session。
 - 在有显式迁移方案前，保持 bundle identifier、Rust/npm package 名、CLI binary 名、应用数据目录、配置路径、SQLite 文件名和 schema 不变。
 - 原生 Agent Session 默认只读；任何写回必须复用或加强现有原子写入、事务、快照、CAS、路径安全和补偿机制。
