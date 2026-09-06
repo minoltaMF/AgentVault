@@ -61,6 +61,10 @@ pub enum ManifestError {
 pub struct Sha256Digest([u8; 32]);
 
 impl Sha256Digest {
+    pub const fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
     pub const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
