@@ -1,0 +1,9 @@
+[package]
+name = "provider-workbuddy"
+version = "0.1.0"
+description = "Read-only WorkBuddy overlay projection for AgentVault"
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]

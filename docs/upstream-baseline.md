@@ -106,6 +106,7 @@ npm run tauri:build
 - 确定性 Recovery Capsule v1：从调用方提供的结构化身份、事件、Git 摘要、事项、Artifact、checkpoint 和 provenance 离线生成固定 Markdown；选择规则、排序、去重、换行和证据质量标记均可复现，不调用 LLM、Git、文件系统或系统时钟。
 - 只读 Git checkpoint 上下文采集，以及只读 Provider Doctor 报告；后者以有界 `--version` 子进程探测 CLI，并汇总配置根、Session 根和调用方提供的运行状态。
 - 内存态 Recovery Inbox 投影：合并调用方风险信号和 Doctor 诊断，过滤非行动项，按严重度稳定排序并去重；不落库、不修复或恢复原生数据。
+- 内存态 WorkBuddy overlay：以 machine、source instance、Claude/Codex origin provider 和 native session ID 完整键绑定调用方归一化的 canonical ID、harness、transcript path、cwd、model、summary 与 activity；输入顺序不影响合并结果，同源同时间的矛盾证据会被拒绝。该投影不保存 transcript 正文，不实现独立 Provider，也不访问 WorkBuddy 文件、数据库或网络。
 
 这些是兼容基线，不代表后续 AgentVault 的默认策略；后续新增流程必须遵循原生 Session 默认只读的边界。
 
@@ -135,15 +136,15 @@ npm run tauri:build
 - 多个辅助元数据文件仍写在 Codex 根目录，尚未迁移到独立 Vault；路径和所有权需要后续兼容设计。
 - Cursor 将大量状态放在共享 `state.vscdb`，且运行时会回写缓存；任何写操作都必须确认 Cursor 已退出并保持事务/冲突保护。
 - 更新检查、发布页链接和制品文件名仍指向或沿用 cc-sessions。当前没有 AgentVault 发布源，不能把上游 release 当作 AgentVault release。
-- Provider SDK、canonical registry、新搜索、Resume API、manifest/object store、snapshot verifier、Recovery Capsule、Git context、Provider Doctor 和 Recovery Inbox 尚未接入旧 Tauri/CLI 路径；ResumePlan 尚无 terminal adapter，执行前仍须由后续层完成 CLI/native source/cwd preflight。当前 verifier 只读取调用方显式指定的 manifest/object store，尚未持久化验证状态；Capsule、Git context 与 Inbox 只处理调用方显式提供的根目录或结构化数据，不自动落盘或启动目标 Agent。还没有固定 4 MiB 的 append-only JSONL 分块、搜索过滤/排序、restore、Git checkpoint 持久化、health event 持久化或新的默认数据目录。
+- Provider SDK、canonical registry、新搜索、Resume API、manifest/object store、snapshot verifier、Recovery Capsule、Git context、Provider Doctor、Recovery Inbox 和 WorkBuddy overlay 尚未接入旧 Tauri/CLI 路径；ResumePlan 尚无 terminal adapter，执行前仍须由后续层完成 CLI/native source/cwd preflight。当前 verifier 只读取调用方显式指定的 manifest/object store，尚未持久化验证状态；Capsule、Git context 与 Inbox 只处理调用方显式提供的根目录或结构化数据，不自动落盘或启动目标 Agent。WorkBuddy overlay 也只消费调用方归一化的公开协议观察值，尚无 gateway/manifest 客户端或持久化表。还没有固定 4 MiB 的 append-only JSONL 分块、搜索过滤/排序、restore、Git checkpoint 持久化、health event 持久化或新的默认数据目录。
 - npm 基线审计存在 1 个 low、1 个 high；本次不升级依赖，需在独立依赖维护任务中确认可利用性和兼容性。
 - `vendor-charts` 生产 chunk 超过 Vite 默认提示阈值；当前只是体积警告。
 - 本机 Windows ARM64 未覆盖原生 Tauri 桌面链接/打包；CI 或受支持的原生环境仍是发布前必需验证。
 
 ## 后续重构边界
 
-- 下一步只增加 WorkBuddy overlay，不同时实现 restore、Doctor/Inbox UI、CLI JSON、health event 持久化或原生 Session 写回；append-only JSONL 的固定 4 MiB 分块与增量捕获仍保持独立边界。
-- Provider SDK、Pi、registry、health 与 app-service 已作为独立 workspace crate 建立，但尚未替换旧 Tauri 业务路径；接入必须保持兼容且不得触碰原生 Session。
+- 下一步只增加 crash、race 和 restore 测试矩阵，不同时接入 UI、CLI、WorkBuddy gateway/manifest 客户端、health event 持久化或原生 Session 写回；append-only JSONL 的固定 4 MiB 分块与增量捕获仍保持独立边界。
+- Provider SDK、Pi、WorkBuddy overlay、registry、health 与 app-service 已作为独立 workspace crate 建立，但尚未替换旧 Tauri 业务路径；接入必须保持兼容且不得触碰原生 Session。
 - 在有显式迁移方案前，保持 bundle identifier、Rust/npm package 名、CLI binary 名、应用数据目录、配置路径、SQLite 文件名和 schema 不变。
 - 原生 Agent Session 默认只读；任何写回必须复用或加强现有原子写入、事务、快照、CAS、路径安全和补偿机制。
 - 不为重构删除现有功能或弱化现有测试；每一步先建立等价回归覆盖，再移动实现。

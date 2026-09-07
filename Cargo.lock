@@ -3243,6 +3243,10 @@ name = "provider-sdk"
 version = "0.1.0"
 
 [[package]]
+name = "provider-workbuddy"
+version = "0.1.0"
+
+[[package]]
 name = "pxfm"
 version = "0.1.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
