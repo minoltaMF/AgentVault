@@ -1,0 +1,10 @@
+[package]
+name = "app-service"
+version = "0.1.0"
+description = "Application-level projections for AgentVault"
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+health = { path = "../health" }

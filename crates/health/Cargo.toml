@@ -1,0 +1,10 @@
+[package]
+name = "health"
+version = "0.1.0"
+description = "Read-only provider health diagnostics for AgentVault"
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+provider-sdk = { path = "../provider-sdk" }

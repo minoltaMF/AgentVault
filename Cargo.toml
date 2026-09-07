@@ -1,6 +1,8 @@
 [workspace]
 members = [
+    "crates/app-service",
     "crates/git-context",
+    "crates/health",
     "crates/provider-claude",
     "crates/provider-codex",
     "crates/provider-pi",
