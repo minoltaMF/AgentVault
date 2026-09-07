@@ -1,0 +1,13 @@
+[package]
+name = "git-context"
+version = "0.1.0"
+description = "Read-only Git checkpoint capture for AgentVault"
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+thiserror = "2"
+
+[dev-dependencies]
+tempfile = "3"

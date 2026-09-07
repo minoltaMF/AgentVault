@@ -1587,6 +1587,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "git-context"
+version = "0.1.0"
+dependencies = [
+ "tempfile",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "glib"
 version = "0.18.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
