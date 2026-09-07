@@ -12,6 +12,7 @@ static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 #[cfg(test)]
 thread_local! {
     static TEST_REMOVE_CREATED_TEMP_FAILURES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static TEST_CRASH_AFTER_TEMP_SYNC: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -333,6 +334,13 @@ fn replace_with_writer(
             atomic_write_not_committed(error),
         ));
     }
+
+    #[cfg(test)]
+    TEST_CRASH_AFTER_TEMP_SYNC.with(|enabled| {
+        if enabled.replace(false) {
+            std::process::exit(86);
+        }
+    });
 
     match expected {
         Some(expected) => {
@@ -680,6 +688,66 @@ fn sync_parent(path: &Path) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const CRASH_TEST_PATH_ENV: &str = "AGENTVAULT_TEST_CRASH_AFTER_TEMP_SYNC_PATH";
+
+    #[test]
+    fn crash_helper_exits_after_temp_sync_before_rename() -> AppResult<()> {
+        let Some(path) = std::env::var_os(CRASH_TEST_PATH_ENV).map(PathBuf::from) else {
+            return Ok(());
+        };
+        let expected = fingerprint(&path)?;
+        TEST_CRASH_AFTER_TEMP_SYNC.set(true);
+
+        replace_with_writer_if_unchanged(&path, &expected, |temp| {
+            temp.write_all(b"replacement after fsync\n")?;
+            Ok(())
+        })?;
+        panic!("crash injection did not terminate the helper process");
+    }
+
+    #[test]
+    fn crash_after_temp_sync_before_rename_preserves_the_original() -> AppResult<()> {
+        let root = std::env::temp_dir().join(format!(
+            "agentvault-atomic-crash-matrix-{}-{}",
+            std::process::id(),
+            chrono::Utc::now().timestamp_nanos_opt().unwrap()
+        ));
+        fs::create_dir_all(&root)?;
+        let path = root.join("active-session.jsonl");
+        fs::write(&path, b"original session\n")?;
+
+        let output = std::process::Command::new(std::env::current_exe()?)
+            .args([
+                "--exact",
+                "atomic::tests::crash_helper_exits_after_temp_sync_before_rename",
+                "--nocapture",
+            ])
+            .env(CRASH_TEST_PATH_ENV, &path)
+            .output()?;
+
+        assert_eq!(
+            output.status.code(),
+            Some(86),
+            "helper stdout: {}\nhelper stderr: {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(fs::read(&path)?, b"original session\n");
+        let temporary_files = fs::read_dir(&root)?
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .filter(|entry| entry.file_name().to_string_lossy().contains("rewrite.tmp"))
+            .collect::<Vec<_>>();
+        assert_eq!(temporary_files.len(), 1);
+        assert_eq!(
+            fs::read(temporary_files[0].path())?,
+            b"replacement after fsync\n"
+        );
+
+        fs::remove_dir_all(root).ok();
+        Ok(())
+    }
 
     #[test]
     fn overwrite_failure_removes_temporary_file() -> AppResult<()> {

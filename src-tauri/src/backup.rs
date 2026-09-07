@@ -5941,6 +5941,69 @@ mod tests {
     }
 
     #[test]
+    fn restore_compensation_continues_after_a_concurrent_target_change() -> AppResult<()> {
+        let root = temp_dir("agentvault-restore-compensation-matrix-test");
+        fs::create_dir_all(&root)?;
+        let rollout = root.join("rollout.jsonl");
+        let index = root.join("session_index.jsonl");
+        fs::write(&rollout, b"rollout before\n")?;
+        fs::write(&index, b"index before\n")?;
+        let mut snapshots = RestoreFileSnapshots::capture_owned(&[
+            ("rollout".to_string(), rollout.clone()),
+            ("session index".to_string(), index.clone()),
+        ])?;
+
+        snapshots.start("rollout")?;
+        fs::write(&rollout, b"rollout restored\n")?;
+        snapshots.finish("rollout")?;
+        snapshots.start("session index")?;
+        fs::write(&index, b"index restored\n")?;
+        snapshots.finish("session index")?;
+
+        // A native writer changes the index after our restore write. Compensation must keep that
+        // concurrent data while still rolling back other files whose fingerprints match.
+        fs::write(&index, b"index written concurrently\n")?;
+        let errors = snapshots.compensate_except(&[]);
+
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].contains("拒绝覆盖并发数据"), "{}", errors[0]);
+        assert_eq!(fs::read(&index)?, b"index written concurrently\n");
+        assert_eq!(fs::read(&rollout)?, b"rollout before\n");
+
+        snapshots.cleanup()?;
+        fs::remove_dir_all(root).ok();
+        Ok(())
+    }
+
+    #[test]
+    fn restore_compensation_recreates_removed_files_and_removes_new_files() -> AppResult<()> {
+        let root = temp_dir("agentvault-restore-presence-matrix-test");
+        fs::create_dir_all(&root)?;
+        let previously_present = root.join("previous.jsonl");
+        let previously_absent = root.join("new.jsonl");
+        fs::write(&previously_present, b"original\n")?;
+        let mut snapshots = RestoreFileSnapshots::capture_owned(&[
+            ("previously present".to_string(), previously_present.clone()),
+            ("previously absent".to_string(), previously_absent.clone()),
+        ])?;
+
+        snapshots.start("previously present")?;
+        fs::remove_file(&previously_present)?;
+        snapshots.finish("previously present")?;
+        snapshots.start("previously absent")?;
+        fs::write(&previously_absent, b"new restore output\n")?;
+        snapshots.finish("previously absent")?;
+
+        assert!(snapshots.compensate_except(&[]).is_empty());
+        assert_eq!(fs::read(&previously_present)?, b"original\n");
+        assert!(!previously_absent.exists());
+
+        snapshots.cleanup()?;
+        fs::remove_dir_all(root).ok();
+        Ok(())
+    }
+
+    #[test]
     fn codex_restore_log_constraint_failure_preserves_all_existing_state() -> AppResult<()> {
         let root = temp_dir("cc-session-manager-codex-restore-rollback-test");
         let backup = root.join("backup");

@@ -426,6 +426,7 @@ npm run tauri:dev
 
 ```bash
 npm run build
+npm run test:safety
 npm run cli:check
 cargo test --workspace --no-default-features --lib
 cargo test -p registry --test registry_contract
@@ -439,6 +440,8 @@ cargo test -p health
 cargo test -p app-service
 cargo test -p provider-workbuddy
 ```
+
+`npm run test:safety` 运行 internal alpha 的 crash、race 与 restore 门禁；逐项覆盖与尚未实现的场景见 [安全测试矩阵](docs/safety-test-matrix.md)。
 
 ### 打包
 

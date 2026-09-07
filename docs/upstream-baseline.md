@@ -47,6 +47,8 @@ cargo test -p resume
 cargo test -p vault
 cargo test -p health
 cargo test -p app-service
+cargo test -p provider-workbuddy
+npm run test:safety
 ```
 
 CLI：
@@ -107,6 +109,7 @@ npm run tauri:build
 - 只读 Git checkpoint 上下文采集，以及只读 Provider Doctor 报告；后者以有界 `--version` 子进程探测 CLI，并汇总配置根、Session 根和调用方提供的运行状态。
 - 内存态 Recovery Inbox 投影：合并调用方风险信号和 Doctor 诊断，过滤非行动项，按严重度稳定排序并去重；不落库、不修复或恢复原生数据。
 - 内存态 WorkBuddy overlay：以 machine、source instance、Claude/Codex origin provider 和 native session ID 完整键绑定调用方归一化的 canonical ID、harness、transcript path、cwd、model、summary 与 activity；输入顺序不影响合并结果，同源同时间的矛盾证据会被拒绝。该投影不保存 transcript 正文，不实现独立 Provider，也不访问 WorkBuddy 文件、数据库或网络。
+- 可独立运行的 crash、race 与 restore 安全矩阵：真实子进程模拟 temp fsync 后、rename 前退出，并复用现有 CAS、object/manifest 并发、registry cursor 和兼容 restore 补偿测试组成 11 项门禁。矩阵只操作临时脱敏夹具；尚无生产实现的场景在文档中保持未覆盖状态。
 
 这些是兼容基线，不代表后续 AgentVault 的默认策略；后续新增流程必须遵循原生 Session 默认只读的边界。
 
@@ -140,10 +143,11 @@ npm run tauri:build
 - npm 基线审计存在 1 个 low、1 个 high；本次不升级依赖，需在独立依赖维护任务中确认可利用性和兼容性。
 - `vendor-charts` 生产 chunk 超过 Vite 默认提示阈值；当前只是体积警告。
 - 本机 Windows ARM64 未覆盖原生 Tauri 桌面链接/打包；CI 或受支持的原生环境仍是发布前必需验证。
+- 当前安全矩阵不能代替尚未实现的 append-only JSONL 分块、SQLite online backup、snapshot DB reconcile、startup watcher reconcile 或新 Vault provider-aware restore；这些场景仍不得标记为 v0.1 验收通过。
 
 ## 后续重构边界
 
-- 下一步只增加 crash、race 和 restore 测试矩阵，不同时接入 UI、CLI、WorkBuddy gateway/manifest 客户端、health event 持久化或原生 Session 写回；append-only JSONL 的固定 4 MiB 分块与增量捕获仍保持独立边界。
+- 下一步只准备 internal alpha `0.1.0-alpha.1` 的版本一致性、发布说明和受支持平台验证，不借发布提交补做 UI/CLI 接线、WorkBuddy gateway/manifest 客户端、health event 持久化或原生 Session 写回。
 - Provider SDK、Pi、WorkBuddy overlay、registry、health 与 app-service 已作为独立 workspace crate 建立，但尚未替换旧 Tauri 业务路径；接入必须保持兼容且不得触碰原生 Session。
 - 在有显式迁移方案前，保持 bundle identifier、Rust/npm package 名、CLI binary 名、应用数据目录、配置路径、SQLite 文件名和 schema 不变。
 - 原生 Agent Session 默认只读；任何写回必须复用或加强现有原子写入、事务、快照、CAS、路径安全和补偿机制。

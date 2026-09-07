@@ -12,6 +12,7 @@
     "test": "npm run test:frontend && npm run test:rust",
     "test:frontend": "tsx --test \"src/lib/*.test.ts\"",
     "test:rust": "cargo test --workspace --all-targets",
+    "test:safety": "node scripts/test-safety-matrix.mjs",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
