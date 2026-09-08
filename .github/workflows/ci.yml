@@ -45,6 +45,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Validate release metadata
+        run: npm run release:check
+
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
 
@@ -53,6 +56,9 @@ jobs:
 
       - name: Run tests
         run: npm test
+
+      - name: Run safety matrix
+        run: npm run test:safety
 
       - name: Check all Rust targets
         run: cargo check --workspace --all-targets
@@ -78,6 +84,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Validate release metadata
+        run: npm run release:check
+
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
 
@@ -86,6 +95,9 @@ jobs:
 
       - name: Run tests
         run: npm test
+
+      - name: Run safety matrix
+        run: npm run test:safety
 
       - name: Check all Rust targets
         run: cargo check --workspace --all-targets

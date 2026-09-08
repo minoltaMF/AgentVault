@@ -1,4 +1,6 @@
 fn main() {
+    println!("cargo:rerun-if-env-changed=AGENTVAULT_RELEASE_REPOSITORY");
+
     #[cfg(feature = "desktop")]
     {
         println!("cargo:rerun-if-changed=tauri.conf.json");

@@ -139,7 +139,7 @@ pub fn reveal_cwd(cwd: String) -> AppResult<()> {
 
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub fn open_latest_release_page() -> AppResult<()> {
-    open_external("https://github.com/ccpopy/cc-sessions/releases/latest")
+    open_external(&crate::release_channel::releases_page_url()?)
 }
 
 fn open_external(url: &str) -> AppResult<()> {

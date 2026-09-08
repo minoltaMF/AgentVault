@@ -198,8 +198,8 @@ async function createPortablePackage() {
         : "- Windows 10/11 with Microsoft Edge WebView2 Runtime.",
     "",
     "This is a portable package. It does not install shortcuts or an uninstaller.",
-    "The cc-session-manager.portable marker keeps in-app updates in this extracted folder.",
-    "When an update is installed, the app closes, replaces the executable in place, and restarts automatically.",
+    "The cc-session-manager.portable marker identifies this extracted compatibility layout.",
+    "In-app replacement is available only when the build has an explicit AgentVault release channel; internal alpha builds leave it disabled.",
     "",
   ].join("\n");
   await fs.writeFile(path.join(stage, "README.txt"), readme, "utf8");

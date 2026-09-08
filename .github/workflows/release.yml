@@ -53,39 +53,10 @@ jobs:
         run: npm ci
 
       - name: Validate release metadata
-        shell: pwsh
-        run: |
-          $tagVersion = "${{ github.ref_name }}".TrimStart("v")
-          $packageVersion = node -p "require('./package.json').version"
-          $tauriVersion = node -p "require('./src-tauri/tauri.conf.json').version"
-          $cargoLine = Select-String -Path "src-tauri/Cargo.toml" -Pattern '^version = "([^"]+)"' | Select-Object -First 1
-          $cargoVersion = $cargoLine.Matches[0].Groups[1].Value
+        run: npm run release:check -- --tag "${{ github.ref_name }}"
 
-          if ($packageVersion -ne $tagVersion) {
-            throw "package.json version $packageVersion does not match tag $tagVersion"
-          }
-          if ($tauriVersion -ne $tagVersion) {
-            throw "tauri.conf.json version $tauriVersion does not match tag $tagVersion"
-          }
-          if ($cargoVersion -ne $tagVersion) {
-            throw "Cargo.toml version $cargoVersion does not match tag $tagVersion"
-          }
-
-          $requiredIcons = @(
-            "src-tauri/icons/32x32.png",
-            "src-tauri/icons/128x128.png",
-            "src-tauri/icons/128x128@2x.png",
-            "src-tauri/icons/icon.ico",
-            "src-tauri/icons/icon.icns"
-          )
-          foreach ($icon in $requiredIcons) {
-            if (!(Test-Path $icon)) {
-              throw "Missing required Tauri icon: $icon"
-            }
-            if ((Get-Item $icon).Length -le 0) {
-              throw "Required Tauri icon is empty: $icon"
-            }
-          }
+      - name: Run safety matrix
+        run: npm run test:safety
 
       - name: Build frontend
         run: npm run build
@@ -98,8 +69,8 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: AgentVault ${{ github.ref_name }}
           generateReleaseNotes: true
-          releaseDraft: false
-          prerelease: false
+          releaseDraft: ${{ contains(github.ref_name, '-') }}
+          prerelease: ${{ contains(github.ref_name, '-') }}
 
       - name: Create CLI package
         shell: pwsh

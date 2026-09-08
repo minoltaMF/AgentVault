@@ -10,6 +10,8 @@ AgentVault 用来管理 Codex、Claude Code、OpenCode 和 Cursor 保存在本�
 
 当前仓库以 [cc-sessions](https://github.com/ccpopy/cc-sessions) 的锁定 commit 为 fork 基线，尚未配置独立的 AgentVault 发布源。上方徽章和下方 Releases 链接只指向上游兼容基线；来源、许可证和验证范围见 [上游基线](docs/upstream-baseline.md) 与 [第三方声明](THIRD_PARTY_NOTICES.md)。
 
+当前版本为 `0.1.0-alpha.1` internal alpha source candidate；范围、平台状态和未覆盖能力见 [发布说明](docs/releases/0.1.0-alpha.1.md)。
+
 [查看功能](#功能模块) · [进阶功能](#进阶功能) · [常见问题](#常见问题) · [开发与打包](#开发与打包)
 
 ![AgentVault 模拟数据截图](img/readme-screenshot.png)
@@ -49,7 +51,7 @@ Cursor 的会话存在一个共享数据库里，改动方式和其他三个工�
 
 ## 安装
 
-AgentVault 目前没有独立发布包。若要验证上游兼容基线，可前往 [cc-sessions Releases](https://github.com/ccpopy/cc-sessions/releases/latest)；下列制品名称是为兼容而保留的上游名称，本轮不迁移包名、binary 名或安装标识。
+AgentVault 目前没有公开稳定包。`0.1.0-alpha.1` 只作为内部源码候选；应从同一内部渠道取得与目标 commit 对应的制品，不能把 [cc-sessions Releases](https://github.com/ccpopy/cc-sessions/releases/latest) 中的上游程序当作 AgentVault。下列制品名称因兼容性而保留，本轮不迁移包名、binary 名或安装标识。
 
 | 系统与用途 | 推荐下载 | 说明 |
 | --- | --- | --- |
@@ -86,12 +88,12 @@ Release 最下方的 `Source code (zip)` 和 `Source code (tar.gz)` 是 GitHub �
 
 ### 更新
 
-所有桌面版都可以检查 GitHub Release。Windows 安装版和便携版还可以校验下载文件并自动安装，便携版会替换当前解压目录中的程序文件。macOS、Linux 和命令行自带的网页界面会提供下载入口，不会自动替换当前程序。
+Internal alpha 默认不配置独立更新源，手动检查不会访问或安装上游 cc-sessions Release。后续受控稳定构建只有在编译时显式配置 AgentVault 仓库后才启用更新入口；当前版本请从原 internal alpha 分发渠道取得后续构建。
 
 ## 数据与安全
 
 - 浏览、搜索和预览不会修改会话。
-- AgentVault 不要求账号，也不会把会话上传到第三方服务。当前基线只有检查更新或打开发布页时会访问 GitHub。
+- AgentVault 不要求账号，也不会把会话上传到第三方服务。Internal alpha 默认未配置更新源；只有打开文档中的外部链接，或受控构建显式启用 AgentVault Release 渠道时才会访问 GitHub。
 - 编辑前会保存快照，可以逐步撤销，也可以恢复到编辑前状态。
 - 移动目录会检查目标冲突和写入结果。失败时会尝试恢复原状态。
 - OpenCode 和 Cursor 的会话包只包含所选会话的数据，不包含账号信息、登录凭据或本机分享密钥。Cursor 的 `state.vscdb` 里混有凭据和全部工作区状态，因此备份和会话包都只取该会话自己的记录，不会整库复制。
@@ -373,14 +375,14 @@ Cursor 的子会话由主会话持有引用，单独删掉会让主会话指向�
 <details>
 <summary>Windows 提示“已保护你的电脑”怎么办？</summary>
 
-若要验证上游兼容制品，请先确认文件来自 [cc-sessions Releases](https://github.com/ccpopy/cc-sessions/releases/latest)。确认无误后，可以在提示窗口中选择“更多信息”，再选择继续运行；如果文件来源不明，请取消运行。
+Internal alpha 仅运行来自约定内部渠道、且能对应到已验证 commit 的制品。cc-sessions Releases 是独立的上游兼容基线，不是 AgentVault 发布源；若文件来源或校验信息不明，请取消运行。
 
 </details>
 
 <details>
 <summary>macOS 提示应用无法打开怎么办？</summary>
 
-如果系统阻止未签名应用，可以在确认文件来自可信 Release 后移除隔离标记。下列路径对应当前上游兼容制品；未来 AgentVault 独立制品的应用名可能不同：
+如果系统阻止未签名应用，只能在确认文件来自约定内部渠道并核对 commit 后移除隔离标记。下列路径对应当前兼容标识；未来 AgentVault 独立制品的应用名可能不同：
 
 ```bash
 xattr -d com.apple.quarantine "/Applications/CC Sessions.app"
@@ -427,6 +429,7 @@ npm run tauri:dev
 ```bash
 npm run build
 npm run test:safety
+npm run release:check
 npm run cli:check
 cargo test --workspace --no-default-features --lib
 cargo test -p registry --test registry_contract

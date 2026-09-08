@@ -305,7 +305,7 @@ export function SettingsSheet({ trigger }: Props) {
               <div className="min-w-0">
                 <Label className="text-sm font-medium">版本更新</Label>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  检查 GitHub Release 更新。
+                  仅检查构建时明确配置的 AgentVault Release；internal alpha 默认不联网检查。
                 </p>
               </div>
               <Button

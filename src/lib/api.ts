@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { copyText } from "@/lib/clipboard";
 import { isTauriRuntime, isWebRuntime, webuiApiToken } from "@/lib/runtime";
 import { compareVersions, normalizeVersion } from "@/lib/version";
+import { latestReleaseApiUrl, releasesPageUrl } from "@/lib/releaseChannel";
 
 async function invokeCommand<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   if (isTauriRuntime()) {
@@ -929,7 +930,7 @@ export const api = {
 
     const [currentVersion, response] = await Promise.all([
       invokeCommand<string>("app_version"),
-      fetch("https://api.github.com/repos/ccpopy/cc-sessions/releases/latest", {
+      fetch(latestReleaseApiUrl(), {
         headers: { Accept: "application/vnd.github+json" },
       }),
     ]);
@@ -968,7 +969,7 @@ export const api = {
   saveSettings: (settings: Settings) => invokeCommand<void>("save_settings", { settings }),
   openLatestReleasePage: async () => {
     if (isWebRuntime()) {
-      window.open("https://github.com/ccpopy/cc-sessions/releases/latest", "_blank", "noopener,noreferrer");
+      window.open(releasesPageUrl(), "_blank", "noopener,noreferrer");
       return;
     }
     return invokeCommand<void>("open_latest_release_page");

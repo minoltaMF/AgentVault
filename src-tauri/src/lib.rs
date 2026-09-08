@@ -35,6 +35,7 @@ pub mod path_safety;
 pub mod paths;
 pub mod provenance;
 pub mod provider_sync;
+pub(crate) mod release_channel;
 pub mod repair;
 pub mod rollout;
 pub mod sessions;

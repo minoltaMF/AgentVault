@@ -17,7 +17,7 @@
 - 前端：React 18、TypeScript 5、Vite 6、React Router、Zustand、Radix UI、Tailwind CSS。
 - 本地数据访问：`rusqlite 0.32`（bundled SQLite）、JSON/JSONL 文件、Tauri 文件与对话框插件。
 - CLI 与 Web UI：Rust binary `cc-sessions` 加同一套前端静态资源。
-- 包版本：npm package 与 Rust package 均为 `0.6.3`。名称仍为 `cc-session-manager`，本轮不做兼容性迁移。
+- 上游基线包版本为 `0.6.3`；当前 AgentVault internal alpha 版本为 `0.1.0-alpha.1`。npm/Rust package 名仍为 `cc-session-manager`，本轮不做兼容性迁移。
 - Node.js 要求：20 或更高版本；依赖安装以根目录 `package-lock.json` 为准。
 
 ## 构建与测试命令
@@ -49,6 +49,7 @@ cargo test -p health
 cargo test -p app-service
 cargo test -p provider-workbuddy
 npm run test:safety
+npm run release:check
 ```
 
 CLI：
@@ -138,7 +139,7 @@ npm run tauri:build
 - 继承代码包含编辑、删除、恢复、移动、修复和数据库清理等写操作；它们不能被视为 AgentVault 后续架构的默认只读行为。
 - 多个辅助元数据文件仍写在 Codex 根目录，尚未迁移到独立 Vault；路径和所有权需要后续兼容设计。
 - Cursor 将大量状态放在共享 `state.vscdb`，且运行时会回写缓存；任何写操作都必须确认 Cursor 已退出并保持事务/冲突保护。
-- 更新检查、发布页链接和制品文件名仍指向或沿用 cc-sessions。当前没有 AgentVault 发布源，不能把上游 release 当作 AgentVault release。
+- 制品文件名继续沿用 cc-sessions 兼容名称。Internal alpha 没有 AgentVault 独立更新源，运行时默认禁用更新 API/发布页入口，不会回退到 cc-sessions Release；不能把上游 release 当作 AgentVault release。
 - Provider SDK、canonical registry、新搜索、Resume API、manifest/object store、snapshot verifier、Recovery Capsule、Git context、Provider Doctor、Recovery Inbox 和 WorkBuddy overlay 尚未接入旧 Tauri/CLI 路径；ResumePlan 尚无 terminal adapter，执行前仍须由后续层完成 CLI/native source/cwd preflight。当前 verifier 只读取调用方显式指定的 manifest/object store，尚未持久化验证状态；Capsule、Git context 与 Inbox 只处理调用方显式提供的根目录或结构化数据，不自动落盘或启动目标 Agent。WorkBuddy overlay 也只消费调用方归一化的公开协议观察值，尚无 gateway/manifest 客户端或持久化表。还没有固定 4 MiB 的 append-only JSONL 分块、搜索过滤/排序、restore、Git checkpoint 持久化、health event 持久化或新的默认数据目录。
 - npm 基线审计存在 1 个 low、1 个 high；本次不升级依赖，需在独立依赖维护任务中确认可利用性和兼容性。
 - `vendor-charts` 生产 chunk 超过 Vite 默认提示阈值；当前只是体积警告。
@@ -147,7 +148,7 @@ npm run tauri:build
 
 ## 后续重构边界
 
-- 下一步只准备 internal alpha `0.1.0-alpha.1` 的版本一致性、发布说明和受支持平台验证，不借发布提交补做 UI/CLI 接线、WorkBuddy gateway/manifest 客户端、health event 持久化或原生 Session 写回。
+- Internal alpha `0.1.0-alpha.1` 只完成版本一致性、发布说明、更新渠道隔离和多平台 CI 门禁；它不补做 UI/CLI 接线、WorkBuddy gateway/manifest 客户端、health event 持久化或原生 Session 写回。
 - Provider SDK、Pi、WorkBuddy overlay、registry、health 与 app-service 已作为独立 workspace crate 建立，但尚未替换旧 Tauri 业务路径；接入必须保持兼容且不得触碰原生 Session。
 - 在有显式迁移方案前，保持 bundle identifier、Rust/npm package 名、CLI binary 名、应用数据目录、配置路径、SQLite 文件名和 schema 不变。
 - 原生 Agent Session 默认只读；任何写回必须复用或加强现有原子写入、事务、快照、CAS、路径安全和补偿机制。

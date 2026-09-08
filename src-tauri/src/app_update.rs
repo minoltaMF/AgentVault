@@ -10,7 +10,6 @@ use sha2::{Digest, Sha256};
 #[cfg(target_os = "windows")]
 mod windows;
 
-const LATEST_RELEASE_API: &str = "https://api.github.com/repos/ccpopy/cc-sessions/releases/latest";
 const UPDATE_DIR_PREFIX: &str = "cc-sessions-update-";
 const UPDATE_HELPER_FLAG: &str = "--cc-apply-update";
 
@@ -239,13 +238,14 @@ fn build_update_info(
 }
 
 async fn fetch_latest_release() -> AppResult<GithubRelease> {
+    let release_api = crate::release_channel::latest_release_api_url()?;
     let client = reqwest::Client::builder()
-        .user_agent(format!("cc-sessions/{}", env!("CARGO_PKG_VERSION")))
+        .user_agent(format!("AgentVault/{}", env!("CARGO_PKG_VERSION")))
         .timeout(Duration::from_secs(30))
         .build()
         .map_err(|error| AppError::Other(format!("创建更新请求失败: {error}")))?;
     let response = client
-        .get(LATEST_RELEASE_API)
+        .get(release_api)
         .header("Accept", "application/vnd.github+json")
         .send()
         .await
@@ -278,7 +278,7 @@ async fn download_asset(asset: &GithubAsset, update_dir: &Path) -> AppResult<Pat
         .ok_or_else(|| AppError::Other("Release 更新包缺少 SHA-256 校验值".to_string()))?;
 
     let client = reqwest::Client::builder()
-        .user_agent(format!("cc-sessions/{}", env!("CARGO_PKG_VERSION")))
+        .user_agent(format!("AgentVault/{}", env!("CARGO_PKG_VERSION")))
         .timeout(Duration::from_secs(5 * 60))
         .build()
         .map_err(|error| AppError::Other(format!("创建下载请求失败: {error}")))?;
