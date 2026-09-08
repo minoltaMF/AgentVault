@@ -71,6 +71,7 @@ jobs:
           generateReleaseNotes: true
           releaseDraft: ${{ contains(github.ref_name, '-') }}
           prerelease: ${{ contains(github.ref_name, '-') }}
+          args: ${{ contains(github.ref_name, '-') && matrix.platform == 'windows-latest' && '--bundles nsis' || '' }}
 
       - name: Create CLI package
         shell: pwsh

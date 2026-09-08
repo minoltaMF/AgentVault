@@ -17,7 +17,7 @@
 - 前端：React 18、TypeScript 5、Vite 6、React Router、Zustand、Radix UI、Tailwind CSS。
 - 本地数据访问：`rusqlite 0.32`（bundled SQLite）、JSON/JSONL 文件、Tauri 文件与对话框插件。
 - CLI 与 Web UI：Rust binary `cc-sessions` 加同一套前端静态资源。
-- 上游基线包版本为 `0.6.3`；当前 AgentVault internal alpha 版本为 `0.1.0-alpha.1`。npm/Rust package 名仍为 `cc-session-manager`，本轮不做兼容性迁移。
+- 上游基线包版本为 `0.6.3`；当前 AgentVault internal alpha 版本为 `0.1.0-alpha.2`。npm/Rust package 名仍为 `cc-session-manager`，本轮不做兼容性迁移。
 - Node.js 要求：20 或更高版本；依赖安装以根目录 `package-lock.json` 为准。
 
 ## 构建与测试命令
@@ -148,7 +148,7 @@ npm run tauri:build
 
 ## 后续重构边界
 
-- Internal alpha `0.1.0-alpha.1` 只完成版本一致性、发布说明、更新渠道隔离和多平台 CI 门禁；它不补做 UI/CLI 接线、WorkBuddy gateway/manifest 客户端、health event 持久化或原生 Session 写回。
+- Internal alpha `0.1.0-alpha.2` 只完成版本一致性、发布说明、更新渠道隔离、多平台 CI 门禁及预发布 Windows NSIS 打包修复；它不补做 UI/CLI 接线、WorkBuddy gateway/manifest 客户端、health event 持久化或原生 Session 写回。
 - Provider SDK、Pi、WorkBuddy overlay、registry、health 与 app-service 已作为独立 workspace crate 建立，但尚未替换旧 Tauri 业务路径；接入必须保持兼容且不得触碰原生 Session。
 - 在有显式迁移方案前，保持 bundle identifier、Rust/npm package 名、CLI binary 名、应用数据目录、配置路径、SQLite 文件名和 schema 不变。
 - 原生 Agent Session 默认只读；任何写回必须复用或加强现有原子写入、事务、快照、CAS、路径安全和补偿机制。

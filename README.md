@@ -10,7 +10,7 @@ AgentVault 用来管理 Codex、Claude Code、OpenCode 和 Cursor 保存在本�
 
 当前仓库以 [cc-sessions](https://github.com/ccpopy/cc-sessions) 的锁定 commit 为 fork 基线，尚未配置独立的 AgentVault 发布源。上方徽章和下方 Releases 链接只指向上游兼容基线；来源、许可证和验证范围见 [上游基线](docs/upstream-baseline.md) 与 [第三方声明](THIRD_PARTY_NOTICES.md)。
 
-当前版本为 `0.1.0-alpha.1` internal alpha source candidate；范围、平台状态和未覆盖能力见 [发布说明](docs/releases/0.1.0-alpha.1.md)。
+当前版本为 `0.1.0-alpha.2` internal alpha source candidate；范围、平台状态和未覆盖能力见 [发布说明](docs/releases/0.1.0-alpha.2.md)。
 
 [查看功能](#功能模块) · [进阶功能](#进阶功能) · [常见问题](#常见问题) · [开发与打包](#开发与打包)
 
@@ -51,7 +51,7 @@ Cursor 的会话存在一个共享数据库里，改动方式和其他三个工�
 
 ## 安装
 
-AgentVault 目前没有公开稳定包。`0.1.0-alpha.1` 只作为内部源码候选；应从同一内部渠道取得与目标 commit 对应的制品，不能把 [cc-sessions Releases](https://github.com/ccpopy/cc-sessions/releases/latest) 中的上游程序当作 AgentVault。下列制品名称因兼容性而保留，本轮不迁移包名、binary 名或安装标识。
+AgentVault 目前没有公开稳定包。`0.1.0-alpha.2` 只作为内部源码候选；应从同一内部渠道取得与目标 commit 对应的制品，不能把 [cc-sessions Releases](https://github.com/ccpopy/cc-sessions/releases/latest) 中的上游程序当作 AgentVault。下列制品名称因兼容性而保留，本轮不迁移包名、binary 名或安装标识。
 
 | 系统与用途 | 推荐下载 | 说明 |
 | --- | --- | --- |

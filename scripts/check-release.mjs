@@ -23,6 +23,7 @@ const packageLock = readJson("package-lock.json");
 const tauriConfig = readJson("src-tauri/tauri.conf.json");
 const cargoManifest = read("src-tauri/Cargo.toml");
 const cargoLock = read("Cargo.lock");
+const releaseWorkflow = read(".github/workflows/release.yml");
 const license = read("LICENSE");
 const notices = read("THIRD_PARTY_NOTICES.md");
 const version = packageJson.version;
@@ -60,6 +61,11 @@ expectMatch(
   "locked upstream commit",
   notices,
   /1c912b2bb35e328881f543dfef1eeb5ff510f2bf/,
+);
+expectMatch(
+  "Windows prerelease NSIS bundle",
+  releaseWorkflow,
+  /args:\s*\$\{\{\s*contains\(github\.ref_name, '-'\)\s*&&\s*matrix\.platform == 'windows-latest'\s*&&\s*'--bundles nsis'\s*\|\|\s*''\s*\}\}/,
 );
 
 for (const source of [
