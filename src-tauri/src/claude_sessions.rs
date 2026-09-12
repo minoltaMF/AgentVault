@@ -287,7 +287,10 @@ pub fn validate_main_transcript(
     Ok(())
 }
 
-fn parse_session(path: &Path, cancel: Option<&AtomicBool>) -> AppResult<Option<SessionSummary>> {
+pub(crate) fn parse_session(
+    path: &Path,
+    cancel: Option<&AtomicBool>,
+) -> AppResult<Option<SessionSummary>> {
     let is_subagent = is_agent_session(path);
     let file = File::open(path)?;
     let reader = BufReader::new(file);

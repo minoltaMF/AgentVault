@@ -8,8 +8,10 @@ pub mod claude_memory;
 pub mod claude_sessions;
 pub mod claude_transfer;
 pub(crate) mod codex_app_server;
+pub mod codex_delete_snapshot;
 pub mod codex_projects;
 pub mod codex_rollout_cwd;
+pub(crate) mod codex_writer_guard;
 #[cfg(feature = "desktop")]
 pub mod commands;
 pub mod content_search;
@@ -43,6 +45,7 @@ pub mod settings;
 pub mod state_db;
 pub mod stats;
 pub mod webui;
+pub mod workbench_scan;
 
 #[cfg(feature = "desktop")]
 use tauri::Manager;
@@ -90,6 +93,9 @@ pub fn run() {
             fs_ops::open_latest_release_page,
             fs_ops::copy_resume_command,
             commands::list_sessions,
+            commands::start_workbench_scan,
+            commands::workbench_scan_status,
+            commands::cancel_workbench_scan,
             commands::group_sessions_by_project,
             commands::search_sessions,
             commands::start_content_search,
@@ -123,6 +129,10 @@ pub fn run() {
             commands::export_session_markdown,
             commands::create_backup,
             commands::list_backups,
+            commands::list_delete_snapshots,
+            commands::inspect_delete_snapshot,
+            commands::verify_delete_snapshot,
+            commands::restore_delete_snapshot,
             commands::open_backup,
             commands::restore_session,
             commands::restore_all,

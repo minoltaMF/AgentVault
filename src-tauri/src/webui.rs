@@ -189,6 +189,17 @@ fn dispatch_invoke(state: &WebuiState, command: &str, args: Value) -> AppResult<
             to_result_value(settings::validate_cursor_dir(string_arg(&args, "path")?))
         }
         "default_cursor_dir" => to_value(settings::default_cursor_dir()),
+        "start_workbench_scan" => to_result_value(crate::workbench_scan::start_workbench_scan(
+            string_arg(&args, "provider")?,
+            string_arg(&args, "codexDir")?,
+            string_arg(&args, "claudeDir")?,
+        )),
+        "workbench_scan_status" => to_result_value(crate::workbench_scan::workbench_scan_status(
+            arg(&args, "jobId")?,
+        )),
+        "cancel_workbench_scan" => to_result_value(crate::workbench_scan::cancel_workbench_scan(
+            arg(&args, "jobId")?,
+        )),
         "list_sessions" => to_result_value(sessions::list_sessions_with_dirs(
             opt_string_arg(&args, "provider")?,
             provider_dirs_arg(&args)?,
@@ -372,6 +383,28 @@ fn dispatch_invoke(state: &WebuiState, command: &str, args: Value) -> AppResult<
             opt_string_arg(&args, "name")?,
             opt_string_arg(&args, "note")?,
         )),
+        "list_delete_snapshots" => to_result_value(
+            crate::codex_delete_snapshot::list_delete_snapshots(&string_arg(&args, "backupDir")?),
+        ),
+        "inspect_delete_snapshot" => {
+            to_result_value(crate::codex_delete_snapshot::inspect_delete_snapshot(
+                &string_arg(&args, "backupDir")?,
+                &string_arg(&args, "snapshotPath")?,
+            ))
+        }
+        "verify_delete_snapshot" => {
+            to_result_value(crate::codex_delete_snapshot::verify_delete_snapshot(
+                &string_arg(&args, "backupDir")?,
+                &string_arg(&args, "snapshotPath")?,
+            ))
+        }
+        "restore_delete_snapshot" => {
+            to_result_value(crate::codex_delete_snapshot::restore_delete_snapshot(
+                &string_arg(&args, "backupDir")?,
+                &string_arg(&args, "snapshotPath")?,
+                &string_arg(&args, "output")?,
+            ))
+        }
         "list_backups" => to_result_value(backup::list_backups(
             string_arg(&args, "backupDir")?,
             opt_string_arg(&args, "provider")?,
@@ -551,10 +584,11 @@ fn dispatch_invoke(state: &WebuiState, command: &str, args: Value) -> AppResult<
             string_arg(&args, "targetBranchId")?,
             &state.family_lock,
         )),
-        "delete_family_branch" => to_result_value(repair::delete_family_branch_with_lock(
+        "delete_family_branch" => to_result_value(repair::delete_family_branch_with_backup(
             string_arg(&args, "codexDir")?,
             string_arg(&args, "familyId")?,
             string_arg(&args, "branchId")?,
+            opt_string_arg(&args, "backupDir")?,
             &state.family_lock,
         )),
         "get_family_branch_sync_states" => {
@@ -889,6 +923,7 @@ fn provider_dirs_arg(args: &Value) -> AppResult<crate::models::ProviderDirs> {
         opencode_dir: opt_string_arg(args, "opencodeDir")?,
         cursor_dir: opt_string_arg(args, "cursorDir")?,
         cursor_agent_dir: None,
+        backup_dir: opt_string_arg(args, "backupDir")?,
     })
 }
 
@@ -1025,6 +1060,57 @@ mod tests {
             api_token: "test-token".to_string(),
             default_provider: "codex".to_string(),
         }
+    }
+
+    #[test]
+    fn webui_delete_snapshot_commands_keep_scope_and_do_not_write_on_invalid_restore(
+    ) -> AppResult<()> {
+        let root = temp_codex_dir("webui-delete-snapshots");
+        fs::create_dir_all(&root)?;
+        let root = root.canonicalize()?;
+        let state = test_state(&root);
+        let empty = dispatch_invoke(
+            &state,
+            "list_delete_snapshots",
+            json!({"backupDir": root.to_string_lossy()}),
+        )?;
+        assert_eq!(empty, json!([]));
+        let snapshot = root.join("codex-delete-snapshots/delete-unfinished");
+        fs::create_dir_all(&snapshot)?;
+        let args = json!({"backupDir": root.to_string_lossy(), "snapshotPath": snapshot.to_string_lossy(), "output": root.join("restored").to_string_lossy()});
+        let list = dispatch_invoke(&state, "list_delete_snapshots", args.clone())?;
+        assert_eq!(list[0]["status"], "incomplete");
+        let detail = dispatch_invoke(&state, "inspect_delete_snapshot", args.clone())?;
+        assert_eq!(detail["status"], "incomplete");
+        assert_eq!(detail["members"], json!([]));
+        assert!(dispatch_invoke(&state, "verify_delete_snapshot", args.clone()).is_err());
+        assert!(dispatch_invoke(&state, "restore_delete_snapshot", args).is_err());
+        assert!(!root.join("restored").exists());
+        fs::remove_dir_all(&root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn webui_delete_commands_cannot_bypass_writer_guard() -> AppResult<()> {
+        for command in ["delete_session", "delete_sessions"] {
+            let codex = temp_codex_dir("webui-delete-gate");
+            fs::create_dir_all(&codex)?;
+            let state = test_state(&codex);
+            let _writer = crate::codex_writer_guard::WriterTestProbeGuard::running();
+            let error = dispatch_invoke(
+                &state,
+                command,
+                json!({
+                    "provider": "codex", "codexDir": codex.to_string_lossy(),
+                    "id": "test-session", "ids": ["test-session"],
+                }),
+            )
+            .expect_err("HTTP invocation must not bypass shared deletion gate");
+            assert!(error.to_string().contains("已拒绝删除"));
+            assert_eq!(fs::read_dir(&codex)?.count(), 0);
+            fs::remove_dir_all(codex)?;
+        }
+        Ok(())
     }
 
     #[test]

@@ -50,6 +50,7 @@ fn clear_rows_in_store(
         )));
     }
 
+    crate::sessions::codex_delete::ensure_delete_allowed(codex)?;
     let mut connection = Connection::open_with_flags(
         &database_path,
         OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
@@ -70,6 +71,7 @@ fn clear_rows_in_store(
     for thread_id in thread_ids {
         transaction.execute(&sql, [thread_id])?;
     }
+    crate::sessions::codex_delete::ensure_delete_allowed(codex)?;
     transaction.commit()?;
     Ok(())
 }

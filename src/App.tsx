@@ -11,7 +11,9 @@ import { useSettings } from "@/stores/settings";
 import { useTheme } from "@/stores/theme";
 
 const SessionsRoute = lazy(() => import("@/routes/sessions"));
+const AllSessionsRoute = lazy(() => import("@/routes/all-sessions"));
 const BackupsRoute = lazy(() => import("@/routes/backups"));
+const DeleteSnapshotsRoute = lazy(() => import("@/routes/delete-snapshots"));
 const BackupDetailRoute = lazy(() => import("@/routes/backup-detail"));
 const StatsRoute = lazy(() => import("@/routes/stats"));
 const RepairRoute = lazy(() => import("@/routes/repair"));
@@ -66,6 +68,7 @@ export default function App() {
             <Route path="/codex/sessions" element={<SessionsRoute key="codex-sessions" provider="codex" />} />
             <Route path="/codex/repair" element={<RepairRoute key="codex-repair" provider="codex" />} />
             <Route path="/codex/backups" element={<BackupsRoute key="codex-backups" provider="codex" />} />
+            <Route path="/codex/delete-snapshots" element={<DeleteSnapshotsRoute />} />
             <Route path="/codex/backups/:name" element={<BackupDetailRoute key="codex-backup-detail" provider="codex" />} />
             <Route path="/codex/transfer" element={<TransferRoute key="codex-transfer" provider="codex" />} />
             <Route path="/claude/sessions" element={<SessionsRoute key="claude-sessions" provider="claude" />} />
@@ -89,6 +92,7 @@ export default function App() {
             <Route path="/backups/:name" element={<BackupDetailRoute provider={defaultProvider} />} />
             <Route path="/transfer" element={<Navigate to={defaultTransferPath} replace />} />
             <Route path="/stats" element={<StatsRoute />} />
+            <Route path="/all-sessions" element={<AllSessionsRoute />} />
             <Route path="*" element={<Navigate to={defaultSessionsPath} replace />} />
           </Routes>
         </Suspense>

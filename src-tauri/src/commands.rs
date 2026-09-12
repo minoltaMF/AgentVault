@@ -792,11 +792,14 @@ pub async fn delete_family_branch(
     codex_dir: String,
     family_id: String,
     branch_id: String,
+    backup_dir: Option<String>,
     lock: SharedLock<'_>,
 ) -> AppResult<crate::models::DeleteResult> {
     let lock = lock.inner().clone();
     run_blocking(move || {
-        crate::repair::delete_family_branch_with_lock(codex_dir, family_id, branch_id, &lock)
+        crate::repair::delete_family_branch_with_backup(
+            codex_dir, family_id, branch_id, backup_dir, &lock,
+        )
     })
     .await
 }
@@ -983,6 +986,7 @@ fn provider_dirs(
         opencode_dir,
         cursor_dir,
         cursor_agent_dir: None,
+        backup_dir: None,
     }
 }
 
@@ -1067,6 +1071,7 @@ pub async fn set_archived(
 pub async fn delete_session(
     provider: Option<String>,
     codex_dir: String,
+    backup_dir: Option<String>,
     claude_dir: Option<String>,
     opencode_dir: Option<String>,
     cursor_dir: Option<String>,
@@ -1078,7 +1083,10 @@ pub async fn delete_session(
     run_blocking(move || {
         crate::sessions::delete_session_with_dirs(
             provider,
-            provider_dirs(codex_dir, claude_dir, opencode_dir, cursor_dir),
+            ProviderDirs {
+                backup_dir,
+                ..provider_dirs(codex_dir, claude_dir, opencode_dir, cursor_dir)
+            },
             id,
             target,
             &lock,
@@ -1091,6 +1099,7 @@ pub async fn delete_session(
 pub async fn delete_sessions(
     provider: Option<String>,
     codex_dir: String,
+    backup_dir: Option<String>,
     claude_dir: Option<String>,
     opencode_dir: Option<String>,
     cursor_dir: Option<String>,
@@ -1102,7 +1111,10 @@ pub async fn delete_sessions(
     run_blocking(move || {
         crate::sessions::delete_sessions_with_dirs(
             provider,
-            provider_dirs(codex_dir, claude_dir, opencode_dir, cursor_dir),
+            ProviderDirs {
+                backup_dir,
+                ..provider_dirs(codex_dir, claude_dir, opencode_dir, cursor_dir)
+            },
             ids,
             targets,
             &lock,
@@ -1193,4 +1205,62 @@ pub async fn stats_snapshot(
         )
     })
     .await
+}
+
+#[tauri::command]
+pub async fn list_delete_snapshots(
+    backup_dir: String,
+) -> AppResult<Vec<crate::codex_delete_snapshot::SnapshotSummary>> {
+    run_blocking(move || crate::codex_delete_snapshot::list_delete_snapshots(&backup_dir)).await
+}
+
+#[tauri::command]
+pub async fn inspect_delete_snapshot(
+    backup_dir: String,
+    snapshot_path: String,
+) -> AppResult<crate::codex_delete_snapshot::SnapshotDetail> {
+    run_blocking(move || {
+        crate::codex_delete_snapshot::inspect_delete_snapshot(&backup_dir, &snapshot_path)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn verify_delete_snapshot(
+    backup_dir: String,
+    snapshot_path: String,
+) -> AppResult<crate::codex_delete_snapshot::SnapshotReport> {
+    run_blocking(move || {
+        crate::codex_delete_snapshot::verify_delete_snapshot(&backup_dir, &snapshot_path)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn restore_delete_snapshot(
+    backup_dir: String,
+    snapshot_path: String,
+    output: String,
+) -> AppResult<crate::codex_delete_snapshot::SnapshotReport> {
+    run_blocking(move || {
+        crate::codex_delete_snapshot::restore_delete_snapshot(&backup_dir, &snapshot_path, &output)
+    })
+    .await
+}
+
+#[tauri::command]
+pub fn start_workbench_scan(
+    provider: String,
+    codex_dir: String,
+    claude_dir: String,
+) -> AppResult<crate::workbench_scan::ScanStarted> {
+    crate::workbench_scan::start_workbench_scan(provider, codex_dir, claude_dir)
+}
+#[tauri::command]
+pub fn workbench_scan_status(job_id: u64) -> AppResult<crate::workbench_scan::ScanStatus> {
+    crate::workbench_scan::workbench_scan_status(job_id)
+}
+#[tauri::command]
+pub fn cancel_workbench_scan(job_id: u64) -> AppResult<()> {
+    crate::workbench_scan::cancel_workbench_scan(job_id)
 }

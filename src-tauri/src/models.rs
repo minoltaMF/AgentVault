@@ -77,6 +77,7 @@ impl Default for Settings {
 /// 字段为 `None` 表示"用该 provider 的默认目录"。
 #[derive(Debug, Clone, Default)]
 pub struct ProviderDirs {
+    pub backup_dir: Option<String>,
     pub codex_dir: String,
     pub claude_dir: Option<String>,
     pub opencode_dir: Option<String>,
@@ -238,6 +239,8 @@ pub struct BackupRestoreTarget {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DeleteResult {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snapshot_path: Option<String>,
     pub id: String,
     pub rollout_path: Option<String>,
     pub threads_rows_deleted: u32,

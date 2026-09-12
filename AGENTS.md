@@ -13,7 +13,7 @@
 ## 变更边界
 
 - 不执行破坏性 Git 操作，包括 `git reset --hard`、`git clean -fd`、强制推送或覆盖用户未提交改动。
-- 不自动 push，不改写上游历史；提交只包含当前任务相关文件。
+- 开发模块或优化完成并通过必要验证后，按用户已授权的发布流程提交当前任务相关文件，推送到 AgentVault 的 origin，并创建新版本注释标签触发 CI draft 制品；具体门禁见 docs/release-workflow.md。不得推送到 upstream、改写历史或移动已发布标签；正式发布 draft 仍须用户另行明确授权。
 - 不升级主要依赖或更换包管理器。依赖升级必须作为独立任务评估锁文件、平台兼容和回退方式。
 - 保留上游 `LICENSE`、版权信息和 `THIRD_PARTY_NOTICES.md` 中的来源记录；引入上游代码时同步登记仓库、许可证和锁定 commit。
 - 除非独立迁移任务明确授权，不修改兼容性标识：bundle identifier、Rust/npm package 名、CLI binary 名、应用数据目录、配置文件路径、SQLite 文件名和 schema。

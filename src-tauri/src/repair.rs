@@ -5815,8 +5815,18 @@ pub fn delete_family_branch_with_lock(
     branch_id: String,
     lock: &family::FamilyLock,
 ) -> AppResult<crate::models::DeleteResult> {
+    delete_family_branch_with_backup(codex_dir, family_id, branch_id, None, lock)
+}
+
+pub fn delete_family_branch_with_backup(
+    codex_dir: String,
+    family_id: String,
+    branch_id: String,
+    backup_dir: Option<String>,
+    lock: &family::FamilyLock,
+) -> AppResult<crate::models::DeleteResult> {
     family::with_lock(lock, |_g| {
-        delete_family_branch_locked(codex_dir, family_id, branch_id)
+        delete_family_branch_locked(codex_dir, family_id, branch_id, backup_dir.as_deref())
     })
 }
 
@@ -5824,8 +5834,10 @@ fn delete_family_branch_locked(
     codex_dir: String,
     family_id: String,
     branch_id: String,
+    backup_dir: Option<&str>,
 ) -> AppResult<crate::models::DeleteResult> {
     let codex = PathBuf::from(&codex_dir);
+    crate::sessions::codex_delete::ensure_delete_allowed(&codex)?;
     let mut store = family::load(&codex)?;
     let family = store
         .families
@@ -5844,13 +5856,19 @@ fn delete_family_branch_locked(
         )));
     }
 
-    // sessions 层按数据库、活动/归档 rollout、session_index 三处事实做完整清理与复核。
-    let outcome = crate::sessions::delete_codex_artifacts(&codex, &branch_id)?;
-    if outcome.structurally_removed {
-        family::remove_non_active_branch(&mut store, &family_id, &branch_id)?;
-        family::save(&codex, &store)?;
-    }
-    Ok(outcome.result)
+    // Keep family metadata inside the same guarded, compensated deletion unit. Saving it
+    // separately after Core commit could write after a newly launched native writer.
+    family::remove_non_active_branch(&mut store, &family_id, &branch_id)?;
+    let mut outcomes = crate::sessions::codex_delete::delete_codex_artifacts_with_backup_root(
+        &codex,
+        &[branch_id],
+        Some(&store),
+        &crate::codex_delete_snapshot::backup_root(backup_dir),
+    )?;
+    outcomes
+        .pop()
+        .map(|outcome| outcome.result)
+        .ok_or_else(|| AppError::Other("Codex 分支删除未返回结果".into()))
 }
 
 /// 读取每个非 active 分支相对当前 active 分支的可同步状态。

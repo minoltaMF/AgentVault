@@ -177,6 +177,20 @@ export type SessionSummary = {
   resume_command: string;
 };
 
+export type WorkbenchScanStatus = {
+  job_id: number;
+  state: "running" | "completed" | "cancelled" | "failed";
+  phase: string;
+  discovered_files: number;
+  processed_files: number;
+  failed_files: number;
+  current_path: string | null;
+  errors: { path: string; message: string }[];
+  errors_truncated: boolean;
+  error: string | null;
+  results: SessionSummary[];
+};
+
 export type ContentSearchMatch = {
   event_index: number;
   event_offset: number;
@@ -278,6 +292,7 @@ export type ClaudeMemoryDocument = {
 };
 
 export type DeleteResult = {
+  snapshot_path?: string;
   id: string;
   rollout_path: string | null;
   threads_rows_deleted: number;
@@ -293,6 +308,22 @@ export type DeleteResult = {
   ok: boolean;
   error: string | null;
 };
+
+export type DeleteSnapshotSummary = {
+  snapshot_path: string;
+  name: string;
+  created_at: string | null;
+  source_root: string | null;
+  session_ids: string[];
+  files: number;
+  total_bytes: number;
+  status: "unverified" | "incomplete" | "unreadable";
+  error: string | null;
+};
+export type DeleteSnapshotDetail = DeleteSnapshotSummary & {
+  members: { path: string; sqlite: boolean; present: boolean; size: number | null }[];
+};
+export type DeleteSnapshotReport = { snapshot_path: string; verified: boolean; files: number };
 
 export type DeleteTarget = {
   id: string;
@@ -985,6 +1016,11 @@ export const api = {
 
   listSessions: (provider: SessionProvider, codexDir: string, claudeDir?: string, opencodeDir?: string, cursorDir?: string) =>
     invokeCommand<SessionSummary[]>("list_sessions", { provider, codexDir, claudeDir, opencodeDir, cursorDir }),
+
+  startWorkbenchScan: (provider: "codex" | "claude", codexDir: string, claudeDir: string) =>
+    invokeCommand<{ job_id: number }>("start_workbench_scan", { provider, codexDir, claudeDir }),
+  workbenchScanStatus: (jobId: number) => invokeCommand<WorkbenchScanStatus>("workbench_scan_status", { jobId }),
+  cancelWorkbenchScan: (jobId: number) => invokeCommand<void>("cancel_workbench_scan", { jobId }),
   groupByProject: (provider: SessionProvider, codexDir: string, claudeDir?: string, opencodeDir?: string, cursorDir?: string) =>
     invokeCommand<ProjectGroup[]>("group_sessions_by_project", { provider, codexDir, claudeDir, opencodeDir, cursorDir }),
   searchSessions: (provider: SessionProvider, codexDir: string, claudeDir: string | undefined, opencodeDir: string | undefined, cursorDir: string | undefined, query: string) =>
@@ -1070,7 +1106,8 @@ export const api = {
     target?: DeleteTarget,
     opencodeDir?: string,
     cursorDir?: string,
-  ) => invokeCommand<DeleteResult>("delete_session", { provider, codexDir, claudeDir, opencodeDir, cursorDir, id, target }),
+    backupDir?: string,
+  ) => invokeCommand<DeleteResult>("delete_session", { provider, codexDir, claudeDir, opencodeDir, cursorDir, backupDir, id, target }),
   deleteSessions: (
     provider: SessionProvider,
     codexDir: string,
@@ -1079,6 +1116,7 @@ export const api = {
     targets?: DeleteTarget[],
     opencodeDir?: string,
     cursorDir?: string,
+    backupDir?: string,
   ) =>
     invokeCommand<DeleteResult[]>("delete_sessions", {
       provider,
@@ -1086,6 +1124,7 @@ export const api = {
       claudeDir,
       opencodeDir,
       cursorDir,
+      backupDir,
       ids,
       targets,
     }),
@@ -1273,6 +1312,14 @@ export const api = {
     }),
 
   revealCwd: (cwd: string) => invokeCommand<void>("reveal_cwd", { cwd }),
+  listDeleteSnapshots: (backupDir: string) =>
+    invokeCommand<DeleteSnapshotSummary[]>("list_delete_snapshots", { backupDir }),
+  inspectDeleteSnapshot: (backupDir: string, snapshotPath: string) =>
+    invokeCommand<DeleteSnapshotDetail>("inspect_delete_snapshot", { backupDir, snapshotPath }),
+  verifyDeleteSnapshot: (backupDir: string, snapshotPath: string) =>
+    invokeCommand<DeleteSnapshotReport>("verify_delete_snapshot", { backupDir, snapshotPath }),
+  restoreDeleteSnapshot: (backupDir: string, snapshotPath: string, output: string) =>
+    invokeCommand<DeleteSnapshotReport>("restore_delete_snapshot", { backupDir, snapshotPath, output }),
   /**
    * 复制续聊命令。
    *
@@ -1536,8 +1583,8 @@ export const api = {
   },
   rollbackFamilyActive: (codexDir: string, familyId: string, targetBranchId: string) =>
     invokeCommand<void>("rollback_family_active", { codexDir, familyId, targetBranchId }),
-  deleteFamilyBranch: (codexDir: string, familyId: string, branchId: string) =>
-    invokeCommand<DeleteResult>("delete_family_branch", { codexDir, familyId, branchId }),
+  deleteFamilyBranch: (codexDir: string, familyId: string, branchId: string, backupDir?: string) =>
+    invokeCommand<DeleteResult>("delete_family_branch", { codexDir, familyId, branchId, backupDir }),
   getFamilyBranchSyncStates: (codexDir: string, familyId: string) =>
     invokeCommand<BranchSyncState[]>("get_family_branch_sync_states", { codexDir, familyId }),
   syncBranchIntoActive: (codexDir: string, familyId: string, sourceBranchId: string) =>

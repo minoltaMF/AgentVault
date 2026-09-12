@@ -540,6 +540,7 @@ fn delete_result(id: &str, path: Option<String>, rows: i64, removed: bool) -> De
     DeleteResult {
         id: id.into(),
         rollout_path: path,
+        snapshot_path: None,
         threads_rows_deleted: rows as u32,
         logs_rows_deleted: 0,
         history_rows_deleted: 0,

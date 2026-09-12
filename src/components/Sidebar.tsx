@@ -109,7 +109,10 @@ const providers: ProviderDefinition[] = [
   },
 ];
 
-const globalItems: NavItem[] = [{ to: "/stats", icon: BarChart3, label: "统计" }];
+const globalItems: NavItem[] = [
+  { to: "/all-sessions", icon: MessageSquare, label: "全部会话" },
+  { to: "/stats", icon: BarChart3, label: "统计" },
+];
 
 
 export function Sidebar() {
@@ -261,7 +264,8 @@ function NavGroup({
       </div>
       <SidebarMenu className="gap-0.5">
         {items.map((item) => {
-          const isActive = item.to === "/stats" ? pathname === item.to : pathname.startsWith(item.to);
+          const isActive = item.to === "/stats" ? pathname === item.to : pathname.startsWith(item.to)
+            || (item.to === "/codex/backups" && pathname === "/codex/delete-snapshots");
           const Icon = item.icon;
           return (
             <SidebarMenuItem key={item.to}>

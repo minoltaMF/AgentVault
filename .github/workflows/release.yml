@@ -69,7 +69,7 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: AgentVault ${{ github.ref_name }}
           generateReleaseNotes: true
-          releaseDraft: ${{ contains(github.ref_name, '-') }}
+          releaseDraft: true
           prerelease: ${{ contains(github.ref_name, '-') }}
           args: ${{ contains(github.ref_name, '-') && matrix.platform == 'windows-latest' && '--bundles nsis' || '' }}
 

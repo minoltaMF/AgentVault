@@ -466,6 +466,7 @@ mod tests {
     /// 那样统计断言会被开发机上的真实会话污染。
     fn stats_dirs(root: &Path) -> ProviderDirs {
         ProviderDirs {
+            backup_dir: None,
             codex_dir: root.join("codex").to_string_lossy().into_owned(),
             claude_dir: Some(root.join("claude").to_string_lossy().into_owned()),
             opencode_dir: Some(root.join("opencode").to_string_lossy().into_owned()),

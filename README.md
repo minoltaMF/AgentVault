@@ -8,9 +8,11 @@
 
 AgentVault 用来管理 Codex、Claude Code、OpenCode 和 Cursor 保存在本机的会话。你可以在一个界面里查找对话、预览内容、备份恢复、移动会话目录，也可以修复部分索引和可见性问题。
 
-当前仓库以 [cc-sessions](https://github.com/ccpopy/cc-sessions) 的锁定 commit 为 fork 基线，尚未配置独立的 AgentVault 发布源。上方徽章和下方 Releases 链接只指向上游兼容基线；来源、许可证和验证范围见 [上游基线](docs/upstream-baseline.md) 与 [第三方声明](THIRD_PARTY_NOTICES.md)。
+Codex 与 Claude 可从「全局 → 全部会话」统一查找和只读预览，支持来源、项目路径与归档筛选；某个来源读取失败时保留其他结果。当前范围和使用方式见 [统一会话工作台](docs/unified-session-workbench.md)。
 
-当前版本为 `0.1.0-alpha.2` internal alpha source candidate；范围、平台状态和未覆盖能力见 [发布说明](docs/releases/0.1.0-alpha.2.md)。
+当前仓库以 [cc-sessions](https://github.com/ccpopy/cc-sessions) 的锁定 commit 为 fork 基线，已配置独立的 [AgentVault 发布仓库](https://github.com/minoltaMF/AgentVault/releases)。上方标注 Upstream 的徽章仅指向上游兼容基线；来源、许可证和验证范围见 [上游基线](docs/upstream-baseline.md) 与 [第三方声明](THIRD_PARTY_NOTICES.md)。
+
+当前版本为 `0.1.0-alpha.3` internal alpha draft candidate；范围、平台状态和未覆盖能力见 [发布说明](docs/releases/0.1.0-alpha.3.md)。
 
 [查看功能](#功能模块) · [进阶功能](#进阶功能) · [常见问题](#常见问题) · [开发与打包](#开发与打包)
 
@@ -24,7 +26,7 @@ AgentVault 用来管理 Codex、Claude Code、OpenCode 和 Cursor 保存在本�
 | 在 WSL、服务器或 SSH 环境中管理会话 | `cc-sessions` 命令行或自带网页界面 | [命令行与 WSL](#命令行与-wsl) |
 | 想修改源码或自行构建安装包 | 从源码运行 | [开发与打包](#开发与打包) |
 
-会话读取、搜索、编辑和备份都在本机完成。当前兼容基线的更新检查仍会访问 cc-sessions 的 GitHub Releases。
+会话读取、搜索、编辑和备份都在本机完成。内部 alpha 默认未配置应用内更新源，不会回退访问上游 cc-sessions Releases。
 
 ## 功能模块
 
@@ -51,7 +53,7 @@ Cursor 的会话存在一个共享数据库里，改动方式和其他三个工�
 
 ## 安装
 
-AgentVault 目前没有公开稳定包。`0.1.0-alpha.2` 只作为内部源码候选；应从同一内部渠道取得与目标 commit 对应的制品，不能把 [cc-sessions Releases](https://github.com/ccpopy/cc-sessions/releases/latest) 中的上游程序当作 AgentVault。下列制品名称因兼容性而保留，本轮不迁移包名、binary 名或安装标识。
+AgentVault 目前没有公开稳定包。`0.1.0-alpha.3` 由版本标签触发 CI 生成内部 draft 制品；应从 AgentVault 仓库取得与目标 tag 对应且通过 CI 的制品，不能把 [cc-sessions Releases](https://github.com/ccpopy/cc-sessions/releases/latest) 中的上游程序当作 AgentVault。下列制品名称因兼容性而保留，本轮不迁移包名、binary 名或安装标识。
 
 | 系统与用途 | 推荐下载 | 说明 |
 | --- | --- | --- |
@@ -93,6 +95,8 @@ Internal alpha 默认不配置独立更新源，手动检查不会访问或安�
 ## 数据与安全
 
 - 浏览、搜索和预览不会修改会话。
+- 删除 Codex 会话前须完全退出 Codex/ChatGPT 桌面应用、Codex CLI 和 app-server。检测到运行中、无法确认运行状态或来源不是可确认的本机文件系统时，桌面、CLI 和 Web UI 都会拒绝删除；网络/WSL 来源应在原生 Agent 所在主机上操作。进程检查不等于独占锁，操作仍保留事务、CAS 和失败补偿。
+- Codex 单删、批删和 family 分支删除会先创建并回读校验删除前快照，任何创建或校验失败都会拒绝删除。快照位于备份目录的 `codex-delete-snapshots/`，结果显示具体路径；可从 Codex「备份 → 删除前快照」查看文件清单、重新校验并恢复到全新隔离目录，也支持 CLI。它保存受删除影响的文件和完整相关数据库，包含其他会话的共享元数据；不属于普通会话导出，也不是完整 Codex home。范围、命令和恢复限制见 [Codex 删除前快照](docs/codex-delete-snapshots.md)。
 - AgentVault 不要求账号，也不会把会话上传到第三方服务。Internal alpha 默认未配置更新源；只有打开文档中的外部链接，或受控构建显式启用 AgentVault Release 渠道时才会访问 GitHub。
 - 编辑前会保存快照，可以逐步撤销，也可以恢复到编辑前状态。
 - 移动目录会检查目标冲突和写入结果。失败时会尝试恢复原状态。
@@ -458,7 +462,7 @@ cargo test -p provider-workbuddy
 
 打包结果位于 `release/`，该目录不会提交到仓库。
 
-Rust 代码现在由根目录 `Cargo.toml` 管理 workspace；`src-tauri` 保留桌面应用和兼容 binary，`crates/provider-sdk` 定义 Provider descriptor、capability、发现合同、基础 trait、provider-neutral 分支图和不执行进程的 ResumePlan 合同，`crates/provider-claude`、`crates/provider-codex` 与 `crates/provider-pi` 可以按 native ID 生成无 prompt 的原生续接参数，`crates/provider-pi` 还提供只读 Pi v1/v2/v3 解析和分支图构建。`crates/provider-workbuddy` 将调用方经公开 gateway/provider/manifest 边界取得的 WorkBuddy metadata、summary 和 activity 确定性投影到同一 Claude/Codex native identity；它不实现 SessionProvider、不保存 transcript 正文，也不读取或写入 WorkBuddy 私有存储。`crates/registry` 提供可重建的 canonical SQLite 投影、复合 native identity、ProjectLocation 路径历史、逐 source file 增量游标，以及 unicode61/trigram 搜索索引；`crates/resume` 只在同一 canonical project 和当前 machine 范围内生成 cwd 候选，歧义路径保持未选择；`crates/vault-io` 提供原子文件、路径安全和文件指纹原语；`crates/vault` 定义经过校验且不可外部修改的 snapshot manifest v1，并提供调用方显式 `objects` 根目录下的 SHA-256 content-addressed object store。对象以未压缩内容计算 ID，使用版本化 zlib envelope 写入 `objects/sha256/ab/cdef...`，单对象逻辑大小上限为 16 MiB；create-if-absent、并发去重和复用前的长度/哈希校验都不会覆盖已有对象。只读 `SnapshotVerifier` 会重新加载并结构校验 manifest，按顺序读取 whole-object 或 chunked 引用，核对成员逻辑大小和聚合 SHA-256，并结构化报告缺失或损坏对象；验证不会持久化状态或改写 Vault 文件。`crates/recovery` 从调用方提供的结构化事件与上下文离线生成 `agentvault.recovery-capsule/v1` Markdown：稳定选择首个用户目标、最近三条用户消息、最后完整 assistant 输出、最新 provider summary 与最近三次工具失败，并规范排序 Git 文件、事项、Artifact 和 provenance；所有时间和证据均由调用方显式提供，不调用 LLM、Git、文件系统或系统时钟。`crates/git-context` 从调用方指定的 working tree 只读采集 repository root、branch、完整 HEAD、tracked/untracked 文件名，以及 tracked diff 的 insertion/deletion/binary 统计；命令禁用 optional locks、fsmonitor、external diff 和 textconv，不保存完整 diff，也不执行 commit、stash、checkout 或 reset。`crates/health` 以只读方式汇总 CLI 安装/版本、配置根、Session 根、hook/watcher、reconciliation、parser unknown events 以及 resume/repair capability；CLI 探测只执行无 shell 的 `--version`，限制输出并在超时后终止子进程。`crates/app-service` 将调用方提供的风险信号与 Provider Doctor 诊断确定性投影为 Recovery Inbox，过滤非行动项、按严重度排序并用稳定 key 去重。两者都不执行 repair/restore、不持久化 health event，也不扫描或改写 Session 正文。固定 4 MiB 的 append-only JSONL 分块策略、restore、Git checkpoint 持久化/事件触发、自动上下文采集和跨 Agent 启动仍留给后续提交；当前实现不读取或改写原生 Session，也不选择默认 Vault 路径。ResumePlan 只保存 executable 与参数数组并声明 preflight，不启动 CLI、不发送消息、不修改原生 cwd/index 或 Session。Registry 只写调用方明确指定的 AgentVault 自有数据库，不读取或改写原生 Session；搜索投影只接收调用方筛选后的可搜索文本，短于三个 Unicode 字符的查询使用字面量子串回退。本提交不设默认数据库或 Vault 路径，不升级 schema，也不迁移现有 Tauri 数据目录。Pi、WorkBuddy overlay 与新 Registry/Search/Resume/Vault/Recovery/GitContext/Health/AppService 尚未接入旧 Tauri 列表，搜索过滤、排序、终端执行、Capsule 落盘、Git checkpoint 持久化、Recovery Inbox UI、Doctor CLI/JSON 输出和 WorkBuddy gateway/manifest 采集仍由后续独立提交完成。摘要解析、旧数据库/索引合并和所有原生写入业务仍保留在应用层。发布前需要保持 `package.json`、`package-lock.json`、`src-tauri/Cargo.toml`、根目录 `Cargo.lock` 和 `src-tauri/tauri.conf.json` 中的项目版本一致。上游工作流可构建 Windows、Linux、macOS Apple Silicon 和 macOS Intel 产物。当前 fork 只配置 `upstream` 远程，没有 AgentVault 发布目标；在单独建立发布与签名流程前不要创建或推送 release tag。
+Rust 代码现在由根目录 `Cargo.toml` 管理 workspace；`src-tauri` 保留桌面应用和兼容 binary，`crates/provider-sdk` 定义 Provider descriptor、capability、发现合同、基础 trait、provider-neutral 分支图和不执行进程的 ResumePlan 合同，`crates/provider-claude`、`crates/provider-codex` 与 `crates/provider-pi` 可以按 native ID 生成无 prompt 的原生续接参数，`crates/provider-pi` 还提供只读 Pi v1/v2/v3 解析和分支图构建。`crates/provider-workbuddy` 将调用方经公开 gateway/provider/manifest 边界取得的 WorkBuddy metadata、summary 和 activity 确定性投影到同一 Claude/Codex native identity；它不实现 SessionProvider、不保存 transcript 正文，也不读取或写入 WorkBuddy 私有存储。`crates/registry` 提供可重建的 canonical SQLite 投影、复合 native identity、ProjectLocation 路径历史、逐 source file 增量游标，以及 unicode61/trigram 搜索索引；`crates/resume` 只在同一 canonical project 和当前 machine 范围内生成 cwd 候选，歧义路径保持未选择；`crates/vault-io` 提供原子文件、路径安全和文件指纹原语；`crates/vault` 定义经过校验且不可外部修改的 snapshot manifest v1，并提供调用方显式 `objects` 根目录下的 SHA-256 content-addressed object store。对象以未压缩内容计算 ID，使用版本化 zlib envelope 写入 `objects/sha256/ab/cdef...`，单对象逻辑大小上限为 16 MiB；create-if-absent、并发去重和复用前的长度/哈希校验都不会覆盖已有对象。只读 `SnapshotVerifier` 会重新加载并结构校验 manifest，按顺序读取 whole-object 或 chunked 引用，核对成员逻辑大小和聚合 SHA-256，并结构化报告缺失或损坏对象；验证不会持久化状态或改写 Vault 文件。`crates/recovery` 从调用方提供的结构化事件与上下文离线生成 `agentvault.recovery-capsule/v1` Markdown：稳定选择首个用户目标、最近三条用户消息、最后完整 assistant 输出、最新 provider summary 与最近三次工具失败，并规范排序 Git 文件、事项、Artifact 和 provenance；所有时间和证据均由调用方显式提供，不调用 LLM、Git、文件系统或系统时钟。`crates/git-context` 从调用方指定的 working tree 只读采集 repository root、branch、完整 HEAD、tracked/untracked 文件名，以及 tracked diff 的 insertion/deletion/binary 统计；命令禁用 optional locks、fsmonitor、external diff 和 textconv，不保存完整 diff，也不执行 commit、stash、checkout 或 reset。`crates/health` 以只读方式汇总 CLI 安装/版本、配置根、Session 根、hook/watcher、reconciliation、parser unknown events 以及 resume/repair capability；CLI 探测只执行无 shell 的 `--version`，限制输出并在超时后终止子进程。`crates/app-service` 将调用方提供的风险信号与 Provider Doctor 诊断确定性投影为 Recovery Inbox，过滤非行动项、按严重度排序并用稳定 key 去重。两者都不执行 repair/restore、不持久化 health event，也不扫描或改写 Session 正文。固定 4 MiB 的 append-only JSONL 分块策略、restore、Git checkpoint 持久化/事件触发、自动上下文采集和跨 Agent 启动仍留给后续提交；当前实现不读取或改写原生 Session，也不选择默认 Vault 路径。ResumePlan 只保存 executable 与参数数组并声明 preflight，不启动 CLI、不发送消息、不修改原生 cwd/index 或 Session。Registry 只写调用方明确指定的 AgentVault 自有数据库，不读取或改写原生 Session；搜索投影只接收调用方筛选后的可搜索文本，短于三个 Unicode 字符的查询使用字面量子串回退。本提交不设默认数据库或 Vault 路径，不升级 schema，也不迁移现有 Tauri 数据目录。Pi、WorkBuddy overlay 与新 Registry/Search/Resume/Vault/Recovery/GitContext/Health/AppService 尚未接入旧 Tauri 列表，搜索过滤、排序、终端执行、Capsule 落盘、Git checkpoint 持久化、Recovery Inbox UI、Doctor CLI/JSON 输出和 WorkBuddy gateway/manifest 采集仍由后续独立提交完成。摘要解析、旧数据库/索引合并和所有原生写入业务仍保留在应用层。发布前需要保持 `package.json`、`package-lock.json`、`src-tauri/Cargo.toml`、根目录 `Cargo.lock` 和 `src-tauri/tauri.conf.json` 中的项目版本一致。上游工作流可构建 Windows、Linux、macOS Apple Silicon 和 macOS Intel 产物。当前 fork 的 `origin` 为 `minoltaMF/AgentVault`，`upstream` 仅用于追踪来源。功能完成后按 [发布约定](docs/release-workflow.md) 提交、推送并创建新标签，由 CI 生成 draft；正式发布需要另行授权。Git 发布目标与应用内更新源是不同配置，当前不启用应用内更新。
 
 ## 上游项目致谢
 

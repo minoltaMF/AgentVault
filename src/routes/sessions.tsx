@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { deleteSnapshotLink } from "@/lib/deleteSnapshots";
 import { toast } from "sonner";
 import {
   AlertTriangle,
@@ -1009,6 +1010,7 @@ export default function SessionsRoute({ provider = "codex" }: { provider?: Sessi
         open={!!familySheetId}
         onOpenChange={(v) => !v && setFamilySheetId(null)}
         sessionId={familySheetId}
+        backupDir={settings?.backup_dir}
         codexDir={settings.codex_dir}
         currentProvider={currentProvider}
         onChanged={async () => {
@@ -1059,7 +1061,13 @@ export default function SessionsRoute({ provider = "codex" }: { provider?: Sessi
             })),
             settings.opencode_dir,
             settings.cursor_dir,
+            settings.backup_dir,
           );
+          for (const snapshotPath of new Set(r.map((item) => item.snapshot_path).filter(Boolean))) {
+            toast.info("删除前快照已验证", { description: snapshotPath, duration: 15000,
+              action: { label: "查看快照", onClick: () => navigate(deleteSnapshotLink(snapshotPath)) },
+            });
+          }
           const okCount = r.filter((x) => x.ok).length;
           const desktopRestartRequired = r.some(
             (x) => x.ok && x.desktop_restart_required,
@@ -1200,10 +1208,11 @@ function DeleteSummary({
           </>
         )}
       </div>
-      <div className="text-destructive">此操作不可撤销，也不会自动备份。</div>
+      <div className="text-destructive">{provider === "codex" ? "删除前会自动创建并验证快照；快照失败则拒绝删除。快照可恢复到新的隔离目录，不会直接撤销原目录删除。" : "此操作不可撤销，也不会自动备份。"}</div>
       {provider === "codex" && (
         <div className="text-amber-600 dark:text-amber-400">
-          Codex/ChatGPT Desktop 正在运行时仍会执行删除；{DESKTOP_DELETE_RESTART_NOTICE}
+          删除前请完全退出 Codex/ChatGPT 桌面应用、Codex CLI 和 app-server（包括后台进程）。
+          检测到仍在运行或无法确认状态时会拒绝删除；退出后可重试。
         </div>
       )}
       {provider === "cursor" && (

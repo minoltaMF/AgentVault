@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle, Archive, ChevronRight, RotateCcw, ShieldCheck, Trash2 } from "lucide-react";
 import { TopBar } from "@/components/TopBar";
+import { BackupNavigation } from "@/components/BackupNavigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +34,7 @@ export default function BackupsRoute({ provider = "codex" }: { provider?: Sessio
         onRefresh={refresh}
       />
       <ScrollArea className="flex-1">
+      {provider === "codex" && <BackupNavigation />}
       <div className="space-y-4 p-6">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Archive className="h-4 w-4" />

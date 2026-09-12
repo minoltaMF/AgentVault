@@ -106,6 +106,14 @@ impl StateMutationReceipt {
 
 pub(super) fn mutate_existing_state_with_receipt<T>(
     codex: &Path,
+    mutation: impl FnMut(&mut Map<String, Value>) -> AppResult<T>,
+) -> AppResult<Option<(T, Option<StateMutationReceipt>)>> {
+    mutate_existing_state_with_receipt_expected(codex, None, mutation)
+}
+
+pub(super) fn mutate_existing_state_with_receipt_expected<T>(
+    codex: &Path,
+    expected: Option<Option<&atomic_file::FileFingerprint>>,
     mut mutation: impl FnMut(&mut Map<String, Value>) -> AppResult<T>,
 ) -> AppResult<Option<(T, Option<StateMutationReceipt>)>> {
     super::ensure_desktop_not_running(codex)?;
@@ -120,6 +128,13 @@ pub(super) fn mutate_existing_state_with_receipt<T>(
             }
             Err(error) => return Err(error),
         };
+        if let Some(expected) = expected {
+            if snapshot.as_ref().map(|snapshot| &snapshot.fingerprint) != expected {
+                return Err(AppError::AtomicWriteConflict(
+                    "Codex 全局状态在删除快照后发生变化，已拒绝修改".into(),
+                ));
+            }
+        }
         let Some(mut snapshot) = snapshot else {
             return Ok(None);
         };

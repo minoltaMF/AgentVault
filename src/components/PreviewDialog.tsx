@@ -96,6 +96,7 @@ import { useSettings } from "@/stores/settings";
 import { toast } from "sonner";
 
 type Props = {
+  readOnly?: boolean;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   session: SessionSummary | null;
@@ -137,6 +138,7 @@ type NodeActionSet = {
 const PAGE = 200;
 
 export function PreviewDialog({
+  readOnly = false,
   open,
   onOpenChange,
   session,
@@ -184,10 +186,10 @@ export function PreviewDialog({
   const scrollSpyRafRef = useRef(0);
   const preferenceSaveRef = useRef<Promise<void>>(Promise.resolve());
   const appSettings = useSettings((state) => state.settings);
-  const canForkSession = provider === "codex" && !customRolloutPath && !!session && !!codexDir;
+  const canForkSession = !readOnly && provider === "codex" && !customRolloutPath && !!session && !!codexDir;
   // 备份/导入预览（customRolloutPath）不允许编辑，只能编辑真实会话文件
   const canMutateSession =
-    !customRolloutPath && !!session && !!backupDir && !!rolloutPath;
+    !readOnly && !customRolloutPath && !!session && !!backupDir && !!rolloutPath;
   const relatedSubagents = useMemo(() => {
     if (!session || session.provider !== "codex" || customRolloutPath) return [];
     return collectRelatedSubagents(session.id, allSessions);

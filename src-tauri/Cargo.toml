@@ -1,6 +1,6 @@
 [package]
 name = "cc-session-manager"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 description = "AgentVault"
 authors = ["zjsmew"]
 edition = "2021"
@@ -45,7 +45,7 @@ tauri-plugin-single-instance = { version = "2.4", optional = true }
 reqwest = { version = "0.13", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.32", features = ["bundled", "backup"] }
 thiserror = "2"
 anyhow = "1"
 chrono = { version = "0.4", features = ["serde"] }
@@ -66,5 +66,5 @@ provider-sdk = { path = "../crates/provider-sdk" }
 vault-io = { path = "../crates/vault-io" }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Storage_Packaging_Appx", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Threading"] }
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Storage_Packaging_Appx", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Threading"] }
 winreg = { version = "0.55", optional = true }

@@ -28,6 +28,8 @@ const license = read("LICENSE");
 const notices = read("THIRD_PARTY_NOTICES.md");
 const version = packageJson.version;
 
+expectMatch("all releases remain drafts", releaseWorkflow, /^\s+releaseDraft: true\s*$/m);
+
 if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
   failures.push(`package.json version is not a supported SemVer release: ${version}`);
 }

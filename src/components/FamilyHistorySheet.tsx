@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { deleteSnapshotLink } from "@/lib/deleteSnapshots";
 import {
   CheckCircle2,
   GitBranch,
@@ -45,6 +47,7 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   sessionId: string | null;
   codexDir: string;
+  backupDir?: string;
   currentProvider: string | null;
   onChanged?: () => void;
 };
@@ -54,9 +57,11 @@ export function FamilyHistorySheet({
   onOpenChange,
   sessionId,
   codexDir,
+  backupDir,
   currentProvider,
   onChanged,
 }: Props) {
+  const navigate = useNavigate();
   const [family, setFamily] = useState<Family | null>(null);
   const [syncStates, setSyncStates] = useState<Record<string, BranchSyncState>>({});
   const [ledgerOriginBySession, setLedgerOriginBySession] = useState<ReadonlyMap<string, ArchiveOrigin>>(
@@ -164,7 +169,12 @@ export function FamilyHistorySheet({
     if (!family || !deleteTarget) return;
     setRunning(true);
     try {
-      const result = await api.deleteFamilyBranch(codexDir, family.family_id, deleteTarget.id);
+      const result = await api.deleteFamilyBranch(codexDir, family.family_id, deleteTarget.id, backupDir);
+      if (result.snapshot_path) {
+        toast.info("删除前快照已验证", { description: result.snapshot_path, duration: 15000,
+          action: { label: "查看快照", onClick: () => { onOpenChange(false); navigate(deleteSnapshotLink(result.snapshot_path)); } },
+        });
+      }
       await load();
       await onChanged?.();
       if (!result.ok) {
@@ -481,7 +491,7 @@ export function FamilyHistorySheet({
                 包括其 rollout 文件、threads 记录、logs 与 session_index
                 条目；如果此分支已在归档目录中，归档副本也会一并删除。
                 <br />
-                此操作不可撤销，且不会创建备份。
+                删除前会自动创建并验证快照；快照失败则拒绝删除。快照可恢复到新的隔离目录。
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

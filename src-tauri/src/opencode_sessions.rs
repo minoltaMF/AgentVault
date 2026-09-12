@@ -223,6 +223,7 @@ pub fn delete_session(data_dir: &Path, id: &str) -> AppResult<DeleteResult> {
     };
     if descendant_ids.is_empty() {
         return Ok(DeleteResult {
+            snapshot_path: None,
             id: id.into(),
             rollout_path: None,
             threads_rows_deleted: 0,
@@ -278,6 +279,7 @@ pub fn delete_session(data_dir: &Path, id: &str) -> AppResult<DeleteResult> {
     }
     transaction.commit()?;
     Ok(DeleteResult {
+        snapshot_path: None,
         id: id.into(),
         rollout_path: Some(encode_locator(&db, id)?),
         threads_rows_deleted: deleted,

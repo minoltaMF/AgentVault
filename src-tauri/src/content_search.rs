@@ -820,6 +820,7 @@ mod tests {
         let request = SearchRequest {
             provider: "claude".to_string(),
             dirs: ProviderDirs {
+                backup_dir: None,
                 codex_dir: root.join("codex").to_string_lossy().into_owned(),
                 claude_dir: Some(claude_dir.to_string_lossy().into_owned()),
                 opencode_dir: Some(root.join("opencode").to_string_lossy().into_owned()),

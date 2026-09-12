@@ -77,6 +77,7 @@ impl CliContext {
             opencode_dir: Some(self.opencode_dir.clone()),
             cursor_dir: Some(self.cursor_dir.clone()),
             cursor_agent_dir: None,
+            backup_dir: None,
         }
     }
 }
@@ -192,12 +193,51 @@ fn run_cli() -> CliResult<()> {
         "convert" => cmd_convert(&ctx, args),
         "stats" => cmd_stats(&ctx, args),
         "backup" => cmd_backup(&ctx, args),
+        "delete-snapshot" => cmd_delete_snapshot(&ctx, args),
         "bundle" => cmd_bundle(&ctx, args),
         "repair" => cmd_repair(&ctx, args),
         "family" => cmd_family(&ctx, args),
         "settings" => cmd_settings(&ctx, args),
         other => Err(CliError::message(format!("未知命令: {other}"))),
     }
+}
+
+fn cmd_delete_snapshot(ctx: &CliContext, mut args: Vec<String>) -> CliResult<()> {
+    let operation = required(
+        pop_command(&mut args),
+        "delete-snapshot 需要 verify 或 restore",
+    )?;
+    let path = required(
+        take_value(&mut args, "--path")?,
+        "delete-snapshot 需要 --path",
+    )?;
+    let report = match operation.as_str() {
+        "verify" => {
+            ensure_no_args(&args)?;
+            cc_session_manager_lib::codex_delete_snapshot::verify(Path::new(&path))?
+        }
+        "restore" => {
+            let output_dir = required(
+                take_value(&mut args, "--output")?,
+                "restore 需要 --output 新的隔离目录",
+            )?;
+            ensure_no_args(&args)?;
+            cc_session_manager_lib::codex_delete_snapshot::restore_to_new_dir(
+                Path::new(&path),
+                Path::new(&output_dir),
+            )?
+        }
+        _ => {
+            return Err(CliError::message(
+                "delete-snapshot 仅支持 verify 或 restore",
+            ))
+        }
+    };
+    output(ctx, &report, |report| {
+        println!("snapshot_path\t{}", report.snapshot_path);
+        println!("verified\t{}", report.verified);
+        println!("files\t{}", report.files);
+    })
 }
 
 fn print_help() {
@@ -229,6 +269,9 @@ fn print_help() {
   convert <会话路径或定位符> [--mode simple|native] [--to claude|codex]  # --provider 表示来源
   stats <kpi|projects|models|timeseries|heatmap>
   backup <create|list|open|verify|delete|restore|restore-all>
+  delete-snapshot verify --path <快照目录>
+  delete-snapshot restore --path <快照目录> --output <新的隔离目录>
+  family delete-branch --family-id <ID> --branch-id <ID> [--backup-dir <目录>]
   bundle <export|export-all|list|verify|import|pack|unpack>
   repair <provider-info|project-configs|diagnose|index|threads|prune|claude-history|claude-gui|cursor-residue|clone|batch-clone|fork>
   family <store|verify|overlay|rollback|delete-branch|sync-states|sync-into-active|sync-active-into>
@@ -1393,15 +1436,20 @@ fn cmd_family(ctx: &CliContext, mut args: Vec<String>) -> CliResult<()> {
                 take_value(&mut args, "--branch-id")?,
                 "delete-branch 需要 --branch-id",
             )?;
+            let backup_dir = take_value(&mut args, "--backup-dir")?;
             ensure_no_args(&args)?;
-            let result = repair::delete_family_branch_with_lock(
+            let result = repair::delete_family_branch_with_backup(
                 ctx.codex_dir.clone(),
                 family_id,
                 branch_id,
+                backup_dir,
                 &ctx.family_lock,
             )?;
             output(ctx, &result, |result| {
                 println!("{}\tok={}", result.id, result.ok);
+                if let Some(path) = &result.snapshot_path {
+                    println!("snapshot_path\t{path}");
+                }
                 if result.ok && result.desktop_restart_required {
                     println!("desktop_restart_required\ttrue");
                 }

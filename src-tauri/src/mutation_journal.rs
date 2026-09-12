@@ -264,7 +264,17 @@ impl MutationJournal {
 
     /// Stage an ordinary file by same-directory rename. The original path disappears atomically,
     /// while rollback can restore the exact file without a read/delete race.
+    #[cfg(test)]
     pub(crate) fn remove_file(&mut self, path: &Path) -> AppResult<()> {
+        let expected = atomic_file::fingerprint(path)?;
+        self.remove_file_if_unchanged(path, &expected)
+    }
+
+    pub(crate) fn remove_file_if_unchanged(
+        &mut self,
+        path: &Path,
+        expected: &atomic_file::FileFingerprint,
+    ) -> AppResult<()> {
         let metadata = fs::symlink_metadata(path)?;
         if !metadata.is_file() || crate::path_safety::metadata_is_link_or_reparse(&metadata) {
             return Err(AppError::Path(format!(
@@ -273,6 +283,12 @@ impl MutationJournal {
             )));
         }
         let original_fingerprint = atomic_file::fingerprint(path)?;
+        if &original_fingerprint != expected {
+            return Err(AppError::AtomicWriteConflict(format!(
+                "文件在删除快照后发生变化，已拒绝删除: {}",
+                path.display()
+            )));
+        }
         let staged = unique_delete_stage(path)?;
         atomic_file::move_file_if_absent(path, &staged)?;
         let expected_staged = match staged_regular_fingerprint(&staged) {

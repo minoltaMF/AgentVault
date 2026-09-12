@@ -67,23 +67,22 @@ pub(crate) fn desktop_state_initialized(codex: &Path) -> AppResult<bool> {
     }
 }
 
-/// Delete/prune may safely defer Desktop-owned project-state cleanup. If Desktop is running or
-/// its process state cannot be determined, callers should remove Core data without writing the
-/// private global state and tell the user to restart Desktop before relying on its cached list.
+/// Legacy prune callers defer Desktop-owned project-state cleanup when its process state is
+/// running or unknown. Codex session deletion instead requires all native writers to stop.
 pub(crate) fn should_defer_desktop_state_cleanup() -> bool {
     should_defer_desktop_state_mutation()
 }
 
-/// Core SQLite/rollout writes may proceed while Desktop is running, but its private global state
-/// must be left untouched because Desktop can later overwrite external edits from memory.
+/// Report whether legacy callers must defer private global-state mutation. This does not grant
+/// permission to write Core data; deletion callers also enforce the native-writer guard.
 pub(crate) fn should_defer_desktop_state_mutation() -> bool {
     desktop_guard::official_desktop_is_running().unwrap_or(true)
 }
 
 /// Remove current Desktop catalog/summary rows after Core deletion.
 ///
-/// Unlike the global JSON state, these SQLite stores coordinate concurrent writers. They can be
-/// updated while Desktop is running; its already-rendered list still requires a restart to refresh.
+/// Recheck native writers before opening or committing each cache database. If a writer starts
+/// after Core deletion, report the incomplete cache cleanup to the caller.
 pub(crate) fn clear_deleted_thread_cache_rows(
     codex: &Path,
     thread_ids: &[String],
@@ -475,6 +474,21 @@ pub(crate) fn clear_thread_project_states_with_receipt(
     let result = mutate_existing_state_with_receipt(codex, |state| {
         clear_thread_project_state_fields(state, thread_ids)
     })?;
+    Ok(result.and_then(|(_, receipt)| receipt))
+}
+
+pub(crate) fn clear_thread_project_states_from_snapshot(
+    codex: &Path,
+    thread_ids: &[String],
+    expected: Option<&crate::atomic_file::FileFingerprint>,
+) -> AppResult<Option<StateMutationReceipt>> {
+    for thread_id in thread_ids {
+        validate_thread_id(thread_id)?;
+    }
+    let result =
+        state_store::mutate_existing_state_with_receipt_expected(codex, Some(expected), |state| {
+            clear_thread_project_state_fields(state, thread_ids)
+        })?;
     Ok(result.and_then(|(_, receipt)| receipt))
 }
 

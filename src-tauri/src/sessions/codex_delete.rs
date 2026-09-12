@@ -17,7 +17,13 @@ use crate::{paths, state_db};
 
 pub(crate) struct CodexDeleteOutcome {
     pub(crate) result: DeleteResult,
-    pub(crate) structurally_removed: bool,
+}
+
+pub(crate) fn ensure_delete_allowed(codex_dir: &Path) -> AppResult<()> {
+    crate::codex_writer_guard::ensure_local_source(codex_dir)?;
+    crate::codex_writer_guard::ensure_codex_writers_stopped()?;
+    // Retain Desktop's state-specific check as well as the CLI/app-server process gate.
+    crate::codex_projects::ensure_desktop_not_running(codex_dir)
 }
 
 struct DeletePreparation {
@@ -27,6 +33,7 @@ struct DeletePreparation {
     history_thread_ids: Vec<String>,
 }
 
+#[derive(PartialEq, Eq)]
 struct RolloutReference {
     path: PathBuf,
     payload_thread_id: Option<String>,
@@ -34,6 +41,7 @@ struct RolloutReference {
     history_base_thread_id: Option<String>,
 }
 
+#[cfg(test)]
 pub(crate) fn delete_codex_artifacts(codex_dir: &Path, id: &str) -> AppResult<CodexDeleteOutcome> {
     let mut outcomes = delete_codex_artifacts_batch(codex_dir, &[id.to_string()])?;
     outcomes
@@ -42,6 +50,7 @@ pub(crate) fn delete_codex_artifacts(codex_dir: &Path, id: &str) -> AppResult<Co
 }
 
 /// Delete all Core and Desktop-visible state for several Codex threads as one compensated unit.
+#[cfg(test)]
 fn delete_codex_artifacts_batch(
     codex_dir: &Path,
     ids: &[String],
@@ -53,6 +62,20 @@ pub(crate) fn delete_codex_artifacts_batch_with_family_store(
     codex_dir: &Path,
     ids: &[String],
     family_store: Option<&FamilyStore>,
+) -> AppResult<Vec<CodexDeleteOutcome>> {
+    delete_codex_artifacts_with_backup_root(
+        codex_dir,
+        ids,
+        family_store,
+        &crate::codex_delete_snapshot::backup_root(None),
+    )
+}
+
+pub(crate) fn delete_codex_artifacts_with_backup_root(
+    codex_dir: &Path,
+    ids: &[String],
+    family_store: Option<&FamilyStore>,
+    backup_root: &Path,
 ) -> AppResult<Vec<CodexDeleteOutcome>> {
     if ids.is_empty() {
         return Ok(Vec::new());
@@ -66,27 +89,22 @@ pub(crate) fn delete_codex_artifacts_batch_with_family_store(
         }
     }
 
-    // Desktop 运行时仍删除 Core 数据，但不写它持有的私有项目状态。Desktop 关闭时继续
-    // 保持原有严格预检：必须在打开可写 SQLite 前发现损坏状态，确保失败零改动。
-    let desktop_restart_required = crate::codex_projects::should_defer_desktop_state_cleanup();
-    if !desktop_restart_required {
-        crate::codex_projects::preflight_thread_project_state_cleanup(codex_dir, &unique_ids)?;
-    }
-    preflight_thread_history_database_for_delete(codex_dir)?;
+    // No native write (including WAL setup) is allowed before both process and state preflight.
+    ensure_delete_allowed(codex_dir)?;
+    crate::codex_projects::preflight_thread_project_state_cleanup(codex_dir, &unique_ids)?;
     let rollout_references = scan_rollout_references(codex_dir)?;
 
-    let state = state_db::open(codex_dir)?;
-    // 是否挂载子代理关系表：存在时按删除单元同步清理关系边，避免残留孤儿边。
-    let spawn_edges_attached: bool = state.query_row(
-        "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type='table' AND name='thread_spawn_edges')",
-        [],
-        |row| row.get(0),
-    )?;
-    let transaction =
-        rusqlite::Transaction::new_unchecked(&state, rusqlite::TransactionBehavior::Immediate)?;
+    // Read the deletion plan from a native backup, not a writable source connection. This also
+    // avoids source -shm creation when snapshot creation/verification subsequently fails.
+    let snapshot_preparation =
+        crate::codex_delete_snapshot::Preparation::new(codex_dir, backup_root)
+            .map_err(|error| AppError::Other(format!("删除前快照创建失败，已拒绝删除: {error}")))?;
+    let planning_root = snapshot_preparation.files_root();
+    preflight_thread_history_database_for_delete(&planning_root)?;
+    let planning_state = state_db::open_ro(&planning_root)?;
     let mut preparations = Vec::with_capacity(unique_ids.len());
     for id in &unique_ids {
-        let rollout_path: Option<String> = transaction
+        let rollout_path: Option<String> = planning_state
             .query_row(
                 "SELECT rollout_path FROM threads WHERE id = ?",
                 [id],
@@ -138,130 +156,257 @@ pub(crate) fn delete_codex_artifacts_batch_with_family_store(
     }
 
     preflight_history_base_references(&preparations, &rollout_references)?;
-    let logs_attached = attach_logs_database_for_delete(codex_dir, &transaction)?;
-    let thread_history_attached =
-        attach_thread_history_database_for_delete(codex_dir, &transaction)?;
-    let index_path = paths::session_index_path(codex_dir);
-    let mut journal = crate::mutation_journal::MutationJournal::default();
-    let operation = (|| -> AppResult<Vec<CodexDeleteOutcome>> {
-        let mut outcomes = Vec::with_capacity(preparations.len());
-        for prepared in &preparations {
-            let rows = transaction.execute("DELETE FROM threads WHERE id = ?", [&prepared.id])?;
-            if spawn_edges_attached {
-                // 删除会话作为 child 的入边；若它仍有未删除的子代理，则保留出边，
-                // 让孤儿诊断/清理仍能发现这些后代。批量删除后代时，其入边会随之删除。
-                transaction.execute(
-                    "DELETE FROM thread_spawn_edges WHERE child_thread_id = ?1",
-                    [&prepared.id],
-                )?;
-            }
-            let rows_logs = if logs_attached {
-                transaction.execute(
-                    "DELETE FROM delete_logs.logs WHERE thread_id = ?",
-                    [&prepared.id],
-                )?
-            } else {
-                0
-            };
-            let rows_history = if thread_history_attached {
-                delete_thread_history_rows(&transaction, &prepared.history_thread_ids)?
-            } else {
-                0
-            };
-
-            for rollout in &prepared.rollout_files {
-                journal.remove_file(rollout)?;
-            }
-            if index_path.exists() {
-                journal.mutate_file(&index_path, || {
-                    super::filter_index_file(&index_path, &prepared.id)
-                })?;
-            }
-
-            // C5：删除会话后同步归档来源账本，经 journal 纳入同一补偿（M3 一致）。
-            // 无记录时 remove 是 no-op 且不写盘，不会因此创建账本文件。
-            journal.mutate_file(&paths::archive_ledger_path(codex_dir), || {
-                crate::archive_ledger::remove(codex_dir, &prepared.id)
-            })?;
-
-            outcomes.push(CodexDeleteOutcome {
-                result: DeleteResult {
-                    id: prepared.id.clone(),
-                    rollout_path: prepared.rollout_path.clone(),
-                    threads_rows_deleted: rows as u32,
-                    logs_rows_deleted: rows_logs as u32,
-                    history_rows_deleted: rows_history.min(u32::MAX as usize) as u32,
-                    rollout_deleted: !prepared.rollout_files.is_empty(),
-                    rollout_missing: prepared.rollout_files.is_empty(),
-                    sidecar_deleted: false,
-                    tasks_deleted: false,
-                    file_history_deleted: false,
-                    shared_data_preserved: false,
-                    desktop_restart_required,
-                    ok: true,
-                    error: None,
-                },
-                structurally_removed: true,
-            });
+    drop(planning_state);
+    let all_rollouts = preparations
+        .iter()
+        .flat_map(|prepared| prepared.rollout_files.iter().cloned())
+        .collect::<Vec<_>>();
+    let snapshot = snapshot_preparation
+        .finish(&unique_ids, &all_rollouts)
+        .map_err(|error| AppError::Other(format!("删除前快照校验失败，已拒绝删除: {error}")))?;
+    let deletion = (|| -> AppResult<Vec<CodexDeleteOutcome>> {
+        if scan_rollout_references(codex_dir)? != rollout_references {
+            return Err(AppError::Other(
+                "快照期间 rollout 集合变化，已拒绝删除".into(),
+            ));
         }
+        snapshot.ensure_source_unchanged()?;
+        // Scanning/capture can be slow; do not rely on the observation made before that work.
+        ensure_delete_allowed(codex_dir)?;
+        // Do not change journal mode before comparing the source to its verified pre-image.
+        let state = rusqlite::Connection::open_with_flags(
+            paths::state_db_path(codex_dir),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?;
+        state.pragma_update(None, "foreign_keys", "ON")?;
+        let spawn_edges_attached: bool = state.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type='table' AND name='thread_spawn_edges')",
+        [], |row| row.get(0),
+    )?;
+        let transaction =
+            rusqlite::Transaction::new_unchecked(&state, rusqlite::TransactionBehavior::Immediate)?;
+        let logs_attached = attach_logs_database_for_delete(codex_dir, &transaction)?;
+        let thread_history_attached =
+            attach_thread_history_database_for_delete(codex_dir, &transaction)?;
+        snapshot.ensure_after_sqlite_open()?;
+        let index_path = paths::session_index_path(codex_dir);
+        let mut journal = crate::mutation_journal::MutationJournal::default();
+        let operation = (|| -> AppResult<Vec<CodexDeleteOutcome>> {
+            let mut outcomes = Vec::with_capacity(preparations.len());
+            for prepared in &preparations {
+                ensure_delete_allowed(codex_dir)?;
+                let rows =
+                    transaction.execute("DELETE FROM threads WHERE id = ?", [&prepared.id])?;
+                if spawn_edges_attached {
+                    // 删除会话作为 child 的入边；若它仍有未删除的子代理，则保留出边，
+                    // 让孤儿诊断/清理仍能发现这些后代。批量删除后代时，其入边会随之删除。
+                    transaction.execute(
+                        "DELETE FROM thread_spawn_edges WHERE child_thread_id = ?1",
+                        [&prepared.id],
+                    )?;
+                }
+                let rows_logs = if logs_attached {
+                    transaction.execute(
+                        "DELETE FROM delete_logs.logs WHERE thread_id = ?",
+                        [&prepared.id],
+                    )?
+                } else {
+                    0
+                };
+                let rows_history = if thread_history_attached {
+                    delete_thread_history_rows(&transaction, &prepared.history_thread_ids)?
+                } else {
+                    0
+                };
 
-        // Keep this after every Core file mutation so late Desktop/CAS failures exercise the same
-        // compensation path as other write failures.
-        if !desktop_restart_required {
-            if let Some(receipt) = crate::codex_projects::clear_thread_project_states_with_receipt(
+                for rollout in &prepared.rollout_files {
+                    let expected = snapshot
+                        .expected_file(rollout)?
+                        .ok_or_else(|| AppError::Other("删除 rollout 缺少快照预图".into()))?;
+                    #[cfg(test)]
+                    crate::codex_delete_snapshot::inject_before_removal(rollout)?;
+                    journal.remove_file_if_unchanged(rollout, &expected)?;
+                }
+
+                outcomes.push(CodexDeleteOutcome {
+                    result: DeleteResult {
+                        id: prepared.id.clone(),
+                        rollout_path: prepared.rollout_path.clone(),
+                        snapshot_path: Some(snapshot.path.to_string_lossy().into_owned()),
+                        threads_rows_deleted: rows as u32,
+                        logs_rows_deleted: rows_logs as u32,
+                        history_rows_deleted: rows_history.min(u32::MAX as usize) as u32,
+                        rollout_deleted: !prepared.rollout_files.is_empty(),
+                        rollout_missing: prepared.rollout_files.is_empty(),
+                        sidecar_deleted: false,
+                        tasks_deleted: false,
+                        file_history_deleted: false,
+                        shared_data_preserved: false,
+                        desktop_restart_required: false,
+                        ok: true,
+                        error: None,
+                    },
+                });
+            }
+
+            // Keep this after every Core file mutation so late Desktop/CAS failures exercise the same
+            // compensation path as other write failures.
+            mutate_preimage_file(&snapshot, &mut journal, &index_path, |bytes| {
+                let Some(bytes) = bytes else {
+                    return Ok(None);
+                };
+                let content = String::from_utf8(bytes.to_vec())
+                    .map_err(|error| AppError::Other(error.to_string()))?;
+                let mut changed = false;
+                let mut output = String::new();
+                for line in content.lines() {
+                    let remove = serde_json::from_str::<serde_json::Value>(line)
+                        .ok()
+                        .is_some_and(|value| {
+                            ["id", "session_id"].iter().any(|key| {
+                                value
+                                    .get(key)
+                                    .and_then(|v| v.as_str())
+                                    .is_some_and(|id| unique_ids.iter().any(|target| target == id))
+                            })
+                        });
+                    if remove {
+                        changed = true;
+                    } else if !line.is_empty() {
+                        output.push_str(line);
+                        output.push('\n');
+                    }
+                }
+                Ok(changed.then(|| output.into_bytes()))
+            })?;
+            mutate_preimage_file(
+                &snapshot,
+                &mut journal,
+                &paths::archive_ledger_path(codex_dir),
+                |bytes| {
+                    let Some(bytes) = bytes else {
+                        return Ok(None);
+                    };
+                    let Ok(mut ledger) =
+                        serde_json::from_slice::<crate::models::ArchiveLedger>(bytes)
+                    else {
+                        return Ok(None);
+                    };
+                    let mut changed = false;
+                    for id in &unique_ids {
+                        changed |= ledger.entries.remove(id).is_some();
+                    }
+                    if changed {
+                        Ok(Some(serde_json::to_vec_pretty(&ledger)?))
+                    } else {
+                        Ok(None)
+                    }
+                },
+            )?;
+            ensure_delete_allowed(codex_dir)?;
+            let expected_global =
+                snapshot.expected_file(&paths::codex_global_state_json_path(codex_dir))?;
+            if let Some(receipt) = crate::codex_projects::clear_thread_project_states_from_snapshot(
                 codex_dir,
                 &unique_ids,
+                expected_global.as_ref(),
             )? {
                 journal.register_project_state_receipt(receipt);
             }
-        }
-        if let Some(family_store) = family_store {
-            let family_path = paths::family_store_path(codex_dir);
-            journal.mutate_file(&family_path, || family::save(codex_dir, family_store))?;
-        }
-        Ok(outcomes)
-    })();
+            if let Some(family_store) = family_store {
+                let family_path = paths::family_store_path(codex_dir);
+                mutate_preimage_file(&snapshot, &mut journal, &family_path, |_| {
+                    Ok(Some(serde_json::to_vec_pretty(family_store)?))
+                })?;
+            }
+            // A late writer start follows the existing transaction/file compensation path.
+            ensure_delete_allowed(codex_dir)?;
+            Ok(outcomes)
+        })();
 
-    let mut outcomes = match operation {
-        Ok(outcomes) => {
-            crate::mutation_journal::commit_transaction_with_compensation(transaction, journal)?;
-            outcomes
-        }
-        Err(error) => {
-            return Err(
-                crate::mutation_journal::rollback_transaction_with_compensation(
+        let mut outcomes = match operation {
+            Ok(outcomes) => {
+                crate::mutation_journal::commit_transaction_with_compensation(
                     transaction,
                     journal,
-                    error,
-                ),
-            );
+                )?;
+                outcomes
+            }
+            Err(error) => {
+                return Err(
+                    crate::mutation_journal::rollback_transaction_with_compensation(
+                        transaction,
+                        journal,
+                        error,
+                    ),
+                );
+            }
+        };
+
+        // Desktop's catalog and summaries live outside Core's transaction. Each store rechecks
+        // writers before opening for write and before commit; late failure is explicitly partial.
+        // Keep the cleanup after the compensated Core commit: a Core failure must never hide a thread
+        // that still exists. If this separate cleanup fails, report an explicit partial deletion so a
+        // missing rollout is not mistaken for a fully successful operation.
+        if let Err(error) =
+            crate::codex_projects::clear_deleted_thread_cache_rows(codex_dir, &unique_ids)
+        {
+            let message = format!("会话主体已删除，但 Codex Desktop 目录缓存清理失败: {error}");
+            for outcome in &mut outcomes {
+                outcome.result.ok = false;
+                outcome.result.error = Some(message.clone());
+            }
+            return Ok(outcomes);
         }
+
+        // Empty date directories are cosmetic and deliberately outside the transaction. Failure to
+        // remove one cannot make the conversation visible again, so it must not downgrade deletion.
+        for prepared in &preparations {
+            for rollout in &prepared.rollout_files {
+                cleanup_empty_rollout_ancestors_best_effort(codex_dir, rollout);
+            }
+        }
+
+        Ok(outcomes)
+    })();
+    deletion.map_err(|error| {
+        AppError::Other(format!("{error}；删除前快照: {}", snapshot.path.display()))
+    })
+}
+
+fn mutate_preimage_file(
+    snapshot: &crate::codex_delete_snapshot::VerifiedSnapshot,
+    journal: &mut crate::mutation_journal::MutationJournal,
+    path: &Path,
+    mutation: impl FnOnce(Option<&[u8]>) -> AppResult<Option<Vec<u8>>>,
+) -> AppResult<()> {
+    let expected = snapshot.expected_file(path)?;
+    let bytes = match fs::read(path) {
+        Ok(bytes) => Some(bytes),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(error.into()),
     };
-
-    // Desktop's catalog and generated summaries live outside Core's state database. SQLite safely
-    // coordinates this external writer even while Desktop is running, so clear these rows now.
-    // Keep the cleanup after the compensated Core commit: a Core failure must never hide a thread
-    // that still exists. If this separate cleanup fails, report an explicit partial deletion so a
-    // missing rollout is not mistaken for a fully successful operation.
-    if let Err(error) =
-        crate::codex_projects::clear_deleted_thread_cache_rows(codex_dir, &unique_ids)
-    {
-        let message = format!("会话主体已删除，但 Codex Desktop 目录缓存清理失败: {error}");
-        for outcome in &mut outcomes {
-            outcome.result.ok = false;
-            outcome.result.error = Some(message.clone());
-        }
+    if bytes.as_deref().map(crate::atomic_file::fingerprint_bytes) != expected {
+        return Err(AppError::AtomicWriteConflict(format!(
+            "文件在删除快照后发生变化: {}",
+            path.display()
+        )));
     }
-
-    // Empty date directories are cosmetic and deliberately outside the transaction. Failure to
-    // remove one cannot make the conversation visible again, so it must not downgrade deletion.
-    for prepared in &preparations {
-        for rollout in &prepared.rollout_files {
-            cleanup_empty_rollout_ancestors_best_effort(codex_dir, rollout);
-        }
+    if let Some(output) = mutation(bytes.as_deref())? {
+        journal.mutate_file(path, || {
+            use std::io::Write;
+            let writer = |file: &mut fs::File| -> AppResult<()> {
+                file.write_all(&output)?;
+                Ok(())
+            };
+            if let Some(expected) = &expected {
+                crate::atomic_file::replace_with_writer_if_unchanged(path, expected, writer)
+            } else {
+                crate::atomic_file::create_with_writer_if_absent(path, writer)
+            }
+        })?;
     }
-
-    Ok(outcomes)
+    Ok(())
 }
 
 fn rollout_filename_thread_id(path: &Path) -> Option<String> {

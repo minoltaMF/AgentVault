@@ -21,7 +21,9 @@ use crate::state_db;
 
 pub(crate) mod codex_delete;
 
-pub(crate) use codex_delete::delete_codex_artifacts;
+#[cfg(test)]
+use codex_delete::delete_codex_artifacts;
+#[cfg(test)]
 use codex_delete::delete_codex_artifacts_batch_with_family_store;
 
 fn provider_or_codex(provider: Option<String>) -> String {
@@ -148,6 +150,23 @@ fn query_summaries(
     params: &[&dyn rusqlite::ToSql],
     cancel: Option<&AtomicBool>,
 ) -> AppResult<Vec<SessionSummary>> {
+    query_summaries_impl(codex_dir, where_clause, params, cancel, false)
+}
+
+pub(crate) fn workbench_codex_rows(
+    codex_dir: &Path,
+    cancel: &AtomicBool,
+) -> AppResult<Vec<SessionSummary>> {
+    query_summaries_impl(codex_dir, "", &[], Some(cancel), true)
+}
+
+fn query_summaries_impl(
+    codex_dir: &Path,
+    where_clause: &str,
+    params: &[&dyn rusqlite::ToSql],
+    cancel: Option<&AtomicBool>,
+    metadata_only: bool,
+) -> AppResult<Vec<SessionSummary>> {
     ensure_not_cancelled(cancel)?;
     let state = state_db::open_ro(codex_dir)?;
     let logs_conn = cancel
@@ -194,7 +213,11 @@ fn query_summaries(
         let rollout_path = paths::host_path_string_from_codex_record(codex_dir, &rollout_path_raw);
         let cwd = paths::host_path_string_from_codex_record(codex_dir, &cwd_raw);
         let cwd_display = paths::basename_display(&cwd);
-        let rollout_bytes = fs::metadata(&rollout_path).map(|m| m.len()).unwrap_or(0);
+        let rollout_bytes = if metadata_only {
+            0
+        } else {
+            fs::metadata(&rollout_path).map(|m| m.len()).unwrap_or(0)
+        };
         let resume_command = format!("codex resume {}", id);
         let title = select_codex_title(
             index_titles.get(&id).map(String::as_str),
@@ -234,7 +257,7 @@ fn query_summaries(
     // "Invalid column type Null"。某些历史数据里 logs.thread_id 存在 NULL 值。
     for s in out.iter_mut() {
         ensure_not_cancelled(cancel)?;
-        if s.tokens_used <= 0 {
+        if !metadata_only && s.tokens_used <= 0 {
             s.tokens_used = rollout_token_total(&s.rollout_path, cancel)?;
         }
     }
@@ -1532,9 +1555,13 @@ pub fn delete_session_with_dirs(
     };
     match provider_or_codex(provider).as_str() {
         "codex" => family::with_lock(lock, |_guard| {
-            delete_codex_targets_locked(&dirs.codex_path(), vec![target])?
-                .pop()
-                .ok_or_else(|| AppError::Other("Codex 删除未返回结果".to_string()))
+            delete_codex_targets_locked(
+                &dirs.codex_path(),
+                vec![target],
+                dirs.backup_dir.as_deref(),
+            )?
+            .pop()
+            .ok_or_else(|| AppError::Other("Codex 删除未返回结果".to_string()))
         }),
         "claude" => delete_claude_targets(&dirs.claude_path(), vec![target])?
             .pop()
@@ -1598,7 +1625,7 @@ pub fn delete_sessions_with_dirs(
     };
     match provider_or_codex(provider).as_str() {
         "codex" => family::with_lock(lock, |_guard| {
-            delete_codex_targets_locked(&dirs.codex_path(), targets)
+            delete_codex_targets_locked(&dirs.codex_path(), targets, dirs.backup_dir.as_deref())
         }),
         "claude" => delete_claude_targets(&dirs.claude_path(), targets),
         "opencode" => {
@@ -1629,6 +1656,7 @@ fn empty_delete_result(target: &DeleteTarget) -> DeleteResult {
     DeleteResult {
         id: target.id.clone(),
         rollout_path: target.rollout_path.clone(),
+        snapshot_path: None,
         threads_rows_deleted: 0,
         logs_rows_deleted: 0,
         history_rows_deleted: 0,
@@ -1683,7 +1711,12 @@ enum CodexDeletePlanKey {
 fn delete_codex_targets_locked(
     codex_dir: &Path,
     targets: Vec<DeleteTarget>,
+    backup_dir: Option<&str>,
 ) -> AppResult<Vec<DeleteResult>> {
+    if targets.is_empty() {
+        return Ok(Vec::new());
+    }
+    codex_delete::ensure_delete_allowed(codex_dir)?;
     let store = family::load(codex_dir)?;
     // Resolve every target before the first destructive write. A broken family/index mapping
     // must never leave a half-deleted logical conversation.
@@ -1777,10 +1810,11 @@ fn delete_codex_targets_locked(
         }
     }
 
-    let batch = delete_codex_artifacts_batch_with_family_store(
+    let batch = codex_delete::delete_codex_artifacts_with_backup_root(
         codex_dir,
         &physical_ids,
         family_changed.then_some(&next_store),
+        &crate::codex_delete_snapshot::backup_root(backup_dir),
     );
     let mut executed = HashMap::<CodexDeletePlanKey, DeleteResult>::new();
     match batch {
@@ -1857,6 +1891,9 @@ fn delete_codex_targets_locked(
 }
 
 fn merge_codex_delete_result(target: &mut DeleteResult, branch_id: &str, source: DeleteResult) {
+    if target.snapshot_path.is_none() {
+        target.snapshot_path = source.snapshot_path.clone();
+    }
     if target.rollout_path.is_none() {
         target.rollout_path = source.rollout_path.clone();
     }
@@ -5400,33 +5437,531 @@ mod tests {
     }
 
     #[test]
-    fn delete_codex_while_desktop_running_clears_cache_and_defers_global_state() -> AppResult<()> {
+    fn delete_codex_while_desktop_running_rejects_without_any_write() -> AppResult<()> {
         let codex = temp_dir("codex-delete-running-desktop");
         let rollout = archive_fixture(&codex);
         let other_id = "019d-desktop-cache-other-7000-8000-000000000002";
         write_codex_project_state_fixture(&codex, &[ARCHIVE_TEST_ID])?;
         write_codex_desktop_thread_cache_fixture(&codex, &[ARCHIVE_TEST_ID, other_id])?;
-        let global_state_path = paths::codex_global_state_json_path(&codex);
-        let global_state_before = fs::read(&global_state_path)?;
+        let before = deletion_fixture_bytes(&codex)?;
         let _desktop = crate::codex_projects::DesktopTestProbeGuard::running();
 
-        let result = delete_one(&codex, ARCHIVE_TEST_ID)?;
+        let error = delete_one(&codex, ARCHIVE_TEST_ID)
+            .expect_err("running Desktop must reject deletion before any native write");
 
-        assert!(result.ok, "{:?}", result.error);
-        assert!(result.desktop_restart_required);
-        assert!(!rollout.exists());
-        assert_eq!(fs::read(&global_state_path)?, global_state_before);
+        assert!(error.to_string().contains("运行"), "{error}");
+        assert!(rollout.exists());
+        assert_eq!(deletion_fixture_bytes(&codex)?, before);
         let state = state_db::open_ro(&codex)?;
         let remaining: i64 = state.query_row(
             "SELECT COUNT(*) FROM threads WHERE id = ?",
             [ARCHIVE_TEST_ID],
             |row| row.get(0),
         )?;
-        assert_eq!(remaining, 0);
-        assert_eq!(desktop_thread_cache_rows(&codex, ARCHIVE_TEST_ID)?, (0, 0));
+        assert_eq!(remaining, 1);
+        assert_eq!(desktop_thread_cache_rows(&codex, ARCHIVE_TEST_ID)?, (1, 1));
         assert_eq!(desktop_thread_cache_rows(&codex, other_id)?, (1, 1));
 
         drop(state);
+        fs::remove_dir_all(&codex).ok();
+        Ok(())
+    }
+
+    // Capture both file bytes and directory entries: a refused delete must not create a DB,
+    // WAL, metadata file or directory. This helper only visits locally generated test fixtures.
+    #[test]
+    fn delete_snapshot_creation_and_verification_failures_leave_sources_untouched() -> AppResult<()>
+    {
+        use crate::codex_delete_snapshot::{fail_next, TestFault};
+        for failure in ["destination", "corrupt"] {
+            for entry in ["single", "batch", "family", "branch"] {
+                let root = temp_dir("delete-snapshot-refusal");
+                let codex = root.join("codex");
+                codex_family_fixture(
+                    &codex,
+                    "snapshot-family",
+                    "active",
+                    &[
+                        FamilyBranchFixture {
+                            id: "history",
+                            archived: true,
+                        },
+                        FamilyBranchFixture {
+                            id: "active",
+                            archived: false,
+                        },
+                    ],
+                )?;
+                write_codex_project_state_fixture(&codex, &["active", "history"])?;
+                write_codex_desktop_thread_cache_fixture(&codex, &["active", "history"])?;
+                let before = deletion_fixture_bytes(&codex)?;
+                let backup = root.join("backups");
+                if failure == "destination" {
+                    fs::write(&backup, b"not a directory")?;
+                } else {
+                    fail_next(TestFault::Corrupt);
+                }
+                let dirs = ProviderDirs {
+                    codex_dir: codex.to_string_lossy().into_owned(),
+                    backup_dir: Some(backup.to_string_lossy().into_owned()),
+                    ..ProviderDirs::default()
+                };
+                let lock = family::FamilyLock::default();
+                let failed = match entry {
+                    "branch" => crate::repair::delete_family_branch_with_backup(
+                        dirs.codex_dir.clone(),
+                        "snapshot-family".into(),
+                        "history".into(),
+                        dirs.backup_dir.clone(),
+                        &lock,
+                    )
+                    .map(|result| !result.ok),
+                    "batch" => delete_sessions_with_dirs(
+                        Some("codex".into()),
+                        dirs,
+                        vec!["active".into(), "history".into()],
+                        None,
+                        &lock,
+                    )
+                    .map(|results| results.iter().all(|result| !result.ok)),
+                    _ => delete_session_with_dirs(
+                        Some("codex".into()),
+                        dirs,
+                        if entry == "family" {
+                            "active"
+                        } else {
+                            "history"
+                        }
+                        .into(),
+                        None,
+                        &lock,
+                    )
+                    .map(|result| !result.ok),
+                };
+                assert!(failed.unwrap_or(true), "{failure}/{entry}");
+                assert_eq!(deletion_fixture_bytes(&codex)?, before, "{failure}/{entry}");
+                fs::remove_dir_all(root)?;
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn delete_snapshot_source_drift_refuses_without_overwriting_concurrent_bytes() -> AppResult<()>
+    {
+        let codex = temp_dir("delete-snapshot-drift");
+        let rollout = archive_fixture(&codex);
+        let rollout_before = fs::read(&rollout)?;
+        let state_before = fs::read(paths::state_db_path(&codex))?;
+        crate::codex_delete_snapshot::fail_next(
+            crate::codex_delete_snapshot::TestFault::SourceChanged,
+        );
+        let error = delete_one(&codex, ARCHIVE_TEST_ID).expect_err("drift must block deletion");
+        assert!(error.to_string().contains("源数据变化"), "{error}");
+        assert_eq!(fs::read(&rollout)?, rollout_before);
+        assert_eq!(fs::read(paths::state_db_path(&codex))?, state_before);
+        assert_eq!(
+            fs::read(paths::session_index_path(&codex))?,
+            b"concurrent writer\n"
+        );
+        fs::remove_dir_all(codex)?;
+        Ok(())
+    }
+
+    fn snapshot_database_rows(path: &Path) -> AppResult<BTreeMap<String, Vec<String>>> {
+        let conn = rusqlite::Connection::open_with_flags(
+            path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )?;
+        let tables = conn
+            .prepare("SELECT name FROM sqlite_schema WHERE type='table' ORDER BY name")?
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut result = BTreeMap::new();
+        for table in tables {
+            let mut stmt =
+                conn.prepare(&format!("SELECT * FROM \"{}\"", table.replace('"', "\"\"")))?;
+            let count = stmt.column_count();
+            let mut rows = stmt
+                .query_map([], |row| {
+                    (0..count)
+                        .map(|i| row.get_ref(i).map(|value| format!("{value:?}")))
+                        .collect::<Result<Vec<_>, _>>()
+                        .map(|values| values.join("|"))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            rows.sort();
+            result.insert(table, rows);
+        }
+        Ok(result)
+    }
+
+    #[test]
+    fn delete_snapshot_late_rollout_append_is_preserved_and_core_rolls_back() -> AppResult<()> {
+        let codex = temp_dir("delete-snapshot-late-append");
+        let rollout = archive_fixture(&codex);
+        let before = fs::read(&rollout)?;
+        crate::codex_delete_snapshot::fail_next(
+            crate::codex_delete_snapshot::TestFault::LateRollout,
+        );
+        let error = delete_one(&codex, ARCHIVE_TEST_ID)
+            .expect_err("snapshot fingerprint must bind removal");
+        assert!(error.to_string().contains("删除快照后发生变化"), "{error}");
+        let mut expected = before;
+        expected.extend_from_slice(b"concurrent append after snapshot\n");
+        assert_eq!(fs::read(&rollout)?, expected);
+        assert_eq!(state_db::count_threads(&codex)?, 1);
+        fs::remove_dir_all(codex)?;
+        Ok(())
+    }
+
+    #[test]
+    fn delete_snapshot_restores_batch_family_duplicates_wal_and_all_mutated_stores() -> AppResult<()>
+    {
+        let root = temp_dir("delete-snapshot-roundtrip");
+        let codex = root.join("codex");
+        let active = "019d2000-1111-7000-8000-000000000001";
+        let history = "019d2000-1111-7000-8000-000000000002";
+        let rollouts = codex_family_fixture(
+            &codex,
+            "roundtrip-family",
+            active,
+            &[
+                FamilyBranchFixture {
+                    id: history,
+                    archived: true,
+                },
+                FamilyBranchFixture {
+                    id: active,
+                    archived: false,
+                },
+            ],
+        )?;
+        let duplicate = codex
+            .join("sessions/duplicate")
+            .join(format!("rollout-other-{active}.jsonl"));
+        fs::create_dir_all(duplicate.parent().unwrap())?;
+        fs::copy(&rollouts[active], &duplicate)?;
+        write_codex_project_state_fixture(&codex, &[active, history])?;
+        write_codex_desktop_thread_cache_fixture(&codex, &[active, history])?;
+        create_thread_history_fixture(&codex, &[active, history])?;
+        // Unknown columns, binary values and incoming relation edges must survive full native backup.
+        let state = rusqlite::Connection::open(paths::state_db_path(&codex))?;
+        state.execute_batch("PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0;
+            CREATE TABLE thread_spawn_edges (parent_thread_id TEXT, child_thread_id TEXT, extra BLOB);
+            CREATE TABLE future_native_table (payload BLOB, label TEXT);
+            INSERT INTO future_native_table VALUES (X'00FF80', 'unknown field');")?;
+        state.execute(
+            "INSERT INTO thread_spawn_edges VALUES ('other-parent', ?1, X'00ABFF')",
+            [history],
+        )?;
+        // Keep connection open: required data remains in WAL rather than the base database.
+        assert!(codex.join("state_5.sqlite-wal").metadata()?.len() > 32);
+        let logs = rusqlite::Connection::open(codex.join("logs_2.sqlite"))?;
+        logs.execute_batch(
+            "CREATE TABLE logs (id INTEGER PRIMARY KEY, thread_id TEXT, body BLOB)",
+        )?;
+        logs.execute("INSERT INTO logs VALUES (1, ?1, X'00FF80')", [active])?;
+        drop(logs);
+        fs::write(
+            paths::archive_ledger_path(&codex),
+            b"{\"version\":1,\"entries\":{}}",
+        )?;
+        let db_paths = [
+            "state_5.sqlite",
+            "logs_2.sqlite",
+            "thread_history_1.sqlite",
+            "sqlite/codex-dev.db",
+            "sqlite/codex-thread-summaries-dev.db",
+        ];
+        let before_db = db_paths
+            .iter()
+            .map(|path| Ok((*path, snapshot_database_rows(&codex.join(path))?)))
+            .collect::<AppResult<BTreeMap<_, _>>>()?;
+        let before_files = deletion_fixture_bytes(&codex)?;
+        let backup_root = root.join("configured-backups");
+        let results = delete_sessions_with_dirs(
+            Some("codex".into()),
+            ProviderDirs {
+                codex_dir: codex.to_string_lossy().into_owned(),
+                backup_dir: Some(backup_root.to_string_lossy().into_owned()),
+                ..ProviderDirs::default()
+            },
+            vec![active.into(), history.into()],
+            None,
+            &family::FamilyLock::default(),
+        )?;
+        assert!(results.iter().all(|result| result.ok), "{results:?}");
+        assert_eq!(results[0].snapshot_path, results[1].snapshot_path);
+        let snapshot = PathBuf::from(
+            results[0]
+                .snapshot_path
+                .as_ref()
+                .expect("verified snapshot receipt"),
+        );
+        assert!(snapshot.starts_with(backup_root.canonicalize()?));
+        assert!(!duplicate.exists());
+        assert!(rollouts.values().all(|path| !path.exists()));
+        assert_eq!(
+            state.query_row("SELECT COUNT(*) FROM threads", [], |row| row
+                .get::<_, i64>(0))?,
+            0
+        );
+        drop(state);
+        // Remove the fixture source altogether: verification/recovery must depend only on snapshot.
+        fs::remove_dir_all(&codex)?;
+        assert!(crate::codex_delete_snapshot::verify(&snapshot)?.verified);
+        let output = root.join("recovered");
+        assert!(crate::codex_delete_snapshot::restore_to_new_dir(&snapshot, &output)?.verified);
+        for (path, expected) in before_db {
+            assert_eq!(
+                snapshot_database_rows(&output.join(path))?,
+                expected,
+                "{path}"
+            );
+        }
+        for (relative, content) in before_files {
+            let name = relative.to_string_lossy().replace('\\', "/");
+            if db_paths.contains(&name.as_str()) || name.ends_with("-wal") || name.ends_with("-shm")
+            {
+                continue;
+            }
+            if let Some(expected) = content {
+                assert_eq!(fs::read(output.join(&relative))?, expected, "{relative:?}");
+            }
+        }
+        let restored = deletion_fixture_bytes(&output)?;
+        assert!(crate::codex_delete_snapshot::restore_to_new_dir(&snapshot, &output).is_err());
+        assert_eq!(deletion_fixture_bytes(&output)?, restored);
+        // A forged member must not be able to pre-publish the recovery completion marker.
+        let manifest_path = snapshot.join("manifest.json");
+        let original_manifest = fs::read(&manifest_path)?;
+        for malicious_path in [
+            "agentvault-delete-recovery.json",
+            "sessions/../escape.jsonl",
+        ] {
+            let mut manifest: serde_json::Value = serde_json::from_slice(&original_manifest)?;
+            manifest["members"]
+                .as_array_mut()
+                .unwrap()
+                .push(serde_json::json!({
+                    "path": malicious_path, "sqlite": false, "content": null
+                }));
+            fs::write(&manifest_path, serde_json::to_vec(&manifest)?)?;
+            let unsafe_output = root.join("unsafe-restore");
+            assert!(crate::codex_delete_snapshot::verify(&snapshot).is_err());
+            assert!(
+                crate::codex_delete_snapshot::restore_to_new_dir(&snapshot, &unsafe_output)
+                    .is_err()
+            );
+            assert!(!unsafe_output.exists());
+        }
+        fs::write(&manifest_path, original_manifest)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(fs::metadata(&output)?.permissions().mode() & 0o777, 0o700);
+        }
+        fs::write(
+            snapshot.join("files/state_5.sqlite"),
+            b"corrupted after successful recovery",
+        )?;
+        let rejected_output = root.join("must-not-exist");
+        assert!(crate::codex_delete_snapshot::verify(&snapshot).is_err());
+        assert!(
+            crate::codex_delete_snapshot::restore_to_new_dir(&snapshot, &rejected_output).is_err()
+        );
+        assert!(!rejected_output.exists());
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    fn deletion_fixture_bytes(root: &Path) -> AppResult<BTreeMap<PathBuf, Option<Vec<u8>>>> {
+        fn visit(
+            root: &Path,
+            dir: &Path,
+            entries: &mut BTreeMap<PathBuf, Option<Vec<u8>>>,
+        ) -> AppResult<()> {
+            for entry in fs::read_dir(dir)? {
+                let entry = entry?;
+                let path = entry.path();
+                let kind = entry.file_type()?;
+                assert!(
+                    !kind.is_symlink(),
+                    "fixtures must not escape their temporary root"
+                );
+                let relative = path.strip_prefix(root).unwrap().to_path_buf();
+                if kind.is_dir() {
+                    entries.insert(relative, None);
+                    visit(root, &path, entries)?;
+                } else {
+                    entries.insert(relative, Some(fs::read(&path)?));
+                }
+            }
+            Ok(())
+        }
+        let mut entries = BTreeMap::new();
+        visit(root, root, &mut entries)?;
+        Ok(entries)
+    }
+
+    #[test]
+    fn delete_codex_when_stopped_clears_only_selected_desktop_cache() -> AppResult<()> {
+        let codex = temp_dir("codex-delete-stopped-desktop-cache");
+        let rollout = archive_fixture(&codex);
+        let other_id = "019d-desktop-cache-other-7000-8000-000000000002";
+        write_codex_project_state_fixture(&codex, &[ARCHIVE_TEST_ID, other_id])?;
+        write_codex_desktop_thread_cache_fixture(&codex, &[ARCHIVE_TEST_ID, other_id])?;
+
+        let result = delete_one(&codex, ARCHIVE_TEST_ID)?;
+
+        assert!(result.ok, "{:?}", result.error);
+        assert!(!result.desktop_restart_required);
+        assert!(!rollout.exists());
+        assert_codex_project_state_membership(&codex, ARCHIVE_TEST_ID, false)?;
+        assert_codex_project_state_membership(&codex, other_id, true)?;
+        assert_eq!(desktop_thread_cache_rows(&codex, ARCHIVE_TEST_ID)?, (0, 0));
+        assert_eq!(desktop_thread_cache_rows(&codex, other_id)?, (1, 1));
+        fs::remove_dir_all(&codex).ok();
+        Ok(())
+    }
+
+    #[test]
+    fn delete_codex_running_or_unknown_blocks_all_entry_points_without_writes() -> AppResult<()> {
+        use crate::codex_writer_guard::{TestWriterProbe, WriterTestProbeGuard};
+        for entry in ["single", "batch", "family", "branch"] {
+            for probe in [
+                TestWriterProbe::Running(true),
+                TestWriterProbe::Error("permission denied"),
+            ] {
+                let codex = temp_dir("codex-delete-entry-gate");
+                let family_id = "gate-family";
+                let active = "gate-active";
+                let archived = "gate-archived";
+                codex_family_fixture(
+                    &codex,
+                    family_id,
+                    active,
+                    &[
+                        FamilyBranchFixture {
+                            id: archived,
+                            archived: true,
+                        },
+                        FamilyBranchFixture {
+                            id: active,
+                            archived: false,
+                        },
+                    ],
+                )?;
+                write_codex_project_state_fixture(&codex, &[active, archived])?;
+                write_codex_desktop_thread_cache_fixture(&codex, &[active, archived])?;
+                let before = deletion_fixture_bytes(&codex)?;
+                let lock = family::FamilyLock::default();
+                let _writer = WriterTestProbeGuard::sequence([probe]);
+                let result = match entry {
+                    "single" | "family" => delete_session_with_lock(
+                        Some("codex".into()),
+                        codex.to_string_lossy().into_owned(),
+                        None,
+                        if entry == "single" { archived } else { active }.into(),
+                        None,
+                        &lock,
+                    )
+                    .map(|result| vec![result]),
+                    "batch" => delete_sessions_with_lock(
+                        Some("codex".into()),
+                        codex.to_string_lossy().into_owned(),
+                        None,
+                        vec![active.into(), archived.into()],
+                        None,
+                        &lock,
+                    ),
+                    _ => crate::repair::delete_family_branch_with_lock(
+                        codex.to_string_lossy().into_owned(),
+                        family_id.into(),
+                        archived.into(),
+                        &lock,
+                    )
+                    .map(|result| vec![result]),
+                };
+                assert!(
+                    result.is_err(),
+                    "{entry}: writer must block before resolving/writing targets"
+                );
+                assert!(result.unwrap_err().to_string().contains("已拒绝删除"));
+                assert_eq!(deletion_fixture_bytes(&codex)?, before, "{entry}");
+                fs::remove_dir_all(&codex).ok();
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn delete_codex_refusal_does_not_create_missing_native_databases() -> AppResult<()> {
+        use crate::codex_writer_guard::{TestWriterProbe, WriterTestProbeGuard};
+        for probe in [
+            TestWriterProbe::Running(true),
+            TestWriterProbe::Error("probe unavailable"),
+        ] {
+            let codex = temp_dir("codex-delete-no-db-gate");
+            fs::create_dir_all(&codex)?;
+            fs::write(codex.join("session_index.jsonl"), "{\"id\":\"keep\"}\n")?;
+            let before = deletion_fixture_bytes(&codex)?;
+            let _writer = WriterTestProbeGuard::sequence([probe]);
+            assert!(delete_one(&codex, "keep").is_err());
+            assert_eq!(deletion_fixture_bytes(&codex)?, before);
+            fs::remove_dir_all(&codex).ok();
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn delete_codex_late_writer_rolls_back_core_and_project_state() -> AppResult<()> {
+        let codex = temp_dir("codex-delete-late-writer");
+        let rollout = archive_fixture(&codex);
+        write_codex_project_state_fixture(&codex, &[ARCHIVE_TEST_ID])?;
+        write_codex_desktop_thread_cache_fixture(&codex, &[ARCHIVE_TEST_ID])?;
+        let index = paths::session_index_path(&codex);
+        let global = paths::codex_global_state_json_path(&codex);
+        let originals = [rollout.clone(), index, global]
+            .into_iter()
+            .map(|path| Ok((path.clone(), fs::read(path)?)))
+            .collect::<AppResult<Vec<_>>>()?;
+        // Initial preflight, after scan, before Core mutation, before project mutation,
+        // then a new CLI/app-server appears immediately before the transaction commit.
+        let _writer = crate::codex_writer_guard::WriterTestProbeGuard::running_after_not_running(4);
+        let error = delete_one(&codex, ARCHIVE_TEST_ID).expect_err("late writer must abort commit");
+        assert!(error.to_string().contains("已拒绝删除"), "{error}");
+        for (path, bytes) in originals {
+            assert_eq!(fs::read(path)?, bytes);
+        }
+        let state = state_db::open_ro(&codex)?;
+        assert_eq!(
+            state.query_row(
+                "SELECT COUNT(*) FROM threads WHERE id = ?1",
+                [ARCHIVE_TEST_ID],
+                |row| row.get::<_, i64>(0)
+            )?,
+            1
+        );
+        assert_eq!(desktop_thread_cache_rows(&codex, ARCHIVE_TEST_ID)?, (1, 1));
+        drop(state);
+        fs::remove_dir_all(&codex).ok();
+        Ok(())
+    }
+
+    #[test]
+    fn delete_codex_writer_after_core_commit_reports_partial_and_keeps_cache() -> AppResult<()> {
+        let codex = temp_dir("codex-delete-writer-before-cache");
+        let rollout = archive_fixture(&codex);
+        write_codex_desktop_thread_cache_fixture(&codex, &[ARCHIVE_TEST_ID])?;
+        // The Core unit has committed; the separate Desktop cache must not be modified.
+        let _writer = crate::codex_writer_guard::WriterTestProbeGuard::running_after_not_running(5);
+        let result = delete_one(&codex, ARCHIVE_TEST_ID)?;
+        assert!(!result.ok);
+        assert!(result.error.unwrap().contains("会话主体已删除"));
+        assert!(!rollout.exists());
+        assert_eq!(desktop_thread_cache_rows(&codex, ARCHIVE_TEST_ID)?, (1, 1));
         fs::remove_dir_all(&codex).ok();
         Ok(())
     }
@@ -5664,8 +6199,9 @@ mod tests {
         let index_before = fs::read(&index_path)?;
         let global_path = paths::codex_global_state_json_path(&codex);
         let global_before = fs::read(&global_path)?;
-        // batch pre-check, mutation-entry check, then the final pre-CAS check observes Desktop.
-        let _desktop = crate::codex_projects::DesktopTestProbeGuard::running_after_not_running(2);
+        // Four delete gates plus the state mutation-entry check pass. The pre-CAS check
+        // observes Desktop only after the rollout/index mutations, preserving rollback coverage.
+        let _desktop = crate::codex_projects::DesktopTestProbeGuard::running_after_not_running(5);
 
         let error = delete_one(&codex, ARCHIVE_TEST_ID)
             .expect_err("a Desktop start immediately before project-state CAS must abort delete");
@@ -5694,7 +6230,8 @@ mod tests {
     }
 
     #[test]
-    fn delete_codex_family_rolls_back_every_branch_when_project_cas_exhausts() -> AppResult<()> {
+    fn delete_codex_family_rolls_back_every_branch_on_first_post_snapshot_project_conflict(
+    ) -> AppResult<()> {
         let codex = temp_dir("codex-delete-family-project-cas-rollback");
         let family_id = "family-project-cas-rollback";
         let archived_id = "019d-family-project-cas-rollback-history";
@@ -5757,7 +6294,9 @@ mod tests {
         assert_codex_project_state_membership(&codex, active_id, true)?;
         let global: serde_json::Value =
             serde_json::from_slice(&fs::read(paths::codex_global_state_json_path(&codex))?)?;
-        assert_eq!(global["test-concurrent-write"], 3);
+        // Deletion now binds to the verified pre-image. Re-reading and accepting a newer
+        // project state on retry would discard bytes absent from that snapshot.
+        assert_eq!(global["test-concurrent-write"], 1);
 
         drop(state);
         fs::remove_dir_all(&codex).ok();

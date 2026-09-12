@@ -67,6 +67,7 @@ impl MenuContext {
             opencode_dir: Some(self.opencode_dir.clone()),
             cursor_dir: Some(self.cursor_dir.clone()),
             cursor_agent_dir: None,
+            backup_dir: Some(paths::default_backup_dir().to_string_lossy().into_owned()),
         }
     }
 }
@@ -1048,6 +1049,8 @@ fn toggle_archived(ctx: &MenuContext, provider: &str, session: &SessionSummary) 
 fn delete_session(ctx: &MenuContext, provider: &str, session: &SessionSummary) -> MenuResult<()> {
     println!("将删除会话及相关索引记录: {}", session.id);
     if provider == "codex" {
+        println!("删除前会创建并验证快照；失败则拒绝删除。快照可恢复到新的隔离目录。");
+        println!("删除前须退出 Codex/ChatGPT 桌面应用、Codex CLI 和 app-server；运行中或无法确认状态时会拒绝删除。");
         println!(
             "若该会话属于 provider/历史分支组，将删除整个会话组。单分支删除请使用家族分支菜单。"
         );
@@ -1079,6 +1082,9 @@ fn delete_session(ctx: &MenuContext, provider: &str, session: &SessionSummary) -
     )
     .map_err(to_string)?;
     println!("ok={}", result.ok);
+    if let Some(path) = &result.snapshot_path {
+        println!("snapshot_path={path}");
+    }
     if let Some(error) = result.error {
         println!("error={error}");
     }
@@ -1112,6 +1118,7 @@ fn delete_selected_sessions(
         total_bytes
     );
     if provider == "codex" {
+        println!("删除前会创建并验证快照；失败则拒绝删除。快照可恢复到新的隔离目录。");
         println!("所选 Codex 会话若属于分支组，将连同组内全部 provider/历史分支一起删除。");
     } else if provider == "claude" {
         println!("每条 Claude 会话将按当前选中的文件路径删除，并清理其同名 sidecar。");
@@ -1165,6 +1172,13 @@ fn delete_selected_sessions(
         .map(|result| result.id.clone())
         .collect::<Vec<_>>();
     println!("已删除 {}/{} 条。", deleted.len(), results.len());
+    let snapshot_paths = results
+        .iter()
+        .filter_map(|result| result.snapshot_path.as_deref())
+        .collect::<std::collections::BTreeSet<_>>();
+    for path in snapshot_paths {
+        println!("snapshot_path={path}");
+    }
     if results
         .iter()
         .any(|result| result.ok && result.desktop_restart_required)
@@ -2096,18 +2110,23 @@ fn family_rollback(ctx: &MenuContext) -> MenuResult<()> {
 fn family_delete_branch(ctx: &MenuContext) -> MenuResult<()> {
     let family_id = prompt_required("family id: ")?;
     let branch_id = prompt_required("branch id: ")?;
+    println!("删除前会创建并验证快照；失败则拒绝删除。快照可恢复到新的隔离目录。");
     if !confirm_yes("将删除非 active 分支及相关文件。请输入 yes 确认。")? {
         println!("已取消。");
         return pause().map(|_| ());
     }
-    let result = repair::delete_family_branch_with_lock(
+    let result = repair::delete_family_branch_with_backup(
         ctx.codex_dir.clone(),
         family_id,
         branch_id,
+        Some(paths::default_backup_dir().to_string_lossy().into_owned()),
         &ctx.family_lock,
     )
     .map_err(to_string)?;
     println!("{} ok={}", result.id, result.ok);
+    if let Some(path) = &result.snapshot_path {
+        println!("snapshot_path={path}");
+    }
     if let Some(error) = result.error {
         println!("error={error}");
     }
