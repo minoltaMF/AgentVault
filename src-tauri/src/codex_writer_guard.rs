@@ -68,7 +68,7 @@ fn ensure_local_volume(path: &Path) -> AppResult<()> {
     }
     let info = unsafe { info.assume_init() };
     #[cfg(target_os = "macos")]
-    let local = info.f_flags & libc::MNT_LOCAL != 0;
+    let local = info.f_flags & (libc::MNT_LOCAL as u32) != 0;
     // Explicit local filesystem allowlist. FUSE, network, shared VM and overlay filesystems
     // cannot establish which host owns the source and remain unsupported for deletion.
     #[cfg(target_os = "linux")]
