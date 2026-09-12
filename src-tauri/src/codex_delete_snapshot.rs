@@ -634,7 +634,37 @@ impl VerifiedSnapshot {
         &self,
         path: &Path,
     ) -> AppResult<Option<atomic_file::FileFingerprint>> {
-        let normalized = normalized_absolute(path);
+        // Snapshot observations use canonical paths; Windows callers may still use an
+        // 8.3 ancestor alias. Resolve existing ancestors for absent metadata as well.
+        // Reject links before resolving so canonicalization cannot hide a reparse hop.
+        for ancestor in path.ancestors() {
+            match fs::symlink_metadata(ancestor) {
+                Ok(meta) if path_safety::metadata_is_link_or_reparse(&meta) => {
+                    return Err(AppError::Path("删除快照源不能包含链接或重解析点".into()));
+                }
+                Ok(meta) => {
+                    // Validate descendants through the selected source, not OS-level aliases
+                    // above it (for example macOS /var -> /private/var).
+                    if meta.is_dir() && ancestor.canonicalize()? == self.source {
+                        break;
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
+        let resolved = if path.try_exists()? {
+            path.canonicalize()?
+        } else {
+            let parent = path
+                .parent()
+                .ok_or_else(|| AppError::Path("删除快照源缺少父目录".into()))?;
+            let name = path
+                .file_name()
+                .ok_or_else(|| AppError::Path("删除快照源缺少文件名".into()))?;
+            resolved_destination(parent)?.join(name)
+        };
+        let normalized = normalized_absolute(&resolved);
         let original = self
             .observed
             .iter()
@@ -954,6 +984,30 @@ mod management_tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[test]
+    fn expected_file_resolves_ancestor_aliases_for_present_and_absent_metadata() -> AppResult<()> {
+        let fixture = Fixture::new()?;
+        let source = fixture.0.join("source");
+        fs::create_dir_all(source.join("child"))?;
+        Connection::open(source.join("state_5.sqlite"))?
+            .execute_batch("CREATE TABLE threads (id TEXT);")?;
+        fs::write(source.join("session_index.jsonl"), b"fixture\n")?;
+        let snapshot = Preparation::new(&source, &fixture.0.join("backups"))?
+            .finish(&["fixture".into()], &[])?;
+        let alias = source.join("child").join("..");
+        assert_eq!(
+            snapshot.expected_file(&alias.join("session_index.jsonl"))?,
+            Some(atomic_file::fingerprint(
+                &source.join("session_index.jsonl")
+            )?)
+        );
+        assert_eq!(snapshot.expected_file(&alias.join("history.jsonl"))?, None);
+        assert!(snapshot
+            .expected_file(&alias.join("unobserved.jsonl"))
+            .is_err());
+        Ok(())
     }
 
     #[test]

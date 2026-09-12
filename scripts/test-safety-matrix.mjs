@@ -157,6 +157,20 @@ const matrix = [
       "--exact",
     ],
   },
+  {
+    group: "snapshot",
+    name: "路径别名可匹配已观察预图，缺失与未观察成员仍有区别",
+    args: [
+      "test",
+      "--manifest-path",
+      "src-tauri/Cargo.toml",
+      "--no-default-features",
+      "--lib",
+      "codex_delete_snapshot::management_tests::expected_file_resolves_ancestor_aliases_for_present_and_absent_metadata",
+      "--",
+      "--exact",
+    ],
+  },
 ];
 
 for (const testCase of matrix) {

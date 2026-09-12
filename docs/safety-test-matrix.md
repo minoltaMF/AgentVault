@@ -23,12 +23,13 @@ npm run test:safety
 | Restore | Codex SQLite commit 失败 | 回滚数据库并补偿 rollout、index、history 和 project state | `src-tauri/src/backup.rs` |
 | Restore | restore source 与 manifest hash 不同 | 不提交目标文件，不报告成功 | `src-tauri/src/backup.rs` |
 | Restore | 写入后无法取得可信 fingerprint | 拒绝盲目补偿并报告最终状态不确定 | `src-tauri/src/backup.rs` |
+| Snapshot | 来源路径使用与规范路径不同的父目录别名 | 已有与缺失元数据均匹配已观察预图；未观察成员仍拒绝 | `codex_delete_snapshot` alias regression |
 
 完整 workspace 测试还覆盖 snapshot/object 损坏、路径穿越、符号链接或 Windows reparse、未知事件保留、搜索索引重建以及多种旧兼容 restore 失败路径。
 
 ## Codex 删除运行态保护回归
 
-以下回归由应用 lib 测试覆盖，不改变上面的 11 项 Vault/restore 门禁计数：
+以下运行态回归由应用 lib 测试覆盖；上面的发布门禁为 12 项（11 项 Vault/restore 与 1 项快照路径回归）：
 
 - Desktop、CLI/app-server 运行中或探测失败时，单删、批删、family 和历史分支删除拒绝，临时原生目录清单及所有文件字节不变；缺失数据库不会被创建。
 - 原有“Desktop 运行时继续删除、推迟私有状态清理”合同已收紧为拒绝。停止后的选择性缓存清理仍有独立回归覆盖，没有删除或跳过原有补偿、CAS 和路径安全检查。
