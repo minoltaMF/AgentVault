@@ -187,6 +187,8 @@ pub struct ContentSearchStart {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ContentSearchStatus {
+    pub failures: Vec<String>,
+    pub failed_files: usize,
     pub job_id: u64,
     pub state: String,
     pub query: String,

@@ -215,6 +215,13 @@ fn dispatch_invoke(state: &WebuiState, command: &str, args: Value) -> AppResult<
             provider_dirs_arg(&args)?,
             string_arg(&args, "query")?,
         )),
+        "start_workbench_content_search" => {
+            to_result_value(content_search::start_workbench_content_search(
+                provider_dirs_arg(&args)?,
+                string_arg(&args, "query")?,
+                arg(&args, "scopes")?,
+            ))
+        }
         "start_content_search" => to_result_value(content_search::start_content_search(
             string_arg(&args, "provider")?,
             provider_dirs_arg(&args)?,

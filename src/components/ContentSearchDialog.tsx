@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { FileSearch, Loader2, Search, Square, User, Bot } from "lucide-react";
 
 import {
@@ -24,6 +24,8 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 type Props = {
+  workbenchScopes?: { provider: "codex" | "claude"; rollout_paths: string[] }[];
+  retained?: { query: string; status: ContentSearchStatus | null; scrollTop?: number };
   open: boolean;
   onOpenChange: (open: boolean) => void;
   provider: SessionProvider;
@@ -42,6 +44,8 @@ type Props = {
 };
 
 export function ContentSearchDialog({
+  workbenchScopes,
+  retained,
   open,
   onOpenChange,
   provider,
@@ -54,12 +58,16 @@ export function ContentSearchDialog({
   rolloutPaths,
   onOpenResult,
 }: Props) {
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(retained?.query ?? "");
   const [jobId, setJobId] = useState<number | null>(null);
-  const [status, setStatus] = useState<ContentSearchStatus | null>(null);
+  const [status, setStatus] = useState<ContentSearchStatus | null>(retained?.status ?? null);
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (open && retained && viewportRef.current) viewportRef.current.scrollTop = retained.scrollTop ?? 0;
+  }, [open, retained]);
   const timerRef = useRef<number | null>(null);
   const activeJobRef = useRef<number | null>(null);
   const jobScopeKeyRef = useRef<string | null>(null);
@@ -76,7 +84,14 @@ export function ContentSearchDialog({
     showSubagentSessions,
     showArchivedSessions,
     rolloutPaths,
+    workbenchScopes,
   ]);
+  useEffect(() => {
+    if (retained) {
+      retained.query = query;
+      retained.status = status?.state === "running" ? null : status;
+    }
+  }, [retained, query, status]);
   const scopeKeyRef = useRef(scopeKey);
   const previousScopeKeyRef = useRef(scopeKey);
 
@@ -222,7 +237,9 @@ export function ContentSearchDialog({
     setError(null);
     setStatus(null);
     try {
-      const started = await api.startContentSearch({
+      const started = workbenchScopes ? await api.startWorkbenchContentSearch({
+        codexDir, claudeDir, query: normalized, scopes: workbenchScopes,
+      }) : await api.startContentSearch({
         provider,
         codexDir,
         claudeDir,
@@ -263,12 +280,12 @@ export function ContentSearchDialog({
   };
 
   const stopSearch = async () => {
-    if (activeJobRef.current === null) return;
     setError(null);
     await cancelActiveSearch(true);
   };
 
   const changeOpen = (next: boolean) => {
+    if (!next && retained) retained.scrollTop = viewportRef.current?.scrollTop ?? 0;
     if (!next) void cancelActiveSearch(false);
     onOpenChange(next);
   };
@@ -291,10 +308,10 @@ export function ContentSearchDialog({
               <DialogTitle className="text-[15px] leading-tight">对话全文搜索</DialogTitle>
               <div className="mt-1 flex flex-wrap items-center gap-1.5">
                 <Badge variant="outline" className="h-5 px-1.5 text-[10px] font-normal">
-                  {provider === "codex" ? "Codex" : provider === "claude" ? "Claude" : "OpenCode"}
+                  {workbenchScopes ? "统一工作台" : provider === "codex" ? "Codex" : provider === "claude" ? "Claude" : "OpenCode"}
                 </Badge>
                 <Badge variant="secondary" className="h-5 px-1.5 text-[10px] font-normal">
-                  {scopeLabel}
+                  {workbenchScopes ? `当前筛选范围 · ${workbenchScopes.reduce((sum, scope) => sum + scope.rollout_paths.length, 0)} 条` : scopeLabel}
                 </Badge>
               </div>
             </div>
@@ -318,7 +335,7 @@ export function ContentSearchDialog({
                 className="h-10 pl-9"
               />
             </div>
-            {jobId !== null ? (
+            {running ? (
               <Button
                 type="button"
                 variant="outline"
@@ -371,9 +388,11 @@ export function ContentSearchDialog({
           {(error || status?.error) && (
             <p className="mt-3 text-xs text-destructive">{error ?? status?.error}</p>
           )}
+          {!!status?.failed_files && <details className="mt-2 text-xs text-destructive"><summary>读取失败 {status.failed_files} 个文件（最多显示 100 项）</summary><ul>{status.failures?.map((failure, index) => <li className="break-all" key={index}>{failure}</li>)}</ul></details>}
         </form>
 
         <ScrollArea
+          viewportRef={viewportRef}
           className="min-h-0 flex-1"
           viewportClassName="[&>div]:!block"
         >
@@ -386,13 +405,15 @@ export function ContentSearchDialog({
             </div>
           ) : status.results.length === 0 ? (
             <div className="grid min-h-64 place-items-center px-6 text-center text-sm text-muted-foreground">
-              {status.state === "running" ? "正在查找匹配内容" : "没有匹配的对话"}
+              {status.state === "running" ? "正在查找匹配内容" : status.state === "failed" || status.failed_files ? "未找到匹配；部分内容未能读取，请查看失败报告。" : status.state === "cancelled" ? "搜索已停止，未获得完整结果。" : "没有匹配的对话"}
             </div>
           ) : (
             <div className="w-full min-w-0 divide-y divide-border/60">
+              <p className="px-6 py-2 text-xs text-muted-foreground">每个会话最多展示 3 处命中，可打开预览继续查找。</p>
               {status.results.map((result) => (
                 <section key={sessionIdentity(result.session)} className="px-4 py-4 sm:px-6">
                   <div className="mb-2.5 flex min-w-0 items-center gap-2">
+                    {workbenchScopes && <Badge variant="outline">{result.session.provider === "codex" ? "Codex" : "Claude"}</Badge>}
                     <h3 className="min-w-0 flex-1 truncate text-sm font-semibold">
                       {sessionDisplayTitle(result.session.title, result.session.first_user_message)}
                     </h3>

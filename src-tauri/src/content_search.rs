@@ -46,6 +46,13 @@ struct SearchRequest {
     dirs: ProviderDirs,
     query: String,
     rollout_paths: Vec<String>,
+    scopes: Option<Vec<ContentSearchScope>>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct ContentSearchScope {
+    pub provider: String,
+    pub rollout_paths: Vec<String>,
 }
 
 struct FileScanOutcome {
@@ -84,6 +91,8 @@ impl SearchManager {
             id,
             cancel: Arc::new(AtomicBool::new(false)),
             status: Arc::new(Mutex::new(ContentSearchStatus {
+                failures: Vec::new(),
+                failed_files: 0,
                 job_id: id,
                 state: "running".to_string(),
                 query: request.query.clone(),
@@ -166,6 +175,35 @@ pub fn start_content_search(
         dirs,
         query: query.trim().to_string(),
         rollout_paths,
+        scopes: None,
+    })
+}
+
+pub fn start_workbench_content_search(
+    dirs: ProviderDirs,
+    query: String,
+    scopes: Vec<ContentSearchScope>,
+) -> AppResult<ContentSearchStart> {
+    for scope in &scopes {
+        let root = match scope.provider.as_str() {
+            "codex" => Some(dirs.codex_dir.as_str()),
+            "claude" => dirs.claude_dir.as_deref(),
+            _ => {
+                return Err(AppError::Other(
+                    "工作台正文搜索仅支持 Codex 与 Claude".into(),
+                ))
+            }
+        };
+        if root.is_none_or(|root| root.trim().is_empty()) {
+            return Err(AppError::Other("搜索来源目录不能为空".into()));
+        }
+    }
+    manager().start(SearchRequest {
+        provider: "workbench".into(),
+        dirs,
+        query: query.trim().into(),
+        rollout_paths: Vec::new(),
+        scopes: Some(scopes),
     })
 }
 
@@ -182,9 +220,12 @@ pub fn cancel_content_search(job_id: u64) -> AppResult<()> {
 }
 
 fn validate_request(request: &SearchRequest) -> AppResult<()> {
+    if request.provider == "workbench" && request.scopes.is_none() {
+        return Err(AppError::Other("工作台搜索必须提供明确来源范围".into()));
+    }
     if !matches!(
         request.provider.as_str(),
-        "codex" | "claude" | "opencode" | "cursor"
+        "codex" | "claude" | "opencode" | "cursor" | "workbench"
     ) {
         return Err(AppError::Other(format!(
             "不支持的 provider: {}",
@@ -234,19 +275,78 @@ fn run_job(job: SearchJob, request: SearchRequest) {
 }
 
 fn execute_search(job: &SearchJob, request: &SearchRequest) -> AppResult<()> {
-    let rollout_paths = request
-        .rollout_paths
-        .iter()
-        .map(String::as_str)
-        .collect::<HashSet<_>>();
-    let sessions = sessions::list_sessions_cancellable_with_dirs(
-        Some(request.provider.clone()),
-        request.dirs.clone(),
-        &job.cancel,
-    )?
-    .into_iter()
-    .filter(|session| session_matches_scope(session, &rollout_paths))
-    .collect::<Vec<_>>();
+    let sessions = if let Some(scopes) = &request.scopes {
+        let mut found = Vec::new();
+        for scope in scopes {
+            if job.cancel.load(Ordering::Acquire) {
+                return Err(AppError::Cancelled);
+            }
+            if scope.rollout_paths.is_empty() {
+                continue;
+            }
+            let paths = scope
+                .rollout_paths
+                .iter()
+                .map(String::as_str)
+                .collect::<HashSet<_>>();
+            let listed = match sessions::list_sessions_cancellable_with_dirs(
+                Some(scope.provider.clone()),
+                request.dirs.clone(),
+                &job.cancel,
+            ) {
+                Ok(listed) => listed,
+                Err(AppError::Cancelled) => return Err(AppError::Cancelled),
+                Err(error) => {
+                    let mut status = job.status.lock().unwrap_or_else(|e| e.into_inner());
+                    status.failed_files += paths.len();
+                    if status.failures.len() < 100 {
+                        status
+                            .failures
+                            .push(format!("{} 来源读取失败: {error}", scope.provider));
+                    }
+                    continue;
+                }
+            };
+            let selected = listed
+                .into_iter()
+                .filter(|session| session_matches_scope(session, &paths))
+                .collect::<Vec<_>>();
+            let resolved = selected
+                .iter()
+                .map(|session| session.rollout_path.as_str())
+                .collect::<HashSet<_>>();
+            for missing in paths.difference(&resolved) {
+                let mut status = job.status.lock().unwrap_or_else(|e| e.into_inner());
+                status.failed_files += 1;
+                if status.failures.len() < 100 {
+                    status.failures.push(format!(
+                        "{missing}: 文件已消失或无法读取会话摘要，请刷新来源"
+                    ));
+                }
+            }
+            found.extend(selected);
+        }
+        let mut seen = HashSet::new();
+        found.retain(|session| {
+            seen.insert((session.provider.clone(), session.rollout_path.clone()))
+        });
+        found
+    } else {
+        let rollout_paths = request
+            .rollout_paths
+            .iter()
+            .map(String::as_str)
+            .collect::<HashSet<_>>();
+        let sessions = sessions::list_sessions_cancellable_with_dirs(
+            Some(request.provider.clone()),
+            request.dirs.clone(),
+            &job.cancel,
+        )?
+        .into_iter()
+        .filter(|session| session_matches_scope(session, &rollout_paths))
+        .collect::<Vec<_>>();
+        sessions
+    };
 
     if job.cancel.load(Ordering::Acquire) {
         return Ok(());
@@ -269,7 +369,46 @@ fn execute_search(job: &SearchJob, request: &SearchRequest) -> AppResult<()> {
         if job.cancel.load(Ordering::Acquire) {
             return Ok(());
         }
-        let outcome = scan_session(job, &session, &request.query, completed_bytes)?;
+        let scan = (|| {
+            if request.scopes.is_some() {
+                let root = if session.provider == "codex" {
+                    request.dirs.codex_dir.as_str()
+                } else {
+                    request.dirs.claude_dir.as_deref().unwrap_or("")
+                };
+                crate::path_safety::validate_descendant(
+                    std::path::Path::new(root),
+                    std::path::Path::new(&session.rollout_path),
+                    crate::path_safety::EntryKind::File,
+                    false,
+                    "正文搜索文件",
+                )?;
+            }
+            scan_session_checked(
+                job,
+                &session,
+                &request.query,
+                completed_bytes,
+                request.scopes.is_some(),
+            )
+        })();
+        let outcome = match scan {
+            Ok(outcome) => outcome,
+            Err(error) if request.scopes.is_some() => {
+                let mut status = job.status.lock().unwrap_or_else(|error| error.into_inner());
+                status.failed_files += 1;
+                if status.failures.len() < 100 {
+                    status
+                        .failures
+                        .push(format!("{}: {error}", session.rollout_path));
+                }
+                status.scanned_files += 1;
+                completed_bytes = completed_bytes.saturating_add(session.rollout_bytes.max(1));
+                status.scanned_bytes = completed_bytes.min(status.total_bytes);
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
         if outcome.cancelled {
             return Ok(());
         }
@@ -307,11 +446,22 @@ fn session_matches_scope(session: &SessionSummary, rollout_paths: &HashSet<&str>
     rollout_paths.contains(session.rollout_path.as_str())
 }
 
+#[cfg(test)]
 fn scan_session(
     job: &SearchJob,
     session: &SessionSummary,
     query: &str,
     completed_bytes: u64,
+) -> AppResult<FileScanOutcome> {
+    scan_session_checked(job, session, query, completed_bytes, false)
+}
+
+fn scan_session_checked(
+    job: &SearchJob,
+    session: &SessionSummary,
+    query: &str,
+    completed_bytes: u64,
+    strict: bool,
 ) -> AppResult<FileScanOutcome> {
     // 这两个 provider 的会话不是可逐行扫描的文件，先还原成事件序列再匹配。
     match session.provider.as_str() {
@@ -378,6 +528,14 @@ fn scan_session(
         }
         let current_offset = event_offset;
         event_offset += 1;
+        if strict {
+            serde_json::from_str::<Value>(&line).map_err(|error| {
+                AppError::Other(format!(
+                    "第 {} 行 JSON 无效: {error}",
+                    current_line_index + 1
+                ))
+            })?;
+        }
         if matches.len() >= MAX_MATCHES_PER_SESSION
             || !line_might_contain_query(&line, query, &escaped_query)
         {
@@ -550,6 +708,76 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn empty_workbench_scope_never_discovers_default_sources() {
+        let job = test_job();
+        execute_search(
+            &job,
+            &SearchRequest {
+                provider: "workbench".into(),
+                dirs: ProviderDirs::default(),
+                query: "needle".into(),
+                rollout_paths: Vec::new(),
+                scopes: Some(Vec::new()),
+            },
+        )
+        .unwrap();
+        let status = job.status.lock().unwrap();
+        assert_eq!(status.total_files, 0);
+        assert!(status.results.is_empty());
+    }
+
+    #[test]
+    fn workbench_reports_invalid_json_even_without_query_match() {
+        let path = temp_file("invalid-workbench", &[json!({"type":"session_meta"})]);
+        fs::write(&path, "{broken json\n").unwrap();
+        let result = scan_session_checked(&test_job(), &session("codex", &path), "needle", 0, true);
+        assert!(result.err().unwrap().to_string().contains("第 1 行"));
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn workbench_scope_excludes_other_files_and_reports_missing_members() {
+        let seed = temp_file("workbench-scope", &[]);
+        let root = seed.parent().unwrap();
+        let project = root.join("projects");
+        fs::create_dir_all(&project).unwrap();
+        let included = project.join("included.jsonl");
+        let excluded = project.join("excluded.jsonl");
+        let missing = project.join("missing.jsonl");
+        for (path, id) in [(&included, "included"), (&excluded, "excluded")] {
+            fs::write(path, format!("{{\"sessionId\":\"{id}\",\"type\":\"user\",\"message\":{{\"role\":\"user\",\"content\":\"needle\"}}}}\n")).unwrap();
+        }
+        let job = test_job();
+        execute_search(
+            &job,
+            &SearchRequest {
+                provider: "workbench".into(),
+                dirs: ProviderDirs {
+                    claude_dir: Some(root.to_string_lossy().into_owned()),
+                    ..Default::default()
+                },
+                query: "needle".into(),
+                rollout_paths: Vec::new(),
+                scopes: Some(vec![ContentSearchScope {
+                    provider: "claude".into(),
+                    rollout_paths: vec![
+                        included.to_string_lossy().into_owned(),
+                        missing.to_string_lossy().into_owned(),
+                    ],
+                }]),
+            },
+        )
+        .unwrap();
+        let status = job.status.lock().unwrap();
+        assert_eq!(status.results.len(), 1);
+        assert_eq!(status.results[0].session.id, "included");
+        assert_eq!(status.failed_files, 1);
+        assert!(status.failures[0].contains("missing.jsonl"));
+        drop(status);
+        fs::remove_dir_all(root).unwrap();
+    }
+
     fn temp_file(name: &str, lines: &[Value]) -> std::path::PathBuf {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -599,6 +827,8 @@ mod tests {
             id: 1,
             cancel: Arc::new(AtomicBool::new(false)),
             status: Arc::new(Mutex::new(ContentSearchStatus {
+                failures: Vec::new(),
+                failed_files: 0,
                 job_id: 1,
                 state: "running".to_string(),
                 query: "needle".to_string(),
@@ -829,6 +1059,7 @@ mod tests {
             },
             query: "needle".to_string(),
             rollout_paths: Vec::new(),
+            scopes: None,
         };
 
         let result = execute_search(&job, &request);

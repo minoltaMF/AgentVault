@@ -205,6 +205,8 @@ export type ContentSearchResult = {
 };
 
 export type ContentSearchStatus = {
+  failures?: string[];
+  failed_files?: number;
   job_id: number;
   state: "running" | "completed" | "cancelled" | "failed";
   query: string;
@@ -1036,6 +1038,8 @@ export const api = {
   }) => invokeCommand<{ job_id: number }>("start_content_search", p),
   contentSearchStatus: (jobId: number) =>
     invokeCommand<ContentSearchStatus>("content_search_status", { jobId }),
+  startWorkbenchContentSearch: (p: { codexDir: string; claudeDir: string; query: string; scopes: { provider: "codex" | "claude"; rollout_paths: string[] }[] }) =>
+    invokeCommand<{ job_id: number }>("start_workbench_content_search", p),
   activeContentSearch: () =>
     invokeCommand<{ job_id: number } | null>("active_content_search"),
   cancelContentSearch: (jobId: number) =>

@@ -8,7 +8,7 @@
 - `upstream`：`https://github.com/ccpopy/cc-sessions.git`，仅追踪来源，不推送。
 - 所有版本的 Release workflow 均创建 draft；预发布版本同时标记 prerelease。正式发布 draft 需用户另行明确授权。
 - 每个版本使用新的注释标签，不覆盖历史标签，不强制推送。部分平台失败时不能把已有资产视为完整交付。
-- Git 远程不等于应用内更新源。当前私有仓库的 alpha 制品从已登录 GitHub 下载，不启用匿名应用内更新，不回退上游更新。
+- Git 远程不等于应用内更新源。仓库已公开，alpha draft 制品仍需有权限的 GitHub 登录访问；不启用应用内更新，不回退上游更新。
 
 ## 完成交付的顺序
 

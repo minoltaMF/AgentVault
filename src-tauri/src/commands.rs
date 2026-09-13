@@ -28,6 +28,20 @@ where
 }
 
 #[tauri::command]
+pub fn start_workbench_content_search(
+    codex_dir: String,
+    claude_dir: String,
+    query: String,
+    scopes: Vec<crate::content_search::ContentSearchScope>,
+) -> AppResult<ContentSearchStart> {
+    crate::content_search::start_workbench_content_search(
+        provider_dirs(codex_dir, Some(claude_dir), None, None),
+        query,
+        scopes,
+    )
+}
+
+#[tauri::command]
 pub fn start_content_search(
     provider: String,
     codex_dir: String,

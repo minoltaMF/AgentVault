@@ -12,7 +12,7 @@ Codex 与 Claude 可从「全局 → 全部会话」统一查找和只读预览�
 
 当前仓库以 [cc-sessions](https://github.com/ccpopy/cc-sessions) 的锁定 commit 为 fork 基线，已配置独立的 [AgentVault 发布仓库](https://github.com/minoltaMF/AgentVault/releases)。上方标注 Upstream 的徽章仅指向上游兼容基线；来源、许可证和验证范围见 [上游基线](docs/upstream-baseline.md) 与 [第三方声明](THIRD_PARTY_NOTICES.md)。
 
-当前版本为 `0.1.0-alpha.6` internal alpha draft candidate；范围、平台状态和未覆盖能力见 [发布说明](docs/releases/0.1.0-alpha.6.md)。
+当前版本为 `0.1.0-alpha.7` internal alpha draft candidate；范围、平台状态和未覆盖能力见 [发布说明](docs/releases/0.1.0-alpha.7.md)。
 
 [查看功能](#功能模块) · [进阶功能](#进阶功能) · [常见问题](#常见问题) · [开发与打包](#开发与打包)
 
@@ -53,7 +53,7 @@ Cursor 的会话存在一个共享数据库里，改动方式和其他三个工�
 
 ## 安装
 
-AgentVault 目前没有公开稳定包。`0.1.0-alpha.6` 由版本标签触发 CI 生成内部 draft 制品；应从 AgentVault 仓库取得与目标 tag 对应且通过 CI 的制品，不能把 [cc-sessions Releases](https://github.com/ccpopy/cc-sessions/releases/latest) 中的上游程序当作 AgentVault。下列制品名称因兼容性而保留，本轮不迁移包名、binary 名或安装标识。
+AgentVault 目前没有公开稳定包。`0.1.0-alpha.7` 由版本标签触发 CI 生成内部 draft 制品；应从 AgentVault 仓库取得与目标 tag 对应且通过 CI 的制品，不能把 [cc-sessions Releases](https://github.com/ccpopy/cc-sessions/releases/latest) 中的上游程序当作 AgentVault。下列制品名称因兼容性而保留，本轮不迁移包名、binary 名或安装标识。
 
 | 系统与用途 | 推荐下载 | 说明 |
 | --- | --- | --- |
