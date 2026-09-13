@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type SessionSummary, type WorkbenchScanStatus } from "@/lib/api";
 import { requestGeneration, type WorkbenchProvider } from "@/lib/allSessions";
+import { workbenchCache } from "@/lib/workbenchCache";
 
 export function useWorkbenchSource(provider: WorkbenchProvider, root: string, codexRoot: string) {
-  const [sessions, setSessions] = useState<SessionSummary[]>([]);
-  const [state, setState] = useState<"idle" | "loading" | "ready" | "error" | "cancelled" | "interrupted">("idle");
+  const [cache] = useState(() => workbenchCache.source(provider, root, codexRoot));
+  const [sessions, setSessions] = useState<SessionSummary[]>(() => cache.completed?.progress.results ?? []);
+  const [state, setState] = useState<"idle" | "loading" | "ready" | "error" | "cancelled" | "interrupted">(() => cache.completed ? "ready" : "idle");
   const [error, setError] = useState("");
-  const [checkedAt, setCheckedAt] = useState<string | null>(null);
-  const [progress, setProgress] = useState<WorkbenchScanStatus | null>(null);
+  const [checkedAt, setCheckedAt] = useState<string | null>(() => cache.completed?.checkedAt ?? null);
+  const [progress, setProgress] = useState<WorkbenchScanStatus | null>(() => cache.completed?.progress ?? null);
   const [cancelling, setCancelling] = useState(false);
   const requests = useRef(requestGeneration());
   const inFlight = useRef(false);
@@ -45,7 +47,9 @@ export function useWorkbenchSource(provider: WorkbenchProvider, root: string, co
           }
           job.current = null; inFlight.current = false; setCancelling(false); setError("");
           if (status.state === "completed") {
-            setSessions(status.results); setCheckedAt(new Date().toISOString()); setState("ready");
+            const completedAt = new Date().toISOString();
+            cache.completed = { progress: status, checkedAt: completedAt };
+            setSessions(status.results); setCheckedAt(completedAt); setState("ready");
           } else if (status.state === "cancelled") setState("cancelled");
           else { setState("error"); setError(status.error || "扫描失败"); }
         } catch (error) {
@@ -63,7 +67,7 @@ export function useWorkbenchSource(provider: WorkbenchProvider, root: string, co
     } catch (error) {
       if (current()) { inFlight.current = false; setCancelling(false); setError(error instanceof Error ? error.message : String(error)); setState("error"); }
     }
-  }, [provider, root, codexRoot]);
+  }, [provider, root, codexRoot, cache]);
 
   const cancel = async () => {
     if (!inFlight.current) return;

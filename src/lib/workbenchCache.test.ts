@@ -1,0 +1,36 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { createWorkbenchCache } from "./workbenchCache.ts";
+import type { WorkbenchScanStatus } from "./api.ts";
+
+const completed = { progress: { state: "completed", results: [] } as unknown as WorkbenchScanStatus, checkedAt: "2026-09-13T00:00:00Z" };
+
+test("completed empty sources and view survive page return without disk persistence", () => {
+  const cache = createWorkbenchCache();
+  cache.source("codex", "/codex", "/codex").completed = completed;
+  Object.assign(cache.view("/codex", "/claude"), { search: "q=hello", page: 2, scrollTop: 912 });
+  assert.equal(cache.source("codex", "/codex", "/codex").completed, completed);
+  assert.deepEqual(cache.view("/codex", "/claude"), { search: "q=hello", page: 2, scrollTop: 912 });
+  assert.equal(createWorkbenchCache().source("codex", "/codex", "/codex").completed, null);
+});
+
+test("changed source discards its cache and late writes cannot contaminate replacement", () => {
+  const cache = createWorkbenchCache();
+  const old = cache.source("codex", "/old", "/old");
+  old.completed = completed;
+  const current = cache.source("codex", "/new", "/new");
+  old.completed = { ...completed, checkedAt: "late response" };
+  assert.equal(current.completed, null);
+  assert.equal(cache.source("codex", "/old", "/old").completed, null);
+});
+
+test("provider caches are separate and changed context resets only affected data", () => {
+  const cache = createWorkbenchCache();
+  cache.source("codex", "/same", "/same").completed = completed;
+  assert.equal(cache.source("claude", "/same", "/same").completed, null);
+  cache.source("claude", "/same", "/same").completed = completed;
+  assert.equal(cache.source("claude", "/same", "/different-codex").completed, null);
+  assert.equal(cache.source("codex", "/same", "/same").completed, completed);
+  cache.view("/same", "/same").page = 5;
+  assert.deepEqual(cache.view("/same", "/new"), { search: "", page: 0, scrollTop: 0 });
+});

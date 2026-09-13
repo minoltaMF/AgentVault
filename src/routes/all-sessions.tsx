@@ -1,8 +1,9 @@
-import { useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useSearchParams } from "react-router-dom";
 import { useSettings } from "@/stores/settings";
 import { useWorkbenchSource } from "@/hooks/useWorkbenchSource";
 import { scanProgressText, workbenchSessions } from "@/lib/allSessions";
+import { workbenchCache } from "@/lib/workbenchCache";
 import { sessionIdentity } from "@/lib/sessionIdentity";
 import type { SessionSummary } from "@/lib/api";
 import { absoluteTime } from "@/lib/format";
@@ -25,12 +26,23 @@ export default function AllSessionsRoute() {
 function Workbench({ codexRoot, claudeRoot }: { codexRoot: string; claudeRoot: string }) {
   const codex = useWorkbenchSource("codex", codexRoot, codexRoot);
   const claude = useWorkbenchSource("claude", claudeRoot, codexRoot);
-  const [params, setParams] = useSearchParams();
+  const [savedView] = useState(() => workbenchCache.view(codexRoot, claudeRoot));
+  const location = useLocation();
+  // An explicit URL is authoritative; ordinary sidebar navigation restores the last view.
+  const [initialSearch] = useState(() => location.search ? location.search.slice(1) : savedView.search);
+  const [params, setParams] = useSearchParams(initialSearch);
+  const restoredUrl = useRef(false);
+  useLayoutEffect(() => {
+    if (restoredUrl.current) return;
+    restoredUrl.current = true;
+    if (!location.search && initialSearch) setParams(initialSearch, { replace: true });
+  }, [initialSearch, location.search, setParams]);
   const [preview, setPreview] = useState<SessionSummary | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const previewButton = useRef<HTMLButtonElement | null>(null);
   const viewport = useRef<HTMLDivElement>(null);
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useState(() => initialSearch === savedView.search ? savedView.page : 0);
+  const [initialScroll] = useState(() => initialSearch === savedView.search ? savedView.scrollTop : 0);
   const query = params.get("q") ?? "";
   const provider = ["codex", "claude"].includes(params.get("provider") ?? "") ? params.get("provider")! : "";
   const project = params.get("project") ?? "";
@@ -40,6 +52,16 @@ function Workbench({ codexRoot, claudeRoot }: { codexRoot: string; claudeRoot: s
   const projects = useMemo(() => [...new Set(all.map((s) => s.cwd).filter(Boolean))].sort(), [all]);
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, pages - 1);
+  const search = params.toString();
+  useLayoutEffect(() => {
+    const element = viewport.current;
+    if (element) element.scrollTop = initialScroll;
+    return () => { if (element) savedView.scrollTop = element.scrollTop; };
+  }, [savedView, initialScroll]);
+  useLayoutEffect(() => {
+    savedView.search = search;
+    savedView.page = currentPage;
+  }, [savedView, search, currentPage]);
   const busy = codex.state === "loading" || claude.state === "loading";
   const sources = [{ name: "Codex", root: codexRoot, data: codex }, { name: "Claude", root: claudeRoot, data: claude }];
   const filter = (name: string, value: string) => {
@@ -57,7 +79,7 @@ function Workbench({ codexRoot, claudeRoot }: { codexRoot: string; claudeRoot: s
           {sources.map(({ name, root, data }) => <section key={name} aria-label={`${name} 来源`} className="min-w-0 space-y-2 rounded-lg border p-3">
             <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="font-medium">{name}</h2><Badge variant="outline">{!root ? "未配置" : data.state === "interrupted" ? "状态待确认" : data.state === "cancelled" ? "已停止" : data.state === "loading" ? data.cancelling ? "正在停止" : "正在读取" : data.state === "error" ? "读取失败" : data.state === "ready" ? `${data.progress?.failed_files ? "部分完成 · " : ""}已读取 ${data.sessions.length} 条` : "尚未读取"}</Badge></div>
             <p className="break-all text-xs text-muted-foreground">设置中的来源：{root || "请先配置数据目录"}</p>
-            {data.checkedAt && <p className="text-xs text-muted-foreground">上次扫描完成：{new Date(data.checkedAt).toLocaleString()}{data.state !== "ready" ? "；列表保留上次结果" : ""}</p>}
+            {data.checkedAt && <p className="text-xs text-muted-foreground">上次扫描完成：{new Date(data.checkedAt).toLocaleString()}；显示上次结果，刷新后更新</p>}
             {data.error && <p role="alert" className="break-all text-xs text-destructive">{data.error}</p>}
             {data.progress && <div className="space-y-1 text-xs">
               <p role="status">{scanProgressText(data.progress)}</p>
