@@ -1,4 +1,5 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   Bot,
   Check,
@@ -92,6 +93,7 @@ import {
   type DiffCommentPrompt,
 } from "@/lib/previewEvent";
 import { cn } from "@/lib/utils";
+import { previewWindowStart, findPreviewRowIndex, boundPreviewProcessRows } from "@/lib/previewWindow";
 import { useSettings } from "@/stores/settings";
 import { toast } from "sonner";
 
@@ -150,6 +152,7 @@ export function PreviewDialog({
   onEdited,
   initialJump,
 }: Props) {
+  readOnly = readOnly || session?.provider === "qoder";
   const rolloutPath = customRolloutPath ?? session?.rollout_path ?? "";
   const provider = session?.provider ?? "codex";
   const [events, setEvents] = useState<PreviewEvent[]>([]);
@@ -178,6 +181,11 @@ export function PreviewDialog({
   const [totalEvents, setTotalEvents] = useState(0);
   const [activeTimelineIndex, setActiveTimelineIndex] = useState<number | null>(null);
   const [loadingAll, setLoadingAll] = useState(false);
+  const [newestFirst, setNewestFirst] = useState(false);
+  const newestFirstRef = useRef(false);
+  const startOffsetRef = useRef(0);
+  const generationRef = useRef(0);
+  const loadingAllRef = useRef(false);
   const offsetRef = useRef(0);
   const loadingRef = useRef(false);
   const doneRef = useRef(false);
@@ -255,91 +263,119 @@ export function PreviewDialog({
     [processDefaultCollapsed],
   );
 
-  const loadMore = useCallback(async () => {
-    if (loadingRef.current || doneRef.current || !rolloutPath) return;
+  const readWindow = useCallback(async (start: number, count: number, replace: boolean) => {
+    const generation = generationRef.current;
     loadingRef.current = true;
     setLoading(true);
     try {
-      const next = await api.previewRange(provider, rolloutPath, offsetRef.current, PAGE);
-      if (next.length === 0) {
+      const next = await api.previewRange(provider, rolloutPath, start, count);
+      if (generation !== generationRef.current) return false;
+      if (!replace && start < startOffsetRef.current && next.length !== count) {
+        throw new Error("会话在读取期间发生变化，请重新打开预览");
+      }
+      if (replace) {
+        setSelectionFirstIndex(null);
+        setSelectionSecondIndex(null);
+        setProcessExpansionOverrides({});
+        startOffsetRef.current = start;
+        offsetRef.current = start + next.length;
+        setEvents(next);
+      } else if (start < startOffsetRef.current) {
+        startOffsetRef.current = start;
+        setEvents((previous) => [...next, ...previous]);
+      } else {
+        offsetRef.current = start + next.length;
+        setEvents((previous) => [...previous, ...next]);
+      }
+      const finished = newestFirstRef.current ? startOffsetRef.current === 0 : next.length < count;
+      doneRef.current = finished;
+      setDone(finished);
+      return true;
+    } catch (error) {
+      if (generation === generationRef.current) {
         doneRef.current = true;
         setDone(true);
-      } else {
-        offsetRef.current += next.length;
-        setEvents((prev) => [...prev, ...next]);
-        if (next.length < PAGE) {
-          doneRef.current = true;
-          setDone(true);
-        }
+        toast.error("读取会话失败", { description: String(error) });
       }
+      return false;
     } finally {
-      loadingRef.current = false;
-      setLoading(false);
-    }
-  }, [provider, rolloutPath]);
-
-  /** 等待进行中的分页请求结束，避免并发拉取重复区间 */
-  const waitForIdle = useCallback(async () => {
-    while (loadingRef.current) {
-      await new Promise((resolve) => setTimeout(resolve, 40));
-    }
-  }, []);
-
-  /** 一次性把事件加载到指定事件序号（时间线跳转用），带一页余量 */
-  const loadUpTo = useCallback(
-    async (targetOffset: number) => {
-      await waitForIdle();
-      if (doneRef.current || offsetRef.current > targetOffset || !rolloutPath) return;
-      loadingRef.current = true;
-      setLoading(true);
-      try {
-        const need = targetOffset - offsetRef.current + 1 + PAGE;
-        const next = await api.previewRange(provider, rolloutPath, offsetRef.current, need);
-        if (next.length > 0) {
-          offsetRef.current += next.length;
-          setEvents((prev) => [...prev, ...next]);
-        }
-        if (next.length < need) {
-          doneRef.current = true;
-          setDone(true);
-        }
-      } finally {
+      if (generation === generationRef.current) {
         loadingRef.current = false;
         setLoading(false);
       }
-    },
-    [provider, rolloutPath, waitForIdle],
-  );
+    }
+  }, [provider, rolloutPath]);
 
-  /** 一次加载余下全部事件 */
+  const loadMore = useCallback(async () => {
+    if (loadingRef.current || loadingAllRef.current || doneRef.current || !rolloutPath) return;
+    const start = newestFirstRef.current ? Math.max(0, startOffsetRef.current - PAGE) : offsetRef.current;
+    const count = newestFirstRef.current ? startOffsetRef.current - start : PAGE;
+    if (count === 0) return;
+    await readWindow(start, count, false);
+  }, [readWindow, rolloutPath]);
+
+  const waitForIdle = useCallback(async () => {
+    const generation = generationRef.current;
+    while (loadingRef.current && generation === generationRef.current) {
+      await new Promise((resolve) => setTimeout(resolve, 40));
+    }
+    return generation === generationRef.current;
+  }, []);
+
+  // Offset is an ordinal position; event.index remains the original source line.
+  const loadUpTo = useCallback(async (targetOffset: number) => {
+    if (loadingAllRef.current || !await waitForIdle() || !rolloutPath) return;
+    if (targetOffset >= startOffsetRef.current && targetOffset < offsetRef.current) return;
+    await readWindow(previewWindowStart(targetOffset, PAGE), PAGE, true);
+  }, [readWindow, rolloutPath, waitForIdle]);
+
   const loadAll = useCallback(async () => {
-    await waitForIdle();
-    if (doneRef.current || !rolloutPath) return;
+    if (!await waitForIdle() || !rolloutPath) return;
+    setLoadingAll(true);
+    loadingAllRef.current = true;
+    const generation = generationRef.current;
+    try {
+      if (!await readWindow(0, PAGE, true)) return;
+      while (generation === generationRef.current && offsetRef.current > 0) {
+        const previousEnd = offsetRef.current;
+        if (!await readWindow(previousEnd, PAGE, false)) break;
+        if (offsetRef.current - previousEnd < PAGE) break;
+      }
+    } finally {
+      if (generation === generationRef.current) {
+        loadingAllRef.current = false;
+        setLoadingAll(false);
+      }
+    }
+  }, [readWindow, rolloutPath, waitForIdle]);
+
+  const navigateEdge = useCallback(async (latest: boolean) => {
+    if (loadingAllRef.current || !await waitForIdle()) return;
+    const generation = generationRef.current;
     loadingRef.current = true;
     setLoading(true);
-    setLoadingAll(true);
     try {
-      const next = await api.previewRange(
-        provider,
-        rolloutPath,
-        offsetRef.current,
-        Number.MAX_SAFE_INTEGER,
-      );
-      if (next.length > 0) {
-        offsetRef.current += next.length;
-        setEvents((prev) => [...prev, ...next]);
-      }
-      doneRef.current = true;
-      setDone(true);
+      const count = latest ? (totalEvents || (await api.previewUserPrompts(provider, rolloutPath)).total_events) : 0;
+      if (generation !== generationRef.current) return;
+      newestFirstRef.current = latest;
+      setNewestFirst(latest);
+      pendingJumpRef.current = null;
+      setFilter("");
+      if (await readWindow(latest ? Math.max(0, count - PAGE) : 0, PAGE, true)
+          && generation === generationRef.current) viewportRef.current?.scrollTo({ top: 0 });
+    } catch (error) {
+      if (generation === generationRef.current) toast.error("定位会话失败", { description: String(error) });
     } finally {
-      loadingRef.current = false;
-      setLoading(false);
-      setLoadingAll(false);
+      if (generation === generationRef.current) {
+        loadingRef.current = false;
+        setLoading(false);
+      }
     }
-  }, [provider, rolloutPath, waitForIdle]);
+  }, [provider, readWindow, rolloutPath, totalEvents, waitForIdle]);
 
   /** 拉取全量用户提问（时间线数据）；属于增强功能，失败时静默降级为无时间线 */
   const loadPrompts = useCallback(async () => {
+    const generation = generationRef.current;
     if (!rolloutPath) {
       setPrompts(null);
       setTotalEvents(0);
@@ -347,15 +383,23 @@ export function PreviewDialog({
     }
     try {
       const list = await api.previewUserPrompts(provider, rolloutPath);
+      if (generation !== generationRef.current) return;
       setPrompts(list.prompts);
       setTotalEvents(list.total_events);
     } catch {
+      if (generation !== generationRef.current) return;
       setPrompts(null);
       setTotalEvents(0);
     }
   }, [provider, rolloutPath]);
 
   const resetAndReload = useCallback(() => {
+    generationRef.current += 1;
+    startOffsetRef.current = 0;
+    newestFirstRef.current = false;
+    setNewestFirst(false);
+    setLoadingAll(false);
+    loadingAllRef.current = false;
     setEvents([]);
     setProcessExpansionOverrides({});
     setDone(false);
@@ -379,6 +423,7 @@ export function PreviewDialog({
     setDeleteSelectedTarget(null);
     setDeletePlan(null);
     resetAndReload();
+    return () => { generationRef.current += 1; };
   }, [open, rolloutPath, resetAndReload]);
 
   const timelineIndexSet = useMemo(
@@ -412,10 +457,10 @@ export function PreviewDialog({
   }, [initialJump?.eventIndex, normalizedFilter, onlyMsg, searchableEvents, timelineIndexSet]);
 
   useEffect(() => {
-    if (!open || loading || done) return;
+    if (!open || loading || done || normalizedFilter || pendingJumpRef.current !== null) return;
     const viewport = viewportRef.current;
     if (!viewport) return;
-    // 收起过程、切换消息模式或应用延迟搜索后，继续补页直到结果填满视口。
+    // 普通浏览时补满视口；过滤和定位只展示当前窗口，避免隐式读取整段会话。
     if (viewport.scrollHeight <= viewport.clientHeight + 20) {
       void loadMore();
     }
@@ -436,13 +481,28 @@ export function PreviewDialog({
    * 有 phase 时仅 final_answer 作为最终答复，commentary 折叠为过程。
    * 无 phase 时使用每轮最后一条 assistant 消息。搜索结果不折叠。
    */
-  const rows = useMemo<ConversationPreviewRow[]>(() => {
+  const chronologicalRows = useMemo<ConversationPreviewRow[]>(() => {
     const displayEvents = onlyMsg ? filtered.map(toConversationDisplayEvent) : filtered;
     if (!onlyMsg || normalizedFilter) {
       return displayEvents.map((event) => ({ type: "event", event }));
     }
-    return buildConversationPreviewRows(displayEvents);
+    return boundPreviewProcessRows(buildConversationPreviewRows(displayEvents));
   }, [filtered, normalizedFilter, onlyMsg]);
+
+  const rows = useMemo(() => newestFirst ? [...chronologicalRows].reverse() : chronologicalRows, [chronologicalRows, newestFirst]);
+  const virtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => viewportRef.current,
+    estimateSize: () => 150,
+    getItemKey: (index) => {
+      const row = rows[index];
+      return row.type === "event" ? "event-" + row.event.index : "process-" + row.key;
+    },
+    gap: 16,
+    overscan: 6,
+    scrollMargin: 24,
+  });
+  const virtualRows = virtualizer.getVirtualItems();
 
   const processRowKeys = useMemo(
     () => rows.flatMap((row) => (row.type === "process" ? [row.key] : [])),
@@ -465,7 +525,11 @@ export function PreviewDialog({
     const viewport = viewportRef.current;
     if (!viewport) return;
     const el = viewport.querySelector<HTMLElement>(`[data-event-index="${target}"]`);
-    if (!el) return;
+    if (!el) {
+      const rowIndex = findPreviewRowIndex(rows, target);
+      if (rowIndex >= 0) virtualizer.scrollToIndex(rowIndex, { align: "start" });
+      return;
+    }
     pendingJumpRef.current = null;
     const viewportRect = viewport.getBoundingClientRect();
     const elRect = el.getBoundingClientRect();
@@ -475,14 +539,14 @@ export function PreviewDialog({
     void el.offsetWidth;
     el.classList.add("preview-jump-flash");
     window.setTimeout(() => el.classList.remove("preview-jump-flash"), 1700);
-  }, []);
+  }, [rows, virtualizer]);
 
   useEffect(() => {
     if (!open || !rolloutPath || !initialJump) return;
     setFilter(initialJump.query);
     pendingJumpRef.current = initialJump.eventIndex;
-    void loadUpTo(initialJump.eventOffset).then(() => scrollPendingIntoView());
-  }, [initialJump, loadUpTo, open, rolloutPath, scrollPendingIntoView]);
+    void loadUpTo(initialJump.eventOffset);
+  }, [initialJump, loadUpTo, open, rolloutPath]);
 
   /** 滚动跟随：视口上沿 1/3 处上方最近的一条用户提问视为当前时间线位置。 */
   const updateActiveFromScroll = useCallback(() => {
@@ -518,7 +582,7 @@ export function PreviewDialog({
     if (normalizedFilter) return;
     if (scrollSpyRafRef.current) cancelAnimationFrame(scrollSpyRafRef.current);
     scrollSpyRafRef.current = requestAnimationFrame(updateActiveFromScroll);
-  }, [filtered, normalizedFilter, scrollPendingIntoView, updateActiveFromScroll]);
+  }, [filtered, normalizedFilter, scrollPendingIntoView, updateActiveFromScroll, virtualRows]);
 
   useEffect(() => {
     return () => {
@@ -528,7 +592,7 @@ export function PreviewDialog({
 
   const onScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const el = e.currentTarget;
-    if (el.scrollHeight - el.scrollTop - el.clientHeight < 200) {
+    if (!loadingAll && !normalizedFilter && pendingJumpRef.current === null && el.scrollHeight - el.scrollTop - el.clientHeight < 200) {
       void loadMore();
     }
     if (scrollSpyRafRef.current) cancelAnimationFrame(scrollSpyRafRef.current);
@@ -934,7 +998,7 @@ export function PreviewDialog({
                     )}{" "}
                     条
                     <span className="ml-1 text-muted-foreground/70">
-                      {!done ? "· 滚动加载更多" : "· 已到末尾"}
+                      {!done ? (newestFirst ? "· 滚动加载更早" : "· 滚动加载更多") : (newestFirst ? "· 已到最早" : "· 已到末尾")}
                     </span>
                   </span>
                 </div>
@@ -993,12 +1057,20 @@ export function PreviewDialog({
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            {!done && events.length > 0 && (
+            <Button variant="outline" size="sm" className="h-8 text-xs" disabled={loading || loadingAll}
+              onClick={() => void navigateEdge(!newestFirst)} aria-label="切换对话排序">
+              {newestFirst ? "最新在前 ↓" : "最早在前 ↑"}
+            </Button>
+            <Button variant="ghost" size="sm" className="h-8 text-xs" disabled={loading || loadingAll}
+              onClick={() => void navigateEdge(false)}>最早</Button>
+            <Button variant="ghost" size="sm" className="h-8 text-xs" disabled={loading || loadingAll}
+              onClick={() => void navigateEdge(true)}>最新</Button>
+            {events.length > 0 && (startOffsetRef.current > 0 || !done) && (
               <Button
                 variant="outline"
                 size="sm"
                 className="h-8 gap-1.5 border-border/70 bg-muted/30 px-2.5 text-xs font-normal hover:bg-muted/50"
-                disabled={loadingAll}
+                disabled={loading || loadingAll}
                 onClick={() => void loadAll()}
               >
                 {loadingAll ? (
@@ -1066,6 +1138,7 @@ export function PreviewDialog({
             )}
             <PreviewToolbarActions
               hasSession={!!session}
+              canCopyResume={provider !== "qoder"}
               canOpenEditHistory={canMutateSession}
               onCopySessionId={copySessionId}
               onCopyResume={copyResume}
@@ -1096,8 +1169,19 @@ export function PreviewDialog({
                 </div>
               )}
 
-              {rows.map((row) =>
-                row.type === "process" ? (
+              {startOffsetRef.current > 0 && !newestFirst && (
+                <Button variant="outline" size="sm" disabled={loading || loadingAll}
+                  onClick={() => { void readWindow(Math.max(0, startOffsetRef.current - PAGE), PAGE, true); }}>
+                  查看前一页
+                </Button>
+              )}
+              <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
+              {virtualRows.map((virtualRow) => {
+                const row = rows[virtualRow.index];
+                return <div key={virtualRow.key} ref={virtualizer.measureElement} data-index={virtualRow.index}
+                  className="absolute left-0 top-0 w-full min-w-0"
+                  style={{ transform: `translateY(${virtualRow.start - virtualizer.options.scrollMargin}px)` }}>
+                {row.type === "process" ? (
                   <ProcessTurnGroup
                     key={`process-${row.key}`}
                     events={row.events}
@@ -1207,8 +1291,10 @@ export function PreviewDialog({
                       }}
                     />
                   </div>
-                ),
-              )}
+                )}
+                </div>;
+              })}
+              </div>
 
               {loading && (
                 <div className="flex justify-center py-4 text-xs text-muted-foreground">加载中…</div>
@@ -1228,7 +1314,7 @@ export function PreviewDialog({
               )}
               {done && events.length > 0 && (
                 <div className="flex justify-center pt-4 text-xs text-muted-foreground/70">
-                  — 会话末尾 —
+                  {newestFirst ? "— 已到最早 —" : "— 会话末尾 —"}
                 </div>
               )}
             </div>

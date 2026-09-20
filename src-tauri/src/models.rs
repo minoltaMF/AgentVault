@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
+    #[serde(default = "default_qoder_dir")]
+    pub qoder_dir: String,
     pub codex_dir: String,
     #[serde(default = "default_claude_dir")]
     pub claude_dir: String,
@@ -27,6 +29,11 @@ fn default_open_cmd() -> String {
     "auto".into()
 }
 
+fn default_qoder_dir() -> String {
+    crate::paths::default_qoder_dir()
+        .to_string_lossy()
+        .into_owned()
+}
 fn default_claude_dir() -> String {
     crate::paths::default_claude_dir()
         .to_string_lossy()
@@ -57,6 +64,7 @@ impl Default for Settings {
         let cursor = crate::paths::default_cursor_dir();
         let backup = crate::paths::default_backup_dir();
         Self {
+            qoder_dir: default_qoder_dir(),
             codex_dir: codex.to_string_lossy().into_owned(),
             claude_dir: claude.to_string_lossy().into_owned(),
             opencode_dir: opencode.to_string_lossy().into_owned(),
@@ -77,6 +85,7 @@ impl Default for Settings {
 /// 字段为 `None` 表示"用该 provider 的默认目录"。
 #[derive(Debug, Clone, Default)]
 pub struct ProviderDirs {
+    pub qoder_dir: Option<String>,
     pub backup_dir: Option<String>,
     pub codex_dir: String,
     pub claude_dir: Option<String>,
@@ -99,6 +108,9 @@ impl ProviderDirs {
         std::path::PathBuf::from(&self.codex_dir)
     }
 
+    pub fn qoder_path(&self) -> std::path::PathBuf {
+        resolve(&self.qoder_dir, crate::paths::default_qoder_dir)
+    }
     pub fn claude_path(&self) -> std::path::PathBuf {
         resolve(&self.claude_dir, crate::paths::default_claude_dir)
     }

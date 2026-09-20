@@ -33,9 +33,13 @@ pub fn start_workbench_content_search(
     claude_dir: String,
     query: String,
     scopes: Vec<crate::content_search::ContentSearchScope>,
+    qoder_dir: Option<String>,
 ) -> AppResult<ContentSearchStart> {
     crate::content_search::start_workbench_content_search(
-        provider_dirs(codex_dir, Some(claude_dir), None, None),
+        ProviderDirs {
+            qoder_dir,
+            ..provider_dirs(codex_dir, Some(claude_dir), None, None)
+        },
         query,
         scopes,
     )
@@ -999,6 +1003,7 @@ fn provider_dirs(
         claude_dir,
         opencode_dir,
         cursor_dir,
+        qoder_dir: None,
         cursor_agent_dir: None,
         backup_dir: None,
     }
@@ -1267,8 +1272,9 @@ pub fn start_workbench_scan(
     provider: String,
     codex_dir: String,
     claude_dir: String,
+    qoder_dir: Option<String>,
 ) -> AppResult<crate::workbench_scan::ScanStarted> {
-    crate::workbench_scan::start_workbench_scan(provider, codex_dir, claude_dir)
+    crate::workbench_scan::start_workbench_scan(provider, codex_dir, claude_dir, qoder_dir)
 }
 #[tauri::command]
 pub fn workbench_scan_status(job_id: u64) -> AppResult<crate::workbench_scan::ScanStatus> {

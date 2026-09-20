@@ -115,6 +115,12 @@ pub fn default_codex_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(".codex"))
 }
 
+pub fn default_qoder_dir() -> PathBuf {
+    std::env::var_os("QODER_CONFIG_DIR")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".qoder"))
+}
 pub fn default_claude_dir() -> PathBuf {
     dirs::home_dir()
         .map(|h| h.join(".claude"))

@@ -395,6 +395,7 @@ fn list_sessions_impl(
             provenance::annotate_sessions(&codex, &mut list);
             Ok(list)
         }
+        "qoder" => crate::qoder_sessions::list_sessions(&dirs.qoder_path(), cancel),
         "opencode" => {
             let mut list = crate::opencode_sessions::list_sessions(&dirs.opencode_path())?;
             provenance::annotate_sessions(&codex, &mut list);

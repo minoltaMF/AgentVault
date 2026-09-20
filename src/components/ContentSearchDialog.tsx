@@ -11,6 +11,7 @@ import {
 import { formatTimeString, highlight, humanBytes } from "@/lib/format";
 import { sessionIdentity } from "@/lib/sessionIdentity";
 import { sessionDisplayTitle } from "@/lib/sessionText";
+import { providerLabel } from "@/lib/providerTheme";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,13 +25,14 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 type Props = {
-  workbenchScopes?: { provider: "codex" | "claude"; rollout_paths: string[] }[];
+  workbenchScopes?: { provider: "codex" | "claude" | "qoder"; rollout_paths: string[] }[];
   retained?: { query: string; status: ContentSearchStatus | null; scrollTop?: number };
   open: boolean;
   onOpenChange: (open: boolean) => void;
   provider: SessionProvider;
   codexDir: string;
   claudeDir: string;
+  qoderDir?: string;
   opencodeDir: string;
   cursorDir: string;
   showSubagentSessions: boolean;
@@ -51,6 +53,7 @@ export function ContentSearchDialog({
   provider,
   codexDir,
   claudeDir,
+  qoderDir,
   opencodeDir,
   cursorDir,
   showSubagentSessions,
@@ -79,6 +82,7 @@ export function ContentSearchDialog({
     provider,
     codexDir,
     claudeDir,
+    qoderDir,
     opencodeDir,
     cursorDir,
     showSubagentSessions,
@@ -238,7 +242,7 @@ export function ContentSearchDialog({
     setStatus(null);
     try {
       const started = workbenchScopes ? await api.startWorkbenchContentSearch({
-        codexDir, claudeDir, query: normalized, scopes: workbenchScopes,
+        codexDir, claudeDir, qoderDir, query: normalized, scopes: workbenchScopes,
       }) : await api.startContentSearch({
         provider,
         codexDir,
@@ -413,7 +417,7 @@ export function ContentSearchDialog({
               {status.results.map((result) => (
                 <section key={sessionIdentity(result.session)} className="px-4 py-4 sm:px-6">
                   <div className="mb-2.5 flex min-w-0 items-center gap-2">
-                    {workbenchScopes && <Badge variant="outline">{result.session.provider === "codex" ? "Codex" : "Claude"}</Badge>}
+                    {workbenchScopes && <Badge variant="outline">{providerLabel(result.session.provider)}</Badge>}
                     <h3 className="min-w-0 flex-1 truncate text-sm font-semibold">
                       {sessionDisplayTitle(result.session.title, result.session.first_user_message)}
                     </h3>

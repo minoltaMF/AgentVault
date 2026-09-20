@@ -472,6 +472,7 @@ mod tests {
             opencode_dir: Some(root.join("opencode").to_string_lossy().into_owned()),
             cursor_dir: Some(root.join("cursor").to_string_lossy().into_owned()),
             cursor_agent_dir: Some(root.join("cursor-agent").to_string_lossy().into_owned()),
+            qoder_dir: Some(root.join("qoder").to_string_lossy().into_owned()),
         }
     }
 

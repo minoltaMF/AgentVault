@@ -9,6 +9,7 @@ import {
 import { Bot, CircleSlash, ListOrdered, User, X } from "lucide-react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useVirtualizer } from "@tanstack/react-virtual";
 
 import type { UserPromptBrief } from "@/lib/api";
 import { formatTimeString } from "@/lib/format";
@@ -139,12 +140,29 @@ export function PromptTimeline({ prompts, activeIndex, onJump }: Props) {
     [prompts],
   );
 
+  const railVirtualizer = useVirtualizer({
+    count: markers.length,
+    getScrollElement: () => railListRef.current,
+    estimateSize: () => MARKER_ROW_HEIGHT,
+    getItemKey: (index) => markers[index].prompt.index,
+    overscan: 8,
+  });
+  const panelVirtualizer = useVirtualizer({
+    count: listOpen ? markers.length : 0,
+    getScrollElement: () => panelListRef.current,
+    estimateSize: () => 86,
+    getItemKey: (index) => markers[index].prompt.index,
+    overscan: 4,
+  });
+
   // 左侧紧凑刻度和展开列表都自动保持当前提问可见。
   useLayoutEffect(() => {
     if (activeIndex === null) return;
-    revealActiveRow(railListRef.current, activeIndex);
-    if (listOpen) revealActiveRow(panelListRef.current, activeIndex);
-  }, [activeIndex, listOpen, prompts.length]);
+    const index = markers.findIndex((marker) => marker.prompt.index === activeIndex);
+    if (index < 0) return;
+    railVirtualizer.scrollToIndex(index, { align: "auto" });
+    if (listOpen) panelVirtualizer.scrollToIndex(index, { align: "auto" });
+  }, [activeIndex, listOpen, markers, railVirtualizer, panelVirtualizer]);
 
   const updateAnchor = useCallback((button: HTMLElement) => {
     const container = containerRef.current;
@@ -227,7 +245,9 @@ export function PromptTimeline({ prompts, activeIndex, onJump }: Props) {
         onPointerMove={scrubRail}
         onScroll={refreshHoveredAnchor}
       >
-        {markers.map((marker) => {
+        <div className="relative w-full shrink-0" style={{ height: railVirtualizer.getTotalSize() }}>
+        {railVirtualizer.getVirtualItems().map((item) => {
+          const marker = markers[item.index];
           const isActive = marker.prompt.index === activeIndex;
           const unanswered = !marker.prompt.response;
           const distance = hovered
@@ -242,6 +262,7 @@ export function PromptTimeline({ prompts, activeIndex, onJump }: Props) {
           return (
             <button
               key={marker.prompt.index}
+              style={{ position: "absolute", top: item.start, left: 0 }}
               type="button"
               data-marker-index={marker.listIndex}
               data-active={isActive || undefined}
@@ -279,6 +300,7 @@ export function PromptTimeline({ prompts, activeIndex, onJump }: Props) {
             </button>
           );
         })}
+        </div>
       </div>
 
       {hovered && !listOpen && (
@@ -373,11 +395,15 @@ export function PromptTimeline({ prompts, activeIndex, onJump }: Props) {
             </button>
           </div>
           <div ref={panelListRef} className="thin-scrollbar min-h-0 flex-1 overflow-y-auto">
-            {markers.map((marker) => {
+            <div className="relative w-full" style={{ height: panelVirtualizer.getTotalSize() }}>
+            {panelVirtualizer.getVirtualItems().map((item) => {
+              const marker = markers[item.index];
               const prompt = marker.prompt;
               const promptActive = prompt.index === activeIndex;
               return (
-                <div key={prompt.index} className="border-b border-border/40 last:border-b-0">
+                <div key={prompt.index} ref={panelVirtualizer.measureElement} data-index={item.index}
+                  style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${item.start}px)` }}
+                  className="border-b border-border/40 last:border-b-0">
                   <div className="flex items-center px-3 pb-1 pt-2 text-[10px] tabular-nums text-muted-foreground/75">
                     <span className={cn(promptActive && "font-semibold text-foreground")}>#{marker.ordinal}</span>
                     {prompt.timestamp && (
@@ -408,22 +434,12 @@ export function PromptTimeline({ prompts, activeIndex, onJump }: Props) {
                 </div>
               );
             })}
+            </div>
           </div>
         </div>
       )}
     </div>
   );
-}
-
-function revealActiveRow(container: HTMLElement | null, activeIndex: number) {
-  if (!container) return;
-  const active = container.querySelector<HTMLElement>(`[data-active="true"]`);
-  if (!active) return;
-  if (active.offsetTop < container.scrollTop) {
-    container.scrollTop = active.offsetTop;
-  } else if (active.offsetTop + active.offsetHeight > container.scrollTop + container.clientHeight) {
-    container.scrollTop = active.offsetTop + active.offsetHeight - container.clientHeight;
-  }
 }
 
 function messageText(message: { text: string }): string {

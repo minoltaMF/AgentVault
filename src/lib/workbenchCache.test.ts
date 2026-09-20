@@ -34,3 +34,15 @@ test("provider caches are separate and changed context resets only affected data
   cache.view("/same", "/same").page = 5;
   assert.deepEqual(cache.view("/same", "/new"), { search: "", page: 0, scrollTop: 0 });
 });
+
+test("Qoder source and view are isolated when its configured root changes", () => {
+  const cache = createWorkbenchCache();
+  const old = cache.source("qoder", "/qoder-a", "/codex");
+  old.completed = completed;
+  cache.view("/codex", "/claude", "/qoder-a").page = 2;
+  const next = cache.source("qoder", "/qoder-b", "/codex");
+  old.completed = { ...completed, checkedAt: "late" };
+  assert.equal(next.completed, null);
+  assert.equal(cache.source("claude", "/qoder-b", "/codex").completed, null);
+  assert.deepEqual(cache.view("/codex", "/claude", "/qoder-b"), { search: "", page: 0, scrollTop: 0 });
+});

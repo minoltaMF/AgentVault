@@ -446,6 +446,7 @@ fn preview_range_by_provider(
 ) -> AppResult<Vec<PreviewEvent>> {
     match provider.as_deref().unwrap_or("codex") {
         "codex" => preview_range_impl(path, offset, limit),
+        "qoder" => crate::qoder_sessions::preview_range(path, offset, limit),
         "claude" => crate::claude_sessions::preview_range(path, offset, limit),
         "opencode" => crate::opencode_sessions::preview_range(path, offset, limit),
         "cursor" => crate::cursor_sessions::preview_range(path, offset, limit),
@@ -503,6 +504,14 @@ pub fn preview_session_user_prompts(
             |index, raw| Some(classify(index, raw)),
             codex_event_is_agent_activity,
         ),
+        "qoder" => {
+            crate::qoder_sessions::validate_preview(&rollout_path)?;
+            user_prompts_impl(
+                &rollout_path,
+                crate::qoder_sessions::classify_preview,
+                claude_event_is_agent_activity,
+            )
+        }
         "claude" => user_prompts_impl(
             &rollout_path,
             crate::claude_sessions::classify_preview,
@@ -821,6 +830,13 @@ pub fn preview_session_meta(
     rollout_path: String,
 ) -> AppResult<SessionMetaBrief> {
     match provider.as_deref().unwrap_or("codex") {
+        "qoder" => {
+            crate::qoder_sessions::validate_preview(&rollout_path)?;
+            let mut meta = crate::claude_sessions::preview_meta(&rollout_path)?;
+            meta.model_provider = Some("qoder".into());
+            meta.source = Some("cli".into());
+            return Ok(meta);
+        }
         "claude" => return crate::claude_sessions::preview_meta(&rollout_path),
         "opencode" => return crate::opencode_sessions::preview_meta(&rollout_path),
         "cursor" => return crate::cursor_sessions::preview_meta(&rollout_path),

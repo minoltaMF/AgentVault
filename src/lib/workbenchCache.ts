@@ -11,15 +11,15 @@ export function createWorkbenchCache() {
   let view: { scope: string; value: WorkbenchView } | undefined;
   return {
     source(provider: WorkbenchProvider, root: string, codexRoot: string): SourceCache {
-      const scope = JSON.stringify([root, provider === "claude" ? codexRoot : ""]);
+      const scope = JSON.stringify([root, provider !== "codex" ? codexRoot : ""]);
       const existing = sources.get(provider);
       if (existing?.scope === scope) return existing.value;
       const value: SourceCache = { completed: null };
       sources.set(provider, { scope, value });
       return value;
     },
-    view(codexRoot: string, claudeRoot: string): WorkbenchView {
-      const scope = JSON.stringify([codexRoot, claudeRoot]);
+    view(codexRoot: string, claudeRoot: string, qoderRoot = ""): WorkbenchView {
+      const scope = JSON.stringify([codexRoot, claudeRoot, qoderRoot]);
       if (view?.scope !== scope) view = { scope, value: { search: "", page: 0, scrollTop: 0 } };
       return view.value;
     },

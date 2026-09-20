@@ -77,6 +77,7 @@ impl CliContext {
             opencode_dir: Some(self.opencode_dir.clone()),
             cursor_dir: Some(self.cursor_dir.clone()),
             cursor_agent_dir: None,
+            qoder_dir: None,
             backup_dir: None,
         }
     }

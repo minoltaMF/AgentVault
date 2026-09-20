@@ -43,6 +43,7 @@ export function SettingsSheet({ trigger }: Props) {
   const memoryDirty = useMemoryDraft((state) => state.dirty);
   const [codex, setCodex] = useState("");
   const [claude, setClaude] = useState("");
+  const [qoder, setQoder] = useState("");
   const [opencode, setOpenCode] = useState("");
   const [cursor, setCursor] = useState("");
   const [backup, setBackup] = useState("");
@@ -59,6 +60,7 @@ export function SettingsSheet({ trigger }: Props) {
     if (!settings) return;
     setCodex(settings.codex_dir);
     setClaude(settings.claude_dir);
+    setQoder(settings.qoder_dir ?? "");
     setOpenCode(settings.opencode_dir);
     setCursor(settings.cursor_dir);
     setBackup(settings.backup_dir);
@@ -151,6 +153,7 @@ export function SettingsSheet({ trigger }: Props) {
     await save({
       codex_dir: codex,
       claude_dir: claude,
+      qoder_dir: qoder,
       opencode_dir: opencode,
       cursor_dir: cursor,
       backup_dir: backup,
@@ -283,6 +286,19 @@ export function SettingsSheet({ trigger }: Props) {
             onRestoreDefault={restoreClaudeDefault}
           >
             <ValidationBadge v={claudeValidation} provider="claude" />
+          </DirField>
+
+          <Separator />
+
+          <DirField
+            label="Qoder CLI 配置目录（只读）"
+            value={qoder}
+            onChange={setQoder}
+            placeholder="~/.qoder"
+            onPick={() => pick(setQoder, qoder)}
+            onRestoreDefault={() => { void api.defaultQoderDir().then(setQoder).catch((error) => toast.error(String(error))); }}
+          >
+            <p className="text-xs text-muted-foreground">在“全部会话”读取 projects 下的主会话。默认使用 QODER_CONFIG_DIR 或 ~/.qoder；不包含 Qoder IDE。</p>
           </DirField>
 
           <Separator />

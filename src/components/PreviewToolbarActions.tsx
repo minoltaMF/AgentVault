@@ -11,6 +11,7 @@ import {
 
 type Props = {
   hasSession: boolean;
+  canCopyResume?: boolean;
   canOpenEditHistory: boolean;
   onCopySessionId: () => void | Promise<void>;
   onCopyResume: () => void | Promise<void>;
@@ -21,6 +22,7 @@ type Props = {
 
 export function PreviewToolbarActions({
   hasSession,
+  canCopyResume = true,
   canOpenEditHistory,
   onCopySessionId,
   onCopyResume,
@@ -49,10 +51,10 @@ export function PreviewToolbarActions({
                 <Copy className="h-4 w-4" />
                 复制会话 ID
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => void onCopyResume()}>
+              {canCopyResume && <DropdownMenuItem onSelect={() => void onCopyResume()}>
                 <Copy className="h-4 w-4" />
                 复制 resume
-              </DropdownMenuItem>
+              </DropdownMenuItem>}
               <DropdownMenuItem onSelect={() => void onRevealDirectory()}>
                 <FolderOpen className="h-4 w-4" />
                 打开目录

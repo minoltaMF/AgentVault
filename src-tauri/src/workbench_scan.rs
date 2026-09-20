@@ -104,11 +104,17 @@ pub fn start_workbench_scan(
     provider: String,
     codex_dir: String,
     claude_dir: String,
+    qoder_dir: Option<String>,
 ) -> AppResult<ScanStarted> {
     let root = match provider.as_str() {
         "codex" => PathBuf::from(&codex_dir),
         "claude" => PathBuf::from(claude_dir),
-        _ => return Err(AppError::Other("扫描仅支持 Codex / Claude".into())),
+        "qoder" => PathBuf::from(qoder_dir.unwrap_or_default()),
+        _ => {
+            return Err(AppError::Other(
+                "扫描仅支持 Codex / Claude / Qoder CLI".into(),
+            ))
+        }
     };
     if !root.is_absolute() {
         return Err(AppError::Path("扫描来源必须是绝对路径".into()));
@@ -236,9 +242,13 @@ pub fn cancel_workbench_scan(job_id: u64) -> AppResult<()> {
 }
 
 // Explicit stack: links/junctions are reported and never traversed, and every directory entry is cancellable.
-fn discover(
+fn discover(job: &Job, root: &Path, visit: impl FnMut(&Path) -> AppResult<()>) -> AppResult<()> {
+    discover_depth(job, root, usize::MAX, visit)
+}
+fn discover_depth(
     job: &Job,
     root: &Path,
+    max_directory_depth: usize,
     mut visit: impl FnMut(&Path) -> AppResult<()>,
 ) -> AppResult<()> {
     let mut stack = vec![root.to_path_buf()];
@@ -258,6 +268,14 @@ fn discover(
             continue;
         }
         if metadata.is_dir() {
+            if path
+                .strip_prefix(root)
+                .map(|p| p.components().count())
+                .unwrap_or(usize::MAX)
+                > max_directory_depth
+            {
+                continue;
+            }
             match fs::read_dir(&path) {
                 Ok(entries) => {
                     for entry in entries {
@@ -347,7 +365,7 @@ fn scan(job: &Job, provider: &str, root: &Path) -> AppResult<()> {
     if !meta.is_dir() || crate::path_safety::metadata_is_link_or_reparse(&meta) {
         return Err(AppError::Path("来源不是普通目录".into()));
     }
-    if provider == "claude" {
+    if matches!(provider, "claude" | "qoder") {
         crate::path_safety::validate_descendant(
             root,
             &root.join("projects"),
@@ -355,13 +373,26 @@ fn scan(job: &Job, provider: &str, root: &Path) -> AppResult<()> {
             false,
             "Claude projects",
         )?;
-        discover(job, &root.join("projects"), |path| {
-            checked_process(job, root, path, || {
-                crate::claude_sessions::parse_session(path, Some(&job.cancel))?
-                    .map(Some)
-                    .ok_or_else(|| AppError::Other("未找到有效会话元数据".into()))
-            })
-        })?;
+        discover_depth(
+            job,
+            &root.join("projects"),
+            if provider == "qoder" { 1 } else { usize::MAX },
+            |path| {
+                if provider == "qoder" && !crate::qoder_sessions::is_main_transcript(root, path) {
+                    return Ok(());
+                }
+                checked_process(job, root, path, || {
+                    let result = if provider == "qoder" {
+                        crate::qoder_sessions::parse_session(root, path, Some(&job.cancel))?
+                    } else {
+                        crate::claude_sessions::parse_session(path, Some(&job.cancel))?
+                    };
+                    result
+                        .map(Some)
+                        .ok_or_else(|| AppError::Other("未找到有效会话元数据".into()))
+                })
+            },
+        )?;
     } else {
         for name in [
             "state_5.sqlite",
@@ -451,6 +482,29 @@ fn scan(job: &Job, provider: &str, root: &Path) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn qoder_scan_limits_depth_and_reports_bad_main_files() {
+        let root = fixture();
+        let project = root.join("projects/demo");
+        fs::create_dir_all(project.join("subagents")).unwrap();
+        fs::write(
+            project.join("good.jsonl"),
+            include_str!("../tests/fixtures/qoder/sample-qoder-session.jsonl"),
+        )
+        .unwrap();
+        fs::write(project.join("bad.jsonl"), "{invalid").unwrap();
+        fs::write(project.join("subagents/ignore.jsonl"), "{invalid").unwrap();
+        let job = Job::new(0);
+        scan(&job, "qoder", &root).unwrap();
+        let status = job.status.lock().unwrap();
+        assert_eq!(status.discovered_files, 2);
+        assert_eq!(status.processed_files, 2);
+        assert_eq!(status.failed_files, 1);
+        assert_eq!(status.results.len(), 1);
+        assert_eq!(status.results[0].provider, "qoder");
+        drop(status);
+        fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn workbench_scan_rejects_missing_projects_and_outside_file_without_parsing() {
         let root = fixture();
@@ -591,8 +645,8 @@ mod tests {
     }
     #[test]
     fn workbench_scan_bounds_errors_and_rejects_implicit_roots() {
-        assert!(start_workbench_scan("claude".into(), "".into(), "".into()).is_err());
-        assert!(start_workbench_scan("cursor".into(), "".into(), "".into()).is_err());
+        assert!(start_workbench_scan("claude".into(), "".into(), "".into(), None).is_err());
+        assert!(start_workbench_scan("cursor".into(), "".into(), "".into(), None).is_err());
         let job = Job::new(0);
         for _ in 0..250 {
             job.failure(Path::new("bad"), "failure");
@@ -610,6 +664,7 @@ mod tests {
             "claude".into(),
             "".into(),
             root.to_string_lossy().into_owned(),
+            None,
         )
         .unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);

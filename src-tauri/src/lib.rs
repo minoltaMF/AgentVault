@@ -37,6 +37,7 @@ pub mod path_safety;
 pub mod paths;
 pub mod provenance;
 pub mod provider_sync;
+mod qoder_sessions;
 pub(crate) mod release_channel;
 pub mod repair;
 pub mod rollout;
@@ -83,6 +84,7 @@ pub fn run() {
             app_update::install_app_update,
             settings::default_codex_dir,
             settings::default_claude_dir,
+            settings::default_qoder_dir,
             settings::default_opencode_dir,
             settings::default_cursor_dir,
             settings::validate_codex_dir,

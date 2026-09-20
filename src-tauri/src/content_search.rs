@@ -188,9 +188,10 @@ pub fn start_workbench_content_search(
         let root = match scope.provider.as_str() {
             "codex" => Some(dirs.codex_dir.as_str()),
             "claude" => dirs.claude_dir.as_deref(),
+            "qoder" => dirs.qoder_dir.as_deref(),
             _ => {
                 return Err(AppError::Other(
-                    "工作台正文搜索仅支持 Codex 与 Claude".into(),
+                    "工作台正文搜索仅支持 Codex、Claude 与 Qoder CLI".into(),
                 ))
             }
         };
@@ -289,6 +290,37 @@ fn execute_search(job: &SearchJob, request: &SearchRequest) -> AppResult<()> {
                 .iter()
                 .map(String::as_str)
                 .collect::<HashSet<_>>();
+            if scope.provider == "qoder" {
+                let root = std::path::Path::new(request.dirs.qoder_dir.as_deref().unwrap_or(""));
+                if !root.is_absolute() {
+                    return Err(AppError::Path("Qoder 搜索来源必须为绝对路径".into()));
+                }
+                // The selected paths are the scope. An unrelated unreadable file must
+                // not prevent healthy selected transcripts from being searched.
+                for path in &paths {
+                    let result = crate::qoder_sessions::parse_session(
+                        root,
+                        std::path::Path::new(path),
+                        Some(&job.cancel),
+                    );
+                    match result {
+                        Ok(Some(session)) => found.push(session),
+                        Err(AppError::Cancelled) => return Err(AppError::Cancelled),
+                        result => {
+                            let error = match result {
+                                Err(error) => error.to_string(),
+                                _ => "未找到有效会话元数据".into(),
+                            };
+                            let mut status = job.status.lock().unwrap_or_else(|e| e.into_inner());
+                            status.failed_files += 1;
+                            if status.failures.len() < 100 {
+                                status.failures.push(format!("{path}: {error}"));
+                            }
+                        }
+                    }
+                }
+                continue;
+            }
             let listed = match sessions::list_sessions_cancellable_with_dirs(
                 Some(scope.provider.clone()),
                 request.dirs.clone(),
@@ -373,6 +405,8 @@ fn execute_search(job: &SearchJob, request: &SearchRequest) -> AppResult<()> {
             if request.scopes.is_some() {
                 let root = if session.provider == "codex" {
                     request.dirs.codex_dir.as_str()
+                } else if session.provider == "qoder" {
+                    request.dirs.qoder_dir.as_deref().unwrap_or("")
                 } else {
                     request.dirs.claude_dir.as_deref().unwrap_or("")
                 };
@@ -641,6 +675,7 @@ fn classify_event(provider: &str, index: usize, raw: Value) -> Option<crate::mod
     match provider {
         "codex" => Some(rollout::classify_preview(index, raw)),
         // Cursor 与 OpenCode 都会先合成 Claude 形状的记录再分类。
+        "qoder" => crate::qoder_sessions::classify_preview(index, raw),
         "claude" | "cursor" => crate::claude_sessions::classify_preview(index, raw),
         _ => None,
     }
@@ -775,6 +810,96 @@ mod tests {
         assert_eq!(status.failed_files, 1);
         assert!(status.failures[0].contains("missing.jsonl"));
         drop(status);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn qoder_workbench_search_offsets_match_preview() {
+        let seed = temp_file("qoder-scope", &[]);
+        let root = seed.parent().unwrap();
+        let project = root.join("projects/demo");
+        fs::create_dir_all(&project).unwrap();
+        let path = project.join("session.jsonl");
+        let body = [
+            json!({"sessionId":"qoder","isSidechain":true,"type":"user","message":{"role":"user","content":"needle hidden"}}),
+            json!({"sessionId":"qoder","type":"assistant","message":{"role":"assistant","content":[{"type":"output_text","text":"needle visible"},{"type":"unknown","text":"needle unknown"}]}})
+        ].iter().map(|r| r.to_string()).collect::<Vec<_>>().join("\n");
+        fs::write(&path, body).unwrap();
+        let job = test_job();
+        execute_search(
+            &job,
+            &SearchRequest {
+                provider: "workbench".into(),
+                dirs: ProviderDirs {
+                    qoder_dir: Some(root.to_string_lossy().into_owned()),
+                    ..Default::default()
+                },
+                query: "needle".into(),
+                rollout_paths: vec![],
+                scopes: Some(vec![ContentSearchScope {
+                    provider: "qoder".into(),
+                    rollout_paths: vec![path.to_string_lossy().into_owned()],
+                }]),
+            },
+        )
+        .unwrap();
+        let status = job.status.lock().unwrap();
+        assert_eq!(status.results.len(), 1);
+        assert_eq!(status.results[0].matches.len(), 1);
+        let hit = &status.results[0].matches[0];
+        assert_eq!(hit.event_index, 1);
+        assert_eq!(hit.event_offset, 1);
+        assert!(!hit.snippet.contains("unknown"));
+        let events =
+            crate::qoder_sessions::preview_range(path.to_str().unwrap(), hit.event_offset, 1)
+                .unwrap();
+        assert_eq!(events[0].index, hit.event_index);
+        drop(status);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn qoder_scoped_search_isolates_unreadable_files() {
+        let seed = temp_file("qoder-file-failures", &[]);
+        let root = seed.parent().unwrap();
+        let project = root.join("projects/demo");
+        fs::create_dir_all(&project).unwrap();
+        let healthy = project.join("healthy.jsonl");
+        let broken = project.join("broken.jsonl");
+        fs::write(&healthy, json!({"sessionId":"healthy","type":"user","message":{"role":"user","content":"needle"}}).to_string()).unwrap();
+        fs::write(&broken, [0xff, 0xfe, b'\n']).unwrap();
+        for include_broken in [false, true] {
+            let mut rollout_paths = vec![healthy.to_string_lossy().into_owned()];
+            if include_broken {
+                rollout_paths.push(broken.to_string_lossy().into_owned());
+            }
+            let job = test_job();
+            execute_search(
+                &job,
+                &SearchRequest {
+                    provider: "workbench".into(),
+                    dirs: ProviderDirs {
+                        qoder_dir: Some(root.to_string_lossy().into_owned()),
+                        ..Default::default()
+                    },
+                    query: "needle".into(),
+                    rollout_paths: vec![],
+                    scopes: Some(vec![ContentSearchScope {
+                        provider: "qoder".into(),
+                        rollout_paths,
+                    }]),
+                },
+            )
+            .unwrap();
+            let status = job.status.lock().unwrap();
+            assert_eq!(status.results.len(), 1);
+            assert_eq!(status.results[0].session.id, "healthy");
+            assert_eq!(status.failed_files, usize::from(include_broken));
+            assert_eq!(status.failures.len(), usize::from(include_broken));
+            if include_broken {
+                assert!(status.failures[0].contains("broken.jsonl"));
+            }
+        }
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -1056,6 +1181,7 @@ mod tests {
                 opencode_dir: Some(root.join("opencode").to_string_lossy().into_owned()),
                 cursor_dir: Some(root.join("cursor").to_string_lossy().into_owned()),
                 cursor_agent_dir: Some(root.join("cursor-agent").to_string_lossy().into_owned()),
+                qoder_dir: None,
             },
             query: "needle".to_string(),
             rollout_paths: Vec::new(),

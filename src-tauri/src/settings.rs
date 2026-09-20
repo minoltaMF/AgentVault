@@ -184,6 +184,10 @@ pub fn default_codex_dir() -> String {
 }
 
 #[cfg_attr(feature = "desktop", tauri::command)]
+pub fn default_qoder_dir() -> String {
+    paths::default_qoder_dir().to_string_lossy().into_owned()
+}
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn default_claude_dir() -> String {
     paths::default_claude_dir().to_string_lossy().into_owned()
 }

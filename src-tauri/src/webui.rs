@@ -188,11 +188,13 @@ fn dispatch_invoke(state: &WebuiState, command: &str, args: Value) -> AppResult<
         "validate_cursor_dir" => {
             to_result_value(settings::validate_cursor_dir(string_arg(&args, "path")?))
         }
+        "default_qoder_dir" => to_value(settings::default_qoder_dir()),
         "default_cursor_dir" => to_value(settings::default_cursor_dir()),
         "start_workbench_scan" => to_result_value(crate::workbench_scan::start_workbench_scan(
             string_arg(&args, "provider")?,
             string_arg(&args, "codexDir")?,
             string_arg(&args, "claudeDir")?,
+            opt_string_arg(&args, "qoderDir")?,
         )),
         "workbench_scan_status" => to_result_value(crate::workbench_scan::workbench_scan_status(
             arg(&args, "jobId")?,
@@ -927,6 +929,7 @@ fn provider_dirs_arg(args: &Value) -> AppResult<crate::models::ProviderDirs> {
     Ok(crate::models::ProviderDirs {
         codex_dir: string_arg(args, "codexDir")?,
         claude_dir: opt_string_arg(args, "claudeDir")?,
+        qoder_dir: opt_string_arg(args, "qoderDir")?,
         opencode_dir: opt_string_arg(args, "opencodeDir")?,
         cursor_dir: opt_string_arg(args, "cursorDir")?,
         cursor_agent_dir: None,

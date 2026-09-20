@@ -291,6 +291,13 @@ pub(crate) fn parse_session(
     path: &Path,
     cancel: Option<&AtomicBool>,
 ) -> AppResult<Option<SessionSummary>> {
+    parse_session_normalized(path, cancel, Some)
+}
+pub(crate) fn parse_session_normalized(
+    path: &Path,
+    cancel: Option<&AtomicBool>,
+    normalize: fn(Value) -> Option<Value>,
+) -> AppResult<Option<SessionSummary>> {
     let is_subagent = is_agent_session(path);
     let file = File::open(path)?;
     let reader = BufReader::new(file);
@@ -322,6 +329,9 @@ pub(crate) fn parse_session(
             Err(_) => continue,
         };
 
+        let Some(value) = normalize(value) else {
+            continue;
+        };
         if session_id.is_none() {
             session_id = value
                 .get("sessionId")

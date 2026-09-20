@@ -1,6 +1,6 @@
 [package]
 name = "cc-session-manager"
-version = "0.1.0-alpha.7"
+version = "0.1.0-alpha.8"
 description = "AgentVault"
 authors = ["zjsmew"]
 edition = "2021"
