@@ -1,0 +1,4 @@
+{"type":"ai-title","aiTitle":"WorkBuddy fixture","sessionId":"fixture","cwd":"/workspace/demo","timestamp":1782828714000}
+{"type":"message","sessionId":"fixture","role":"user","timestamp":1782828714330,"content":[{"type":"input_text","text":"hidden context <user_query>needle question</user_query>"}]}
+{"type":"message","role":"assistant","timestamp":1782828715330,"content":[{"type":"output_text","text":"needle answer"}]}
+{"type":"function_call_result","content":"hidden tool result"}

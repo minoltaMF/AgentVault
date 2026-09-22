@@ -47,18 +47,24 @@ function resumeCommandText(provider: SessionProvider, sessionId: string, cwd?: s
     // 但从 (provider, id) 分辨不出是哪一种，命令由后端逐会话给在 resume_command 上。
     case "cursor":
     case "qoder":
+    case "workbuddy":
+    case "grok":
+    case "pi":
       return "";
   }
 }
 
 export type CoreSessionProvider = "codex" | "claude";
-export type SessionProvider = CoreSessionProvider | "opencode" | "cursor" | "qoder";
+export type SessionProvider = CoreSessionProvider | "opencode" | "cursor" | "qoder" | "workbuddy" | "grok" | "pi";
 export type StatsProvider = "all" | SessionProvider;
 
 export type Settings = {
   codex_dir: string;
   claude_dir: string;
   qoder_dir: string;
+  workbuddy_dir: string;
+  grok_dir: string;
+  pi_dir: string;
   opencode_dir: string;
   cursor_dir: string;
   backup_dir: string;
@@ -1011,6 +1017,9 @@ export const api = {
   },
   defaultCodexDir: () => invokeCommand<string>("default_codex_dir"),
   defaultClaudeDir: () => invokeCommand<string>("default_claude_dir"),
+  defaultWorkbuddyDir: () => invokeCommand<string>("default_workbuddy_dir"),
+  defaultGrokDir: () => invokeCommand<string>("default_grok_dir"),
+  defaultPiDir: () => invokeCommand<string>("default_pi_dir"),
   defaultQoderDir: () => invokeCommand<string>("default_qoder_dir"),
   defaultOpenCodeDir: () => invokeCommand<string>("default_opencode_dir"),
   defaultCursorDir: () => invokeCommand<string>("default_cursor_dir"),
@@ -1022,8 +1031,8 @@ export const api = {
   listSessions: (provider: SessionProvider, codexDir: string, claudeDir?: string, opencodeDir?: string, cursorDir?: string) =>
     invokeCommand<SessionSummary[]>("list_sessions", { provider, codexDir, claudeDir, opencodeDir, cursorDir }),
 
-  startWorkbenchScan: (provider: "codex" | "claude" | "qoder", codexDir: string, claudeDir: string, qoderDir?: string) =>
-    invokeCommand<{ job_id: number }>("start_workbench_scan", { provider, codexDir, claudeDir, qoderDir }),
+  startWorkbenchScan: (provider: "codex" | "claude" | "qoder" | "workbuddy" | "grok" | "pi", codexDir: string, claudeDir: string, qoderDir?: string, workbuddyDir?: string, grokDir?: string, piDir?: string) =>
+    invokeCommand<{ job_id: number }>("start_workbench_scan", { provider, codexDir, claudeDir, qoderDir, workbuddyDir, grokDir, piDir }),
   workbenchScanStatus: (jobId: number) => invokeCommand<WorkbenchScanStatus>("workbench_scan_status", { jobId }),
   cancelWorkbenchScan: (jobId: number) => invokeCommand<void>("cancel_workbench_scan", { jobId }),
   groupByProject: (provider: SessionProvider, codexDir: string, claudeDir?: string, opencodeDir?: string, cursorDir?: string) =>
@@ -1041,7 +1050,7 @@ export const api = {
   }) => invokeCommand<{ job_id: number }>("start_content_search", p),
   contentSearchStatus: (jobId: number) =>
     invokeCommand<ContentSearchStatus>("content_search_status", { jobId }),
-  startWorkbenchContentSearch: (p: { codexDir: string; claudeDir: string; qoderDir?: string; query: string; scopes: { provider: "codex" | "claude" | "qoder"; rollout_paths: string[] }[] }) =>
+  startWorkbenchContentSearch: (p: { codexDir: string; claudeDir: string; qoderDir?: string; workbuddyDir?: string; grokDir?: string; piDir?: string; query: string; scopes: { provider: "codex" | "claude" | "qoder" | "workbuddy" | "grok" | "pi"; rollout_paths: string[] }[] }) =>
     invokeCommand<{ job_id: number }>("start_workbench_content_search", p),
   activeContentSearch: () =>
     invokeCommand<{ job_id: number } | null>("active_content_search"),

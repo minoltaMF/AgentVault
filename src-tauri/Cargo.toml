@@ -1,6 +1,6 @@
 [package]
 name = "cc-session-manager"
-version = "0.1.0-alpha.8"
+version = "0.1.0-alpha.9"
 description = "AgentVault"
 authors = ["zjsmew"]
 edition = "2021"
@@ -62,6 +62,7 @@ base64 = "0.22"
 libc = "0.2"
 provider-claude = { path = "../crates/provider-claude" }
 provider-codex = { path = "../crates/provider-codex" }
+provider-pi = { path = "../crates/provider-pi" }
 provider-sdk = { path = "../crates/provider-sdk" }
 vault-io = { path = "../crates/vault-io" }
 

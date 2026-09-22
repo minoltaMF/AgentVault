@@ -473,6 +473,9 @@ mod tests {
             cursor_dir: Some(root.join("cursor").to_string_lossy().into_owned()),
             cursor_agent_dir: Some(root.join("cursor-agent").to_string_lossy().into_owned()),
             qoder_dir: Some(root.join("qoder").to_string_lossy().into_owned()),
+            workbuddy_dir: Some(root.join("workbuddy").to_string_lossy().into_owned()),
+            grok_dir: Some(root.join("grok").to_string_lossy().into_owned()),
+            pi_dir: Some(root.join("pi").to_string_lossy().into_owned()),
         }
     }
 

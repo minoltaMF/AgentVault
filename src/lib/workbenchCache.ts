@@ -18,8 +18,8 @@ export function createWorkbenchCache() {
       sources.set(provider, { scope, value });
       return value;
     },
-    view(codexRoot: string, claudeRoot: string, qoderRoot = ""): WorkbenchView {
-      const scope = JSON.stringify([codexRoot, claudeRoot, qoderRoot]);
+    view(codexRoot: string, claudeRoot: string, qoderRoot = "", workbuddyRoot = "", grokRoot = "", piRoot = ""): WorkbenchView {
+      const scope = JSON.stringify([codexRoot, claudeRoot, qoderRoot, workbuddyRoot, grokRoot, piRoot]);
       if (view?.scope !== scope) view = { scope, value: { search: "", page: 0, scrollTop: 0 } };
       return view.value;
     },

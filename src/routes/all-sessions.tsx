@@ -23,14 +23,17 @@ const selectClass = "h-9 w-full min-w-0 rounded-md border border-input bg-backgr
 export default function AllSessionsRoute() {
   const settings = useSettings((s) => s.settings);
   if (!settings) return null;
-  return <Workbench key={JSON.stringify([settings.codex_dir, settings.claude_dir, settings.qoder_dir])} codexRoot={settings.codex_dir} claudeRoot={settings.claude_dir} qoderRoot={settings.qoder_dir ?? ""} />;
+  return <Workbench key={JSON.stringify([settings.codex_dir, settings.claude_dir, settings.qoder_dir, settings.workbuddy_dir, settings.grok_dir, settings.pi_dir])} codexRoot={settings.codex_dir} claudeRoot={settings.claude_dir} qoderRoot={settings.qoder_dir ?? ""} workbuddyRoot={settings.workbuddy_dir ?? ""} grokRoot={settings.grok_dir ?? ""} piRoot={settings.pi_dir ?? ""} />;
 }
 
-function Workbench({ codexRoot, claudeRoot, qoderRoot }: { codexRoot: string; claudeRoot: string; qoderRoot: string }) {
+function Workbench({ codexRoot, claudeRoot, qoderRoot, workbuddyRoot, grokRoot, piRoot }: { codexRoot: string; claudeRoot: string; qoderRoot: string; workbuddyRoot: string; grokRoot: string; piRoot: string }) {
   const codex = useWorkbenchSource("codex", codexRoot, codexRoot);
   const claude = useWorkbenchSource("claude", claudeRoot, codexRoot);
   const qoder = useWorkbenchSource("qoder", qoderRoot, codexRoot);
-  const [savedView] = useState(() => workbenchCache.view(codexRoot, claudeRoot, qoderRoot));
+  const workbuddy = useWorkbenchSource("workbuddy", workbuddyRoot, codexRoot);
+  const grok = useWorkbenchSource("grok", grokRoot, codexRoot);
+  const pi = useWorkbenchSource("pi", piRoot, codexRoot);
+  const [savedView] = useState(() => workbenchCache.view(codexRoot, claudeRoot, qoderRoot, workbuddyRoot, grokRoot, piRoot));
   const location = useLocation();
   // An explicit URL is authoritative; ordinary sidebar navigation restores the last view.
   const [initialSearch] = useState(() => location.search ? location.search.slice(1) : savedView.search);
@@ -50,13 +53,13 @@ function Workbench({ codexRoot, claudeRoot, qoderRoot }: { codexRoot: string; cl
   const [page, setPage] = useState(() => initialSearch === savedView.search ? savedView.page : 0);
   const [initialScroll] = useState(() => initialSearch === savedView.search ? savedView.scrollTop : 0);
   const query = params.get("q") ?? "";
-  const provider = ["codex", "claude", "qoder"].includes(params.get("provider") ?? "") ? params.get("provider")! : "";
+  const provider = ["codex", "claude", "qoder", "workbuddy", "grok", "pi"].includes(params.get("provider") ?? "") ? params.get("provider")! : "";
   const project = params.get("project") ?? "";
   const archive = ["active", "archived"].includes(params.get("archive") ?? "") ? params.get("archive")! : "";
-  const all = useMemo(() => [...codex.sessions, ...claude.sessions, ...qoder.sessions], [codex.sessions, claude.sessions, qoder.sessions]);
+  const all = useMemo(() => [...codex.sessions, ...claude.sessions, ...qoder.sessions, ...workbuddy.sessions, ...grok.sessions, ...pi.sessions], [codex.sessions, claude.sessions, qoder.sessions, workbuddy.sessions, grok.sessions, pi.sessions]);
   const filtered = useMemo(() => workbenchSessions(all, { query, provider, project, archive }), [all, query, provider, project, archive]);
   const contentScopes = useMemo(() => workbenchSearchScopes(filtered), [filtered]);
-  const contentScopeKey = JSON.stringify([codexRoot, claudeRoot, qoderRoot, query, provider, project, archive, contentScopes]);
+  const contentScopeKey = JSON.stringify([codexRoot, claudeRoot, qoderRoot, workbuddyRoot, grokRoot, piRoot, query, provider, project, archive, contentScopes]);
   const retainedContent = useMemo(() => contentSearchCache(contentScopeKey), [contentScopeKey]);
   const projects = useMemo(() => [...new Set(all.map((s) => s.cwd).filter(Boolean))].sort(), [all]);
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
@@ -71,19 +74,19 @@ function Workbench({ codexRoot, claudeRoot, qoderRoot }: { codexRoot: string; cl
     savedView.search = search;
     savedView.page = currentPage;
   }, [savedView, search, currentPage]);
-  const busy = codex.state === "loading" || claude.state === "loading" || qoder.state === "loading";
-  const sources = [{ name: "Codex", root: codexRoot, data: codex }, { name: "Claude", root: claudeRoot, data: claude }, { name: "Qoder CLI", root: qoderRoot, data: qoder }];
+  const busy = codex.state === "loading" || claude.state === "loading" || qoder.state === "loading" || workbuddy.state === "loading" || grok.state === "loading" || pi.state === "loading";
+  const sources = [{ name: "Codex", root: codexRoot, data: codex }, { name: "Claude", root: claudeRoot, data: claude }, { name: "Qoder CLI", root: qoderRoot, data: qoder }, { name: "WorkBuddy", root: workbuddyRoot, data: workbuddy }, { name: "Grok Build CLI", root: grokRoot, data: grok }, { name: "Pi", root: piRoot, data: pi }];
   const filter = (name: string, value: string) => {
     setParams((old) => { const next = new URLSearchParams(old); if (value) next.set(name, value); else next.delete(name); return next; }, { replace: true });
     setPage(0);
   };
-  const refresh = () => { void codex.refresh(); void claude.refresh(); void qoder.refresh(); };
+  const refresh = () => { void codex.refresh(); void claude.refresh(); void qoder.refresh(); void workbuddy.refresh(); void grok.refresh(); void pi.refresh(); };
 
   return <>
     <TopBar title="全部会话" stats={`${filtered.length} 条`} refreshing={busy} onRefresh={refresh} showListTools={false} />
     <ScrollArea className="min-h-0 flex-1" viewportRef={viewport}>
       <div className="space-y-5 p-4 md:p-6">
-        <p className="text-sm text-muted-foreground">在一处查找 Codex、Claude 与 Qoder CLI 会话。选择读取来源后开始；预览为只读。</p>
+        <p className="text-sm text-muted-foreground">在一处查找 Codex、Claude、Qoder CLI、WorkBuddy、Grok Build CLI 与 Pi 会话。选择读取来源后开始；预览为只读。</p>
         <div className="grid min-w-0 gap-3 lg:grid-cols-3">
           {sources.map(({ name, root, data }) => <section key={name} aria-label={`${name} 来源`} className="min-w-0 space-y-2 rounded-lg border p-3">
             <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="font-medium">{name}</h2><Badge variant="outline">{!root ? "未配置" : data.state === "interrupted" ? "状态待确认" : data.state === "cancelled" ? "已停止" : data.state === "loading" ? data.cancelling ? "正在停止" : "正在读取" : data.state === "error" ? "读取失败" : data.state === "ready" ? `${data.progress?.failed_files ? "部分完成 · " : ""}已读取 ${data.sessions.length} 条` : "尚未读取"}</Badge></div>
@@ -109,7 +112,7 @@ function Workbench({ codexRoot, claudeRoot, qoderRoot }: { codexRoot: string; cl
         </div>
         <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <label className="min-w-0 space-y-1 text-xs">搜索标题、首条消息、ID 或路径<Input aria-label="搜索会话" value={query} onChange={(e) => filter("q", e.target.value)} placeholder="不搜索全部正文" /></label>
-          <label className="min-w-0 space-y-1 text-xs">来源<select aria-label="来源" className={selectClass} value={provider} onChange={(e) => filter("provider", e.target.value)}><option value="">所有来源</option><option value="codex">Codex</option><option value="claude">Claude</option><option value="qoder">Qoder CLI</option></select></label>
+          <label className="min-w-0 space-y-1 text-xs">来源<select aria-label="来源" className={selectClass} value={provider} onChange={(e) => filter("provider", e.target.value)}><option value="">所有来源</option><option value="codex">Codex</option><option value="claude">Claude</option><option value="qoder">Qoder CLI</option><option value="workbuddy">WorkBuddy</option><option value="grok">Grok Build CLI</option><option value="pi">Pi</option></select></label>
           <label className="min-w-0 space-y-1 text-xs">项目路径<select aria-label="项目路径" className={selectClass} value={project} onChange={(e) => filter("project", e.target.value)}><option value="">所有项目</option>{project && !projects.includes(project) && <option value={project}>{project}（尚无结果）</option>}{projects.map((cwd) => <option key={cwd} value={cwd}>{cwd}</option>)}</select></label>
           <label className="min-w-0 space-y-1 text-xs">归档状态<select aria-label="归档状态" className={selectClass} value={archive} onChange={(e) => filter("archive", e.target.value)}><option value="">全部状态</option><option value="active">未归档</option><option value="archived">已归档</option></select></label>
         </div>
@@ -128,7 +131,7 @@ function Workbench({ codexRoot, claudeRoot, qoderRoot }: { codexRoot: string; cl
         {pages > 1 && <nav aria-label="会话分页" className="flex items-center justify-center gap-3"><Button variant="outline" disabled={currentPage === 0} onClick={() => { setPage(currentPage - 1); viewport.current?.scrollTo({ top: 0 }); }}>上一页</Button><span className="text-sm">{currentPage + 1} / {pages}</span><Button variant="outline" disabled={currentPage + 1 >= pages} onClick={() => { setPage(currentPage + 1); viewport.current?.scrollTo({ top: 0 }); }}>下一页</Button></nav>}
       </div>
     </ScrollArea>
-    <ContentSearchDialog key={contentScopeKey} open={contentSearchOpen} onOpenChange={setContentSearchOpen} provider="codex" codexDir={codexRoot} claudeDir={claudeRoot} qoderDir={qoderRoot} opencodeDir="" cursorDir="" showSubagentSessions={false} showArchivedSessions={archive === "archived"} rolloutPaths={[]} workbenchScopes={contentScopes} retained={retainedContent} onOpenResult={(session, match, text) => { setPreviewJump({ eventIndex: match.event_index, eventOffset: match.event_offset, query: text }); setPreview(session); setPreviewOpen(true); }} />
+    <ContentSearchDialog key={contentScopeKey} open={contentSearchOpen} onOpenChange={setContentSearchOpen} provider="codex" codexDir={codexRoot} claudeDir={claudeRoot} qoderDir={qoderRoot} workbuddyDir={workbuddyRoot} grokDir={grokRoot} piDir={piRoot} opencodeDir="" cursorDir="" showSubagentSessions={false} showArchivedSessions={archive === "archived"} rolloutPaths={[]} workbenchScopes={contentScopes} retained={retainedContent} onOpenResult={(session, match, text) => { setPreviewJump({ eventIndex: match.event_index, eventOffset: match.event_offset, query: text }); setPreview(session); setPreviewOpen(true); }} />
     {preview && <PreviewDialog key={`${sessionIdentity(preview)}:${previewJump?.eventIndex ?? ""}`} readOnly open={previewOpen} session={preview} initialJump={previewJump} allSessions={all.filter((s) => s.provider === preview.provider)} onOpenChange={(open) => { if (!open) { setPreviewOpen(false); if (previewJump) { setPreviewJump(null); setContentSearchOpen(true); } else requestAnimationFrame(() => previewButton.current?.focus({ preventScroll: true })); } }} />}
   </>;
 }

@@ -372,3 +372,32 @@ mod tests {
         assert!(codex_record_path_from_host(codex, traversal).is_err());
     }
 }
+
+pub fn default_workbuddy_dir() -> PathBuf {
+    dirs::home_dir().unwrap_or_default().join(".workbuddy")
+}
+pub fn default_grok_dir() -> PathBuf {
+    std::env::var_os("GROK_HOME")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".grok"))
+}
+pub fn default_pi_dir() -> PathBuf {
+    let home = dirs::home_dir().unwrap_or_default();
+    match std::env::var_os("PI_CODING_AGENT_DIR").filter(|v| !v.is_empty()) {
+        Some(value) => {
+            let value = value.to_string_lossy();
+            if value == "~" {
+                home
+            } else if let Some(rest) = value
+                .strip_prefix("~/")
+                .or_else(|| value.strip_prefix("~\\"))
+            {
+                home.join(rest)
+            } else {
+                PathBuf::from(value.as_ref())
+            }
+        }
+        None => home.join(".pi").join("agent"),
+    }
+}

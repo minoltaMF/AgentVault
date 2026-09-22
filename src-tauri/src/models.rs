@@ -4,6 +4,12 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
+    #[serde(default = "default_workbuddy_dir")]
+    pub workbuddy_dir: String,
+    #[serde(default = "default_grok_dir")]
+    pub grok_dir: String,
+    #[serde(default = "default_pi_dir")]
+    pub pi_dir: String,
     #[serde(default = "default_qoder_dir")]
     pub qoder_dir: String,
     pub codex_dir: String,
@@ -29,6 +35,21 @@ fn default_open_cmd() -> String {
     "auto".into()
 }
 
+fn default_workbuddy_dir() -> String {
+    crate::paths::default_workbuddy_dir()
+        .to_string_lossy()
+        .into_owned()
+}
+fn default_grok_dir() -> String {
+    crate::paths::default_grok_dir()
+        .to_string_lossy()
+        .into_owned()
+}
+fn default_pi_dir() -> String {
+    crate::paths::default_pi_dir()
+        .to_string_lossy()
+        .into_owned()
+}
 fn default_qoder_dir() -> String {
     crate::paths::default_qoder_dir()
         .to_string_lossy()
@@ -65,6 +86,9 @@ impl Default for Settings {
         let backup = crate::paths::default_backup_dir();
         Self {
             qoder_dir: default_qoder_dir(),
+            workbuddy_dir: default_workbuddy_dir(),
+            grok_dir: default_grok_dir(),
+            pi_dir: default_pi_dir(),
             codex_dir: codex.to_string_lossy().into_owned(),
             claude_dir: claude.to_string_lossy().into_owned(),
             opencode_dir: opencode.to_string_lossy().into_owned(),
@@ -85,6 +109,9 @@ impl Default for Settings {
 /// 字段为 `None` 表示"用该 provider 的默认目录"。
 #[derive(Debug, Clone, Default)]
 pub struct ProviderDirs {
+    pub workbuddy_dir: Option<String>,
+    pub grok_dir: Option<String>,
+    pub pi_dir: Option<String>,
     pub qoder_dir: Option<String>,
     pub backup_dir: Option<String>,
     pub codex_dir: String,

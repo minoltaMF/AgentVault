@@ -3016,3 +3016,9 @@ Native identity
 [^codex-bad-json]: [Codex issue: malformed JSON can hide sessions](https://github.com/openai/codex/issues/24425)
 [^codex-no-rollout]: [Codex issue: session not persisted after shutdown](https://github.com/openai/codex/issues/19037)
 [^codex-large]: [Codex issue: large legacy sessions resume slowly](https://github.com/openai/codex/issues/38349)
+
+## 2026-09-23 工作台接入增量
+
+alpha.9 将腾讯 WorkBuddy、官方 xAI Grok Build CLI 与 Pi 接入现有统一工作台的只读扫描、正文搜索和预览链路。Pi 复用已有 provider-pi；Grok 复用官方 rewind 小算法；WorkBuddy 复用现有消息解析与开源文本提取规则，不引入跨语言运行环境。具体路径、能力和验证边界以 [统一工作台](unified-session-workbench.md) 与 [alpha.9 发布说明](releases/0.1.0-alpha.9.md) 为准。
+
+本次腾讯 WorkBuddy 与本文早期 ADR-013 所称 work-buddy.ai 是不同产品，旧 overlay 合同继续适用于后者。此增量不表示 Hermes、Antigravity、豆包工作、DSH 或 zcode 已支持；仍须依据各自实际数据格式逐批接入。

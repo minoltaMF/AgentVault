@@ -360,3 +360,18 @@ mod tests {
         Ok(())
     }
 }
+
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub fn default_workbuddy_dir() -> String {
+    paths::default_workbuddy_dir()
+        .to_string_lossy()
+        .into_owned()
+}
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub fn default_grok_dir() -> String {
+    paths::default_grok_dir().to_string_lossy().into_owned()
+}
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub fn default_pi_dir() -> String {
+    paths::default_pi_dir().to_string_lossy().into_owned()
+}

@@ -189,11 +189,10 @@ pub fn start_workbench_content_search(
             "codex" => Some(dirs.codex_dir.as_str()),
             "claude" => dirs.claude_dir.as_deref(),
             "qoder" => dirs.qoder_dir.as_deref(),
-            _ => {
-                return Err(AppError::Other(
-                    "工作台正文搜索仅支持 Codex、Claude 与 Qoder CLI".into(),
-                ))
-            }
+            "workbuddy" => dirs.workbuddy_dir.as_deref(),
+            "grok" => dirs.grok_dir.as_deref(),
+            "pi" => dirs.pi_dir.as_deref(),
+            _ => return Err(AppError::Other("不支持的工作台搜索来源".into())),
         };
         if root.is_none_or(|root| root.trim().is_empty()) {
             return Err(AppError::Other("搜索来源目录不能为空".into()));
@@ -290,19 +289,47 @@ fn execute_search(job: &SearchJob, request: &SearchRequest) -> AppResult<()> {
                 .iter()
                 .map(String::as_str)
                 .collect::<HashSet<_>>();
-            if scope.provider == "qoder" {
-                let root = std::path::Path::new(request.dirs.qoder_dir.as_deref().unwrap_or(""));
+            if matches!(
+                scope.provider.as_str(),
+                "qoder" | "workbuddy" | "grok" | "pi"
+            ) {
+                let configured = match scope.provider.as_str() {
+                    "qoder" => request.dirs.qoder_dir.as_deref(),
+                    "workbuddy" => request.dirs.workbuddy_dir.as_deref(),
+                    "grok" => request.dirs.grok_dir.as_deref(),
+                    "pi" => request.dirs.pi_dir.as_deref(),
+                    _ => None,
+                };
+                let root = std::path::Path::new(configured.unwrap_or(""));
                 if !root.is_absolute() {
-                    return Err(AppError::Path("Qoder 搜索来源必须为绝对路径".into()));
+                    return Err(AppError::Path("搜索来源必须为绝对路径".into()));
                 }
                 // The selected paths are the scope. An unrelated unreadable file must
                 // not prevent healthy selected transcripts from being searched.
                 for path in &paths {
-                    let result = crate::qoder_sessions::parse_session(
-                        root,
-                        std::path::Path::new(path),
-                        Some(&job.cancel),
-                    );
+                    let result = match scope.provider.as_str() {
+                        "qoder" => crate::qoder_sessions::parse_session(
+                            root,
+                            std::path::Path::new(path),
+                            Some(&job.cancel),
+                        ),
+                        "workbuddy" => crate::workbuddy_sessions::parse_session(
+                            root,
+                            std::path::Path::new(path),
+                            Some(&job.cancel),
+                        ),
+                        "grok" => crate::grok_sessions::parse_session(
+                            root,
+                            std::path::Path::new(path),
+                            Some(&job.cancel),
+                        ),
+                        "pi" => crate::pi_sessions::parse_session(
+                            root,
+                            std::path::Path::new(path),
+                            Some(&job.cancel),
+                        ),
+                        _ => unreachable!(),
+                    };
                     match result {
                         Ok(Some(session)) => found.push(session),
                         Err(AppError::Cancelled) => return Err(AppError::Cancelled),
@@ -405,6 +432,12 @@ fn execute_search(job: &SearchJob, request: &SearchRequest) -> AppResult<()> {
             if request.scopes.is_some() {
                 let root = if session.provider == "codex" {
                     request.dirs.codex_dir.as_str()
+                } else if session.provider == "workbuddy" {
+                    request.dirs.workbuddy_dir.as_deref().unwrap_or("")
+                } else if session.provider == "grok" {
+                    request.dirs.grok_dir.as_deref().unwrap_or("")
+                } else if session.provider == "pi" {
+                    request.dirs.pi_dir.as_deref().unwrap_or("")
                 } else if session.provider == "qoder" {
                     request.dirs.qoder_dir.as_deref().unwrap_or("")
                 } else {
@@ -497,8 +530,16 @@ fn scan_session_checked(
     completed_bytes: u64,
     strict: bool,
 ) -> AppResult<FileScanOutcome> {
-    // 这两个 provider 的会话不是可逐行扫描的文件，先还原成事件序列再匹配。
+    // Restore branch/chunk based providers to the same sequence used by previews.
     match session.provider.as_str() {
+        "grok" => {
+            let events = crate::grok_sessions::events(&session.rollout_path, Some(&job.cancel))?;
+            return scan_event_sequence(job, session, query, completed_bytes, events);
+        }
+        "pi" => {
+            let events = crate::pi_sessions::events(&session.rollout_path, Some(&job.cancel))?;
+            return scan_event_sequence(job, session, query, completed_bytes, events);
+        }
         "opencode" => {
             let events =
                 crate::opencode_sessions::load_preview_events_from_locator(&session.rollout_path)?;
@@ -676,6 +717,7 @@ fn classify_event(provider: &str, index: usize, raw: Value) -> Option<crate::mod
         "codex" => Some(rollout::classify_preview(index, raw)),
         // Cursor 与 OpenCode 都会先合成 Claude 形状的记录再分类。
         "qoder" => crate::qoder_sessions::classify_preview(index, raw),
+        "workbuddy" => crate::workbuddy_sessions::classify_preview(index, raw),
         "claude" | "cursor" => crate::claude_sessions::classify_preview(index, raw),
         _ => None,
     }
@@ -809,6 +851,108 @@ mod tests {
         assert_eq!(status.results[0].session.id, "included");
         assert_eq!(status.failed_files, 1);
         assert!(status.failures[0].contains("missing.jsonl"));
+        drop(status);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn new_provider_searches_match_preview_offsets_and_exclude_inactive_content() {
+        let seed = temp_file("new-provider-scope", &[]);
+        let root = seed.parent().unwrap();
+        let wb = root.join("projects/demo/workbuddy.jsonl");
+        let grok = root.join("sessions/project/s/updates.jsonl");
+        let pi = root.join("sessions/project/pi.jsonl");
+        fs::create_dir_all(wb.parent().unwrap()).unwrap();
+        fs::create_dir_all(grok.parent().unwrap()).unwrap();
+        fs::write(
+            &wb,
+            include_str!("../tests/fixtures/workbuddy/sample.jsonl"),
+        )
+        .unwrap();
+        fs::write(
+            grok.with_file_name("summary.json"),
+            include_str!("../tests/fixtures/grok/summary.json"),
+        )
+        .unwrap();
+        let chunk = |kind: &str, text: &str, index: usize| json!({"method":"session/update","params":{"sessionId":"s","update":{"sessionUpdate":kind,"_meta":{"promptIndex":index},"content":{"type":"text","text":text}}}});
+        let body = [
+            chunk("user_message_chunk", "obsolete needle", 0),
+            json!({"method":"_x.ai/session/update","params":{"update":{"sessionUpdate":"rewind_marker","target_prompt_index":0}}}),
+            chunk("user_message_chunk", "nee", 0),
+            chunk("user_message_chunk", "dle", 0),
+            chunk("agent_message_chunk", "answer needle", 0),
+        ];
+        fs::write(
+            &grok,
+            body.iter()
+                .map(Value::to_string)
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
+        .unwrap();
+        let body = [
+            json!({"type":"session","version":3,"id":"pi"}),
+            json!({"type":"message","id":"a","parentId":null,"message":{"role":"user","content":"needle"}}),
+            json!({"type":"message","id":"b","parentId":"a","message":{"role":"assistant","content":"obsolete needle"}}),
+            json!({"type":"message","id":"c","parentId":"a","message":{"role":"assistant","content":"answer needle"}}),
+        ];
+        fs::write(
+            &pi,
+            body.iter()
+                .map(Value::to_string)
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
+        .unwrap();
+        let dirs = ProviderDirs {
+            workbuddy_dir: Some(root.to_string_lossy().into_owned()),
+            grok_dir: Some(root.to_string_lossy().into_owned()),
+            pi_dir: Some(root.to_string_lossy().into_owned()),
+            ..Default::default()
+        };
+        let job = test_job();
+        execute_search(
+            &job,
+            &SearchRequest {
+                provider: "workbench".into(),
+                dirs,
+                query: "needle".into(),
+                rollout_paths: vec![],
+                scopes: Some(vec![
+                    ContentSearchScope {
+                        provider: "workbuddy".into(),
+                        rollout_paths: vec![wb.to_string_lossy().into_owned()],
+                    },
+                    ContentSearchScope {
+                        provider: "grok".into(),
+                        rollout_paths: vec![grok.to_string_lossy().into_owned()],
+                    },
+                    ContentSearchScope {
+                        provider: "pi".into(),
+                        rollout_paths: vec![pi.to_string_lossy().into_owned()],
+                    },
+                ]),
+            },
+        )
+        .unwrap();
+        let status = job.status.lock().unwrap();
+        assert_eq!(status.failed_files, 0, "{:?}", status.failures);
+        assert_eq!(status.results.len(), 3);
+        for result in &status.results {
+            assert_eq!(result.matches.len(), 2);
+            for hit in &result.matches {
+                assert!(!hit.snippet.contains("obsolete"));
+                let events = crate::rollout::preview_session_range(
+                    Some(result.session.provider.clone()),
+                    result.session.rollout_path.clone(),
+                    hit.event_offset,
+                    1,
+                )
+                .unwrap();
+                assert_eq!(events[0].index, hit.event_index);
+                assert!(crate::rollout::preview_event_text(&events[0]).contains("needle"));
+            }
+        }
         drop(status);
         fs::remove_dir_all(root).unwrap();
     }
@@ -1182,6 +1326,9 @@ mod tests {
                 cursor_dir: Some(root.join("cursor").to_string_lossy().into_owned()),
                 cursor_agent_dir: Some(root.join("cursor-agent").to_string_lossy().into_owned()),
                 qoder_dir: None,
+                workbuddy_dir: None,
+                grok_dir: None,
+                pi_dir: None,
             },
             query: "needle".to_string(),
             rollout_paths: Vec::new(),

@@ -43,6 +43,9 @@ export function SettingsSheet({ trigger }: Props) {
   const memoryDirty = useMemoryDraft((state) => state.dirty);
   const [codex, setCodex] = useState("");
   const [claude, setClaude] = useState("");
+  const [workbuddy, setWorkbuddy] = useState("");
+  const [grok, setGrok] = useState("");
+  const [pi, setPi] = useState("");
   const [qoder, setQoder] = useState("");
   const [opencode, setOpenCode] = useState("");
   const [cursor, setCursor] = useState("");
@@ -60,6 +63,9 @@ export function SettingsSheet({ trigger }: Props) {
     if (!settings) return;
     setCodex(settings.codex_dir);
     setClaude(settings.claude_dir);
+    setWorkbuddy(settings.workbuddy_dir ?? "");
+    setGrok(settings.grok_dir ?? "");
+    setPi(settings.pi_dir ?? "");
     setQoder(settings.qoder_dir ?? "");
     setOpenCode(settings.opencode_dir);
     setCursor(settings.cursor_dir);
@@ -153,6 +159,9 @@ export function SettingsSheet({ trigger }: Props) {
     await save({
       codex_dir: codex,
       claude_dir: claude,
+      workbuddy_dir: workbuddy,
+      grok_dir: grok,
+      pi_dir: pi,
       qoder_dir: qoder,
       opencode_dir: opencode,
       cursor_dir: cursor,
@@ -290,6 +299,15 @@ export function SettingsSheet({ trigger }: Props) {
 
           <Separator />
 
+          <DirField label="腾讯 WorkBuddy 配置目录（只读）" value={workbuddy} onChange={setWorkbuddy} placeholder="~/.workbuddy" onPick={() => pick(setWorkbuddy, workbuddy)} onRestoreDefault={() => { void api.defaultWorkbuddyDir().then(setWorkbuddy).catch((error) => toast.error(String(error))); }}>
+            <p className="text-xs text-muted-foreground">在“全部会话”读取 projects 下的本地会话正文，不包含 work-buddy.ai。</p>
+          </DirField>
+          <DirField label="官方 Grok Build CLI 配置目录（只读）" value={grok} onChange={setGrok} placeholder="~/.grok" onPick={() => pick(setGrok, grok)} onRestoreDefault={() => { void api.defaultGrokDir().then(setGrok).catch((error) => toast.error(String(error))); }}>
+            <p className="text-xs text-muted-foreground">在“全部会话”读取 sessions 下的本地会话。默认使用 GROK_HOME 或 ~/.grok；不包含 Grok 网页或手机应用。</p>
+          </DirField>
+          <DirField label="Pi 配置目录（只读）" value={pi} onChange={setPi} placeholder="~/.pi/agent" onPick={() => pick(setPi, pi)} onRestoreDefault={() => { void api.defaultPiDir().then(setPi).catch((error) => toast.error(String(error))); }}>
+            <p className="text-xs text-muted-foreground">在“全部会话”读取 sessions 下的本地会话，仅显示当前分支。</p>
+          </DirField>
           <DirField
             label="Qoder CLI 配置目录（只读）"
             value={qoder}

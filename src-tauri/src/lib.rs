@@ -25,6 +25,7 @@ pub mod edit;
 pub mod error;
 pub mod family;
 pub mod fs_ops;
+mod grok_sessions;
 pub mod history;
 pub mod logs_db;
 pub mod markdown_export;
@@ -35,6 +36,7 @@ pub mod opencode_sessions;
 pub mod opencode_transfer;
 pub mod path_safety;
 pub mod paths;
+mod pi_sessions;
 pub mod provenance;
 pub mod provider_sync;
 mod qoder_sessions;
@@ -47,6 +49,7 @@ pub mod state_db;
 pub mod stats;
 pub mod webui;
 pub mod workbench_scan;
+mod workbuddy_sessions;
 
 #[cfg(feature = "desktop")]
 use tauri::Manager;
@@ -85,6 +88,9 @@ pub fn run() {
             settings::default_codex_dir,
             settings::default_claude_dir,
             settings::default_qoder_dir,
+            settings::default_workbuddy_dir,
+            settings::default_grok_dir,
+            settings::default_pi_dir,
             settings::default_opencode_dir,
             settings::default_cursor_dir,
             settings::validate_codex_dir,

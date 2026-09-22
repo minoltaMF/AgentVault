@@ -70,3 +70,23 @@
 - 验证首次打开不自动读取、来源/项目/文本筛选、预览返回保留筛选；注入单来源 500 响应验证旧结果保留与重试。控制台只有该预期 500，无页面脚本异常或框架错误遮罩。
 - 1280×820、390×844 截图检查通过；另用 121 条合成列表响应验证 50/50/21 分页与筛选后页码重置。这不是大规模原生扫描性能验收。
 - 本轮未修改 Rust；未重跑 Rust 全量，也未进行 Tauri 原生窗口或 macOS/Linux 验收。Browser plugin not available，使用已有 Playwright 与本机 Edge 完成上述 WebUI 检查。
+
+## WorkBuddy、官方 Grok CLI 与 Pi（alpha.9）
+
+在设置中配置来源，再从「全局 → 全部会话」读取。全部六个来源可同时刷新，新接入来源均为只读。
+
+| 来源 | 默认目录 | 读取范围与边界 |
+| --- | --- | --- |
+| 腾讯 WorkBuddy | ~/.workbuddy | projects/<project>/<session>.jsonl；user_query 中用户正文与 assistant output_text；不读取数据库自定义标题、图片或工具输出为正文 |
+| 官方 xAI Grok Build CLI | GROK_HOME 或 ~/.grok | sessions/<project>/<id>/summary.json + updates.jsonl；流式片段聚合，排除 rewind 旧分支及隐藏子 Agent |
+| Pi | PI_CODING_AGENT_DIR 或 ~/.pi/agent | sessions 下 JSONL；复用 provider-pi v1/v2/v3 解析与当前分支路径 |
+
+WorkBuddy 指腾讯产品，与旧计划中的 work-buddy.ai 元数据叠加工具不同；未修改 provider-workbuddy 的原有合同。Grok 指 xai-org/grok-build，不包含 Grok 网页/App 或第三方同名 CLI。
+
+来源依据：workbuddy-exporter@52189e6ae48cb1acb90afaa92b729d99d1f1b1bb 的提取规则；Grok 官方 grok-build@4247f661689354b831191f11eeeac8424993fe3d 的 Summary、updates 和 rewind；Pi 复用本仓库已有 SDK 解析器。对应许可证和移植范围见 THIRD_PARTY_NOTICES.md。
+
+搜索与预览使用同一事件投影，保留原始行号与投影偏移。Grok/Pi 单文件仍完整解析后分页，取消检查覆盖读取与投影循环（Pi SDK 的单次文件读取完成后检查），未引入 FTS 或跨语言运行环境。坏文件/半写入尾行报错，不以完整成功结果交付；所有测试使用合成临时会话。
+
+2026-09-23 本地验证：`npm run test:frontend` 89/89，`npm run build`，`cargo test -p cc-session-manager --no-default-features --lib -j2` 545/545，无桌面默认特性的 CLI 构建，安全矩阵 12/12，格式检查及 alpha.9 发布元数据检查全部通过。新增测试覆盖三来源扫描深度/坏文件隔离/取消、Grok 连续 rewind 与流式聚合、Pi 当前分支/源文件变化，以及跨来源搜索与预览位置一致性。
+
+真实 Rust WebUI 使用独立临时设置和合成原生文件，验证三来源读取、WorkBuddy 单项损坏报告、正文搜索、Grok 跨片段短语命中、Pi 当前分支命中、打开预览再返回搜索、只读操作菜单和 WorkBuddy 上下文排除。1280×820 与 390×844 视觉检查无横向溢出或页面错误，读取前后所有源夹具 SHA-256 不变。Browser plugin not available，使用已有 Playwright + Edge。完整 Tauri/平台编译由 CI 核验；此处不代表原生安装运行、签名或公证验收。前端保留既有 vendor-charts 大分块提示。

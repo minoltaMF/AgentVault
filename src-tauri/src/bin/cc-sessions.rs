@@ -78,6 +78,9 @@ impl CliContext {
             cursor_dir: Some(self.cursor_dir.clone()),
             cursor_agent_dir: None,
             qoder_dir: None,
+            workbuddy_dir: None,
+            grok_dir: None,
+            pi_dir: None,
             backup_dir: None,
         }
     }

@@ -10,7 +10,7 @@ use crate::models::SessionSummary;
 use serde::Serialize;
 
 const MAX_JOBS: usize = 16;
-const MAX_RUNNING: usize = 4;
+const MAX_RUNNING: usize = 6;
 const MAX_ERRORS: usize = 200;
 
 #[derive(Clone, Serialize)]
@@ -105,16 +105,18 @@ pub fn start_workbench_scan(
     codex_dir: String,
     claude_dir: String,
     qoder_dir: Option<String>,
+    workbuddy_dir: Option<String>,
+    grok_dir: Option<String>,
+    pi_dir: Option<String>,
 ) -> AppResult<ScanStarted> {
     let root = match provider.as_str() {
         "codex" => PathBuf::from(&codex_dir),
         "claude" => PathBuf::from(claude_dir),
         "qoder" => PathBuf::from(qoder_dir.unwrap_or_default()),
-        _ => {
-            return Err(AppError::Other(
-                "扫描仅支持 Codex / Claude / Qoder CLI".into(),
-            ))
-        }
+        "workbuddy" => PathBuf::from(workbuddy_dir.unwrap_or_default()),
+        "grok" => PathBuf::from(grok_dir.unwrap_or_default()),
+        "pi" => PathBuf::from(pi_dir.unwrap_or_default()),
+        _ => return Err(AppError::Other("不支持的工作台来源".into())),
     };
     if !root.is_absolute() {
         return Err(AppError::Path("扫描来源必须是绝对路径".into()));
@@ -365,7 +367,45 @@ fn scan(job: &Job, provider: &str, root: &Path) -> AppResult<()> {
     if !meta.is_dir() || crate::path_safety::metadata_is_link_or_reparse(&meta) {
         return Err(AppError::Path("来源不是普通目录".into()));
     }
-    if matches!(provider, "claude" | "qoder") {
+    if matches!(provider, "workbuddy" | "grok" | "pi") {
+        let folder = if provider == "workbuddy" {
+            "projects"
+        } else {
+            "sessions"
+        };
+        let directory = root.join(folder);
+        crate::path_safety::validate_descendant(
+            root,
+            &directory,
+            crate::path_safety::EntryKind::Directory,
+            false,
+            "会话目录",
+        )?;
+        let depth = match provider {
+            "workbuddy" => 1,
+            "grok" => 2,
+            _ => usize::MAX,
+        };
+        discover_depth(job, &directory, depth, |path| {
+            let valid = match provider {
+                "workbuddy" => crate::workbuddy_sessions::is_main_transcript(root, path),
+                "grok" => crate::grok_sessions::is_main_transcript(root, path),
+                "pi" => crate::pi_sessions::is_main_transcript(root, path),
+                _ => false,
+            };
+            if !valid {
+                return Ok(());
+            }
+            checked_process(job, root, path, || match provider {
+                "workbuddy" => {
+                    crate::workbuddy_sessions::parse_session(root, path, Some(&job.cancel))
+                }
+                "grok" => crate::grok_sessions::parse_session(root, path, Some(&job.cancel)),
+                "pi" => crate::pi_sessions::parse_session(root, path, Some(&job.cancel)),
+                _ => unreachable!(),
+            })
+        })?;
+    } else if matches!(provider, "claude" | "qoder") {
         crate::path_safety::validate_descendant(
             root,
             &root.join("projects"),
@@ -482,6 +522,62 @@ fn scan(job: &Job, provider: &str, root: &Path) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn new_sources_scan_isolates_bad_files_and_ignores_noncanonical_locations() {
+        for provider in ["workbuddy", "grok", "pi"] {
+            let root = fixture();
+            let (good, bad, ignored, body) = match provider {
+                "workbuddy" => (
+                    root.join("projects/demo/good.jsonl"),
+                    root.join("projects/demo/bad.jsonl"),
+                    root.join("projects/demo/subagents/ignore.jsonl"),
+                    include_str!("../tests/fixtures/workbuddy/sample.jsonl").to_string(),
+                ),
+                "grok" => (
+                    root.join("sessions/project/s/updates.jsonl"),
+                    root.join("sessions/project/bad/updates.jsonl"),
+                    root.join("sessions/project/s/chat_history.jsonl"),
+                    include_str!("../tests/fixtures/grok/updates.jsonl").to_string(),
+                ),
+                _ => (
+                    root.join("sessions/project/good.jsonl"),
+                    root.join("sessions/project/bad.jsonl"),
+                    root.join("ignored.jsonl"),
+                    "{\"type\":\"session\",\"version\":3,\"id\":\"pi\"}\n".to_string(),
+                ),
+            };
+            for path in [&good, &bad, &ignored] {
+                fs::create_dir_all(path.parent().unwrap()).unwrap();
+            }
+            fs::write(&good, body).unwrap();
+            fs::write(&bad, "{broken").unwrap();
+            fs::write(&ignored, "{broken").unwrap();
+            if provider == "grok" {
+                fs::write(
+                    good.with_file_name("summary.json"),
+                    include_str!("../tests/fixtures/grok/summary.json"),
+                )
+                .unwrap();
+            }
+            let job = Job::new(0);
+            scan(&job, provider, &root).unwrap();
+            let status = job.status.lock().unwrap();
+            assert_eq!(status.discovered_files, 2, "{provider}");
+            assert_eq!(status.processed_files, 2, "{provider}");
+            assert_eq!(status.failed_files, 1, "{provider}");
+            assert_eq!(status.results.len(), 1, "{provider}");
+            assert_eq!(status.results[0].provider, provider);
+            drop(status);
+            let cancelled = Job::new(1);
+            cancelled.cancel.store(true, Ordering::Release);
+            assert!(matches!(
+                scan(&cancelled, provider, &root),
+                Err(AppError::Cancelled)
+            ));
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+
     #[test]
     fn qoder_scan_limits_depth_and_reports_bad_main_files() {
         let root = fixture();
@@ -645,8 +741,26 @@ mod tests {
     }
     #[test]
     fn workbench_scan_bounds_errors_and_rejects_implicit_roots() {
-        assert!(start_workbench_scan("claude".into(), "".into(), "".into(), None).is_err());
-        assert!(start_workbench_scan("cursor".into(), "".into(), "".into(), None).is_err());
+        assert!(start_workbench_scan(
+            "claude".into(),
+            "".into(),
+            "".into(),
+            None,
+            None,
+            None,
+            None
+        )
+        .is_err());
+        assert!(start_workbench_scan(
+            "cursor".into(),
+            "".into(),
+            "".into(),
+            None,
+            None,
+            None,
+            None
+        )
+        .is_err());
         let job = Job::new(0);
         for _ in 0..250 {
             job.failure(Path::new("bad"), "failure");
@@ -664,6 +778,9 @@ mod tests {
             "claude".into(),
             "".into(),
             root.to_string_lossy().into_owned(),
+            None,
+            None,
+            None,
             None,
         )
         .unwrap();

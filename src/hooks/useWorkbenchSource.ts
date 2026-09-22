@@ -30,7 +30,7 @@ export function useWorkbenchSource(provider: WorkbenchProvider, root: string, co
     const current = () => requests.current.current(request);
     setState("loading"); setError(""); setProgress(null); setCancelling(false);
     try {
-      const started = await api.startWorkbenchScan(provider, codexRoot, provider === "claude" ? root : "", provider === "qoder" ? root : undefined);
+      const started = await api.startWorkbenchScan(provider, codexRoot, provider === "claude" ? root : "", provider === "qoder" ? root : undefined, provider === "workbuddy" ? root : undefined, provider === "grok" ? root : undefined, provider === "pi" ? root : undefined);
       // A start response can arrive after navigation or a source-scope remount.
       if (!current()) { void api.cancelWorkbenchScan(started.job_id).catch(() => {}); return; }
       job.current = started.job_id;

@@ -68,6 +68,9 @@ impl MenuContext {
             cursor_dir: Some(self.cursor_dir.clone()),
             cursor_agent_dir: None,
             qoder_dir: None,
+            workbuddy_dir: None,
+            grok_dir: None,
+            pi_dir: None,
             backup_dir: Some(paths::default_backup_dir().to_string_lossy().into_owned()),
         }
     }
