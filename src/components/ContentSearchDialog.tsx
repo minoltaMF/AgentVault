@@ -25,7 +25,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 type Props = {
-  workbenchScopes?: { provider: "codex" | "claude" | "qoder" | "workbuddy" | "grok" | "pi"; rollout_paths: string[] }[];
+  workbenchScopes?: { provider: "codex" | "claude" | "qoder" | "workbuddy" | "grok" | "pi" | "dsh" | "hermes" | "opencode" | "zcode"; rollout_paths: string[] }[];
   retained?: { query: string; status: ContentSearchStatus | null; scrollTop?: number };
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -36,6 +36,9 @@ type Props = {
   workbuddyDir?: string;
   grokDir?: string;
   piDir?: string;
+  dshDir?: string;
+  hermesDir?: string;
+  zcodeDir?: string;
   opencodeDir: string;
   cursorDir: string;
   showSubagentSessions: boolean;
@@ -60,6 +63,9 @@ export function ContentSearchDialog({
   workbuddyDir,
   grokDir,
   piDir,
+  dshDir,
+  hermesDir,
+  zcodeDir,
   opencodeDir,
   cursorDir,
   showSubagentSessions,
@@ -92,6 +98,9 @@ export function ContentSearchDialog({
     workbuddyDir,
     grokDir,
     piDir,
+  dshDir,
+  hermesDir,
+  zcodeDir,
     opencodeDir,
     cursorDir,
     showSubagentSessions,
@@ -251,7 +260,7 @@ export function ContentSearchDialog({
     setStatus(null);
     try {
       const started = workbenchScopes ? await api.startWorkbenchContentSearch({
-        codexDir, claudeDir, qoderDir, workbuddyDir, grokDir, piDir, query: normalized, scopes: workbenchScopes,
+        codexDir, claudeDir, qoderDir, workbuddyDir, grokDir, piDir, dshDir, hermesDir, opencodeDir, zcodeDir, query: normalized, scopes: workbenchScopes,
       }) : await api.startContentSearch({
         provider,
         codexDir,

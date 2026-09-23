@@ -10,7 +10,7 @@ use crate::models::SessionSummary;
 use serde::Serialize;
 
 const MAX_JOBS: usize = 16;
-const MAX_RUNNING: usize = 6;
+const MAX_RUNNING: usize = 10;
 const MAX_ERRORS: usize = 200;
 
 #[derive(Clone, Serialize)]
@@ -108,6 +108,10 @@ pub fn start_workbench_scan(
     workbuddy_dir: Option<String>,
     grok_dir: Option<String>,
     pi_dir: Option<String>,
+    dsh_dir: Option<String>,
+    hermes_dir: Option<String>,
+    zcode_dir: Option<String>,
+    opencode_dir: Option<String>,
 ) -> AppResult<ScanStarted> {
     let root = match provider.as_str() {
         "codex" => PathBuf::from(&codex_dir),
@@ -115,6 +119,10 @@ pub fn start_workbench_scan(
         "qoder" => PathBuf::from(qoder_dir.unwrap_or_default()),
         "workbuddy" => PathBuf::from(workbuddy_dir.unwrap_or_default()),
         "grok" => PathBuf::from(grok_dir.unwrap_or_default()),
+        "dsh" => PathBuf::from(dsh_dir.unwrap_or_default()),
+        "hermes" => PathBuf::from(hermes_dir.unwrap_or_default()),
+        "zcode" => PathBuf::from(zcode_dir.unwrap_or_default()),
+        "opencode" => PathBuf::from(opencode_dir.unwrap_or_default()),
         "pi" => PathBuf::from(pi_dir.unwrap_or_default()),
         _ => return Err(AppError::Other("不支持的工作台来源".into())),
     };
@@ -290,7 +298,12 @@ fn discover_depth(
                 }
                 Err(e) => job.failure(&path, e),
             }
-        } else if metadata.is_file() && path.extension().and_then(|v| v.to_str()) == Some("jsonl") {
+        } else if metadata.is_file()
+            && matches!(
+                path.extension().and_then(|v| v.to_str()),
+                Some("jsonl" | "zstd")
+            )
+        {
             visit(&path)?;
         }
     }
@@ -367,7 +380,51 @@ fn scan(job: &Job, provider: &str, root: &Path) -> AppResult<()> {
     if !meta.is_dir() || crate::path_safety::metadata_is_link_or_reparse(&meta) {
         return Err(AppError::Path("来源不是普通目录".into()));
     }
-    if matches!(provider, "workbuddy" | "grok" | "pi") {
+    if matches!(provider, "hermes" | "zcode" | "opencode") {
+        job.current("reading_index", root);
+        let mut callback = |done, total, locator: &str, result: AppResult<SessionSummary>| {
+            job.update(|s| {
+                s.discovered_files = total;
+                s.processed_files = done;
+                s.phase = "reading".into();
+                s.current_path = Some(locator.into());
+            });
+            match result {
+                Ok(session) => job.update(|s| s.results.push(session)),
+                Err(error) => job.failure(Path::new(locator), error),
+            }
+        };
+        match provider {
+            "hermes" => crate::hermes_sessions::scan(root, Some(&job.cancel), &mut callback)?,
+            "zcode" => crate::zcode_sessions::scan(root, Some(&job.cancel), &mut callback)?,
+            _ => crate::opencode_sessions::scan(root, Some(&job.cancel), &mut callback)?,
+        }
+    } else if provider == "dsh" {
+        let directory = root.join("sessions");
+        crate::path_safety::validate_descendant(
+            root,
+            &directory,
+            crate::path_safety::EntryKind::Directory,
+            false,
+            "DSH sessions",
+        )?;
+        discover_depth(job, &directory, 2, |path| {
+            if !crate::dsh_sessions::is_main_transcript(root, path) {
+                return Ok(());
+            }
+            job.check()?;
+            job.current("reading", path);
+            job.update(|s| s.discovered_files += 1);
+            match crate::dsh_sessions::parse_session(root, path, Some(&job.cancel)) {
+                Ok(Some(session)) => job.update(|s| s.results.push(session)),
+                Ok(None) => {}
+                Err(AppError::Cancelled) => return Err(AppError::Cancelled),
+                Err(e) => job.failure(path, e),
+            }
+            job.update(|s| s.processed_files += 1);
+            Ok(())
+        })?;
+    } else if matches!(provider, "workbuddy" | "grok" | "pi") {
         let folder = if provider == "workbuddy" {
             "projects"
         } else {
@@ -748,7 +805,11 @@ mod tests {
             None,
             None,
             None,
-            None
+            None,
+            None,
+            None,
+            None,
+            None,
         )
         .is_err());
         assert!(start_workbench_scan(
@@ -758,7 +819,11 @@ mod tests {
             None,
             None,
             None,
-            None
+            None,
+            None,
+            None,
+            None,
+            None,
         )
         .is_err());
         let job = Job::new(0);
@@ -778,6 +843,10 @@ mod tests {
             "claude".into(),
             "".into(),
             root.to_string_lossy().into_owned(),
+            None,
+            None,
+            None,
+            None,
             None,
             None,
             None,

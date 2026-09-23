@@ -37,6 +37,10 @@ pub fn start_workbench_content_search(
     workbuddy_dir: Option<String>,
     grok_dir: Option<String>,
     pi_dir: Option<String>,
+    dsh_dir: Option<String>,
+    hermes_dir: Option<String>,
+    zcode_dir: Option<String>,
+    opencode_dir: Option<String>,
 ) -> AppResult<ContentSearchStart> {
     crate::content_search::start_workbench_content_search(
         ProviderDirs {
@@ -44,6 +48,10 @@ pub fn start_workbench_content_search(
             workbuddy_dir,
             grok_dir,
             pi_dir,
+            dsh_dir,
+            hermes_dir,
+            zcode_dir,
+            opencode_dir,
             ..provider_dirs(codex_dir, Some(claude_dir), None, None)
         },
         query,
@@ -1012,6 +1020,9 @@ fn provider_dirs(
         qoder_dir: None,
         workbuddy_dir: None,
         grok_dir: None,
+        dsh_dir: None,
+        hermes_dir: None,
+        zcode_dir: None,
         pi_dir: None,
         cursor_agent_dir: None,
         backup_dir: None,
@@ -1285,6 +1296,10 @@ pub fn start_workbench_scan(
     workbuddy_dir: Option<String>,
     grok_dir: Option<String>,
     pi_dir: Option<String>,
+    dsh_dir: Option<String>,
+    hermes_dir: Option<String>,
+    zcode_dir: Option<String>,
+    opencode_dir: Option<String>,
 ) -> AppResult<crate::workbench_scan::ScanStarted> {
     crate::workbench_scan::start_workbench_scan(
         provider,
@@ -1294,6 +1309,10 @@ pub fn start_workbench_scan(
         workbuddy_dir,
         grok_dir,
         pi_dir,
+        dsh_dir,
+        hermes_dir,
+        zcode_dir,
+        opencode_dir,
     )
 }
 #[tauri::command]

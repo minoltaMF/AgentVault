@@ -63,9 +63,36 @@ pub fn validate_data_dir(data_dir: &Path) -> AppResult<u32> {
 }
 
 pub fn list_sessions(data_dir: &Path) -> AppResult<Vec<SessionSummary>> {
+    list_controlled(data_dir, None, &mut |_, _, _, _| {})
+}
+
+pub fn scan(
+    root: &Path,
+    cancel: Option<&std::sync::atomic::AtomicBool>,
+    callback: &mut dyn FnMut(usize, usize, &str, AppResult<SessionSummary>),
+) -> AppResult<()> {
+    crate::readonly_source::open_db(root, &database_path(root))?;
+    list_controlled(root, cancel, callback)?;
+    Ok(())
+}
+pub fn validate_scope(root: &Path, locator: &str) -> AppResult<()> {
+    let (db, _) = resolve_locator(locator)?;
+    if db != database_path(root) {
+        return Err(AppError::Path("OpenCode 搜索来源不匹配".into()));
+    }
+    crate::readonly_source::open_db(root, &db)?;
+    Ok(())
+}
+fn list_controlled(
+    data_dir: &Path,
+    cancel: Option<&std::sync::atomic::AtomicBool>,
+    callback: &mut dyn FnMut(usize, usize, &str, AppResult<SessionSummary>),
+) -> AppResult<Vec<SessionSummary>> {
+    crate::error::ensure_not_cancelled(cancel)?;
     let db_path = database_path(data_dir);
     let connection = open_readonly(&db_path)?;
-    let details = load_session_details(&connection)?;
+    let details = load_session_details(&connection, cancel)?;
+    let total: usize = connection.query_row("SELECT COUNT(*) FROM session", [], |r| r.get(0))?;
     let database_bytes = fs::metadata(&db_path)
         .map(|metadata| metadata.len())
         .unwrap_or(0);
@@ -88,6 +115,7 @@ pub fn list_sessions(data_dir: &Path) -> AppResult<Vec<SessionSummary>> {
     })?;
     let mut sessions = Vec::new();
     for row in rows {
+        crate::error::ensure_not_cancelled(cancel)?;
         let (id, project_id, parent_id, directory, title, version, created, updated, archived) =
             row?;
         let detail = details.get(&id);
@@ -121,6 +149,14 @@ pub fn list_sessions(data_dir: &Path) -> AppResult<Vec<SessionSummary>> {
             has_backup: false,
             resume_command: format!("opencode --session {id}"),
         });
+        if let Some(session) = sessions.last() {
+            callback(
+                sessions.len(),
+                total,
+                &session.rollout_path,
+                Ok(session.clone()),
+            );
+        }
         let _ = (project_id, version);
     }
     Ok(sessions)
@@ -297,11 +333,15 @@ pub fn delete_session(data_dir: &Path, id: &str) -> AppResult<DeleteResult> {
     })
 }
 
-fn load_session_details(connection: &Connection) -> AppResult<HashMap<String, SessionDetails>> {
-    let messages = load_messages(connection, None)?;
+fn load_session_details(
+    connection: &Connection,
+    cancel: Option<&std::sync::atomic::AtomicBool>,
+) -> AppResult<HashMap<String, SessionDetails>> {
+    let messages = load_messages_controlled(connection, None, cancel)?;
     let mut message_map = HashMap::new();
     let mut details: HashMap<String, SessionDetails> = HashMap::new();
     for message in messages {
+        crate::error::ensure_not_cancelled(cancel)?;
         let detail = details.entry(message.session_id.clone()).or_default();
         detail.model = message.model.clone().or_else(|| detail.model.clone());
         detail.tokens_used = detail.tokens_used.saturating_add(message.tokens);
@@ -321,6 +361,7 @@ fn load_session_details(connection: &Connection) -> AppResult<HashMap<String, Se
         ))
     })?;
     for row in rows {
+        crate::error::ensure_not_cancelled(cancel)?;
         let (message_id, session_id, data) = row?;
         let detail = details.entry(session_id).or_default();
         detail.bytes = detail.bytes.saturating_add(data.len() as u64);
@@ -383,6 +424,13 @@ pub(crate) fn load_preview_events(
 }
 
 fn load_messages(connection: &Connection, session_id: Option<&str>) -> AppResult<Vec<MessageRow>> {
+    load_messages_controlled(connection, session_id, None)
+}
+fn load_messages_controlled(
+    connection: &Connection,
+    session_id: Option<&str>,
+    cancel: Option<&std::sync::atomic::AtomicBool>,
+) -> AppResult<Vec<MessageRow>> {
     let (sql, parameter): (&str, Option<&str>) = match session_id {
         Some(id) => (
             "SELECT id, session_id, time_created, data FROM message WHERE session_id = ?1 ORDER BY time_created ASC, id ASC",
@@ -400,6 +448,7 @@ fn load_messages(connection: &Connection, session_id: Option<&str>) -> AppResult
     };
     let mut out = Vec::new();
     while let Some(row) = rows.next()? {
+        crate::error::ensure_not_cancelled(cancel)?;
         let data: String = row.get(3)?;
         let value = serde_json::from_str::<Value>(&data).unwrap_or(Value::Null);
         out.push(MessageRow {

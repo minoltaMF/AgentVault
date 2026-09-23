@@ -70,6 +70,9 @@ impl MenuContext {
             qoder_dir: None,
             workbuddy_dir: None,
             grok_dir: None,
+            dsh_dir: None,
+            hermes_dir: None,
+            zcode_dir: None,
             pi_dir: None,
             backup_dir: Some(paths::default_backup_dir().to_string_lossy().into_owned()),
         }

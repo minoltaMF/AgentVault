@@ -1,7 +1,7 @@
 import type { ContentSearchStatus, SessionSummary } from "./api";
 
 export function workbenchSearchScopes(sessions: readonly SessionSummary[]) {
-  return (["codex", "claude", "qoder", "workbuddy", "grok", "pi"] as const).map(provider => ({
+  return (["codex", "claude", "qoder", "workbuddy", "grok", "pi", "dsh", "hermes", "opencode", "zcode"] as const).map(provider => ({
     provider,
     rollout_paths: [...new Set(sessions.filter(session => session.provider === provider).map(session => session.rollout_path))].sort(),
   })).filter(scope => scope.rollout_paths.length > 0);

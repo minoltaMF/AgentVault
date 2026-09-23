@@ -18,6 +18,9 @@ const LABELS: Record<SessionProvider, string> = {
   workbuddy: "WorkBuddy",
   grok: "Grok Build CLI",
   pi: "Pi",
+  dsh: "DeepSeek Harness",
+  hermes: "Hermes Agent",
+  zcode: "ZCode",
 };
 
 /** 把 provider 标识转成界面文案；未知取值原样返回，便于排查后端新增来源。 */
@@ -36,6 +39,9 @@ export const accentDot: Record<AccentKey, string> = {
   workbuddy: "bg-provider-opencode",
   grok: "bg-provider-cursor",
   pi: "bg-provider-claude",
+  dsh: "bg-provider-claude",
+  hermes: "bg-provider-claude",
+  zcode: "bg-provider-claude",
   global: "bg-foreground/60",
 };
 
@@ -49,6 +55,9 @@ export const accentBar: Record<AccentKey, string> = {
   workbuddy: "bg-provider-opencode/90",
   grok: "bg-provider-cursor/90",
   pi: "bg-provider-claude/90",
+  dsh: "bg-provider-claude/90",
+  hermes: "bg-provider-claude/90",
+  zcode: "bg-provider-claude/90",
   global: "bg-foreground/70",
 };
 
@@ -62,6 +71,9 @@ export const accentActiveBar: Record<AccentKey, string> = {
   workbuddy: "bg-provider-opencode shadow-[0_0_10px_-1px_hsl(var(--provider-opencode)/0.5)]",
   grok: "bg-provider-cursor shadow-[0_0_10px_-1px_hsl(var(--provider-cursor)/0.5)]",
   pi: "bg-provider-claude shadow-[0_0_10px_-1px_hsl(var(--provider-claude)/0.5)]",
+  dsh: "bg-provider-claude shadow-[0_0_10px_-1px_hsl(var(--provider-claude)/0.5)]",
+  hermes: "bg-provider-claude shadow-[0_0_10px_-1px_hsl(var(--provider-claude)/0.5)]",
+  zcode: "bg-provider-claude shadow-[0_0_10px_-1px_hsl(var(--provider-claude)/0.5)]",
   global: "bg-foreground/80",
 };
 
@@ -75,6 +87,9 @@ export const accentActiveIcon: Record<AccentKey, string> = {
   workbuddy: "text-provider-opencode-fg",
   grok: "text-provider-cursor-fg",
   pi: "text-provider-claude-fg",
+  dsh: "text-provider-claude-fg",
+  hermes: "text-provider-claude-fg",
+  zcode: "text-provider-claude-fg",
   global: "text-foreground",
 };
 
@@ -88,6 +103,9 @@ export const accentActiveTint: Record<AccentKey, string> = {
   workbuddy: "bg-provider-opencode/10 ring-1 ring-inset ring-provider-opencode/20",
   grok: "bg-provider-cursor/10 ring-1 ring-inset ring-provider-cursor/20",
   pi: "bg-provider-claude/10 ring-1 ring-inset ring-provider-claude/20",
+  dsh: "bg-provider-claude/10 ring-1 ring-inset ring-provider-claude/20",
+  hermes: "bg-provider-claude/10 ring-1 ring-inset ring-provider-claude/20",
+  zcode: "bg-provider-claude/10 ring-1 ring-inset ring-provider-claude/20",
   global: "bg-sidebar-accent ring-1 ring-inset ring-border/60",
 };
 
@@ -101,6 +119,9 @@ export const accentMark: Record<SessionProvider, string> = {
   workbuddy: "bg-provider-opencode/10 text-provider-opencode-fg ring-1 ring-inset ring-provider-opencode/25",
   grok: "bg-provider-cursor/10 text-provider-cursor-fg ring-1 ring-inset ring-provider-cursor/25",
   pi: "bg-provider-claude/10 text-provider-claude-fg ring-1 ring-inset ring-provider-claude/25",
+  dsh: "bg-provider-claude/10 text-provider-claude-fg ring-1 ring-inset ring-provider-claude/25",
+  hermes: "bg-provider-claude/10 text-provider-claude-fg ring-1 ring-inset ring-provider-claude/25",
+  zcode: "bg-provider-claude/10 text-provider-claude-fg ring-1 ring-inset ring-provider-claude/25",
 };
 
 /** 会话卡片上的 provider 徽章。 */
@@ -113,6 +134,9 @@ export const accentBadge: Record<SessionProvider, string> = {
   workbuddy: "border-provider-opencode/35 bg-provider-opencode/10 text-provider-opencode-fg",
   grok: "border-provider-cursor/35 bg-provider-cursor/10 text-provider-cursor-fg",
   pi: "border-provider-claude/35 bg-provider-claude/10 text-provider-claude-fg",
+  dsh: "border-provider-claude/35 bg-provider-claude/10 text-provider-claude-fg",
+  hermes: "border-provider-claude/35 bg-provider-claude/10 text-provider-claude-fg",
+  zcode: "border-provider-claude/35 bg-provider-claude/10 text-provider-claude-fg",
 };
 
 /** 列表项选中态：与会话卡片一致的"左侧色条 + 淡底"写法。 */
@@ -125,6 +149,9 @@ export const accentRow: Record<SessionProvider, string> = {
   workbuddy: "border-provider-opencode/30 bg-provider-opencode/[0.07] before:bg-provider-opencode",
   grok: "border-provider-cursor/30 bg-provider-cursor/[0.07] before:bg-provider-cursor",
   pi: "border-provider-claude/30 bg-provider-claude/[0.07] before:bg-provider-claude",
+  dsh: "border-provider-claude/30 bg-provider-claude/[0.07] before:bg-provider-claude",
+  hermes: "border-provider-claude/30 bg-provider-claude/[0.07] before:bg-provider-claude",
+  zcode: "border-provider-claude/30 bg-provider-claude/[0.07] before:bg-provider-claude",
 };
 
 export function accentBadgeFor(provider: string): { label: string; className: string } {

@@ -152,7 +152,7 @@ export function PreviewDialog({
   onEdited,
   initialJump,
 }: Props) {
-  readOnly = readOnly || ["qoder", "workbuddy", "grok", "pi"].includes(session?.provider ?? "");
+  readOnly = readOnly || ["qoder", "workbuddy", "grok", "pi", "dsh", "hermes", "zcode"].includes(session?.provider ?? "");
   const rolloutPath = customRolloutPath ?? session?.rollout_path ?? "";
   const provider = session?.provider ?? "codex";
   const [events, setEvents] = useState<PreviewEvent[]>([]);
@@ -1138,7 +1138,7 @@ export function PreviewDialog({
             )}
             <PreviewToolbarActions
               hasSession={!!session}
-              canCopyResume={!["qoder", "workbuddy", "grok", "pi"].includes(provider)}
+              canCopyResume={!["qoder", "workbuddy", "grok", "pi", "dsh", "hermes", "zcode"].includes(provider)}
               canOpenEditHistory={canMutateSession}
               onCopySessionId={copySessionId}
               onCopyResume={copyResume}

@@ -401,3 +401,18 @@ pub fn default_pi_dir() -> PathBuf {
         None => home.join(".pi").join("agent"),
     }
 }
+
+pub fn default_hermes_dir() -> PathBuf {
+    std::env::var_os("HERMES_HOME")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".hermes"))
+}
+pub fn default_zcode_dir() -> PathBuf {
+    dirs::home_dir().unwrap_or_default().join(".zcode")
+}
+pub fn default_dsh_dir() -> PathBuf {
+    std::env::var_os("DSH_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".dsh"))
+}

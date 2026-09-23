@@ -192,6 +192,10 @@ pub fn start_workbench_content_search(
             "workbuddy" => dirs.workbuddy_dir.as_deref(),
             "grok" => dirs.grok_dir.as_deref(),
             "pi" => dirs.pi_dir.as_deref(),
+            "dsh" => dirs.dsh_dir.as_deref(),
+            "hermes" => dirs.hermes_dir.as_deref(),
+            "zcode" => dirs.zcode_dir.as_deref(),
+            "opencode" => dirs.opencode_dir.as_deref(),
             _ => return Err(AppError::Other("不支持的工作台搜索来源".into())),
         };
         if root.is_none_or(|root| root.trim().is_empty()) {
@@ -291,13 +295,16 @@ fn execute_search(job: &SearchJob, request: &SearchRequest) -> AppResult<()> {
                 .collect::<HashSet<_>>();
             if matches!(
                 scope.provider.as_str(),
-                "qoder" | "workbuddy" | "grok" | "pi"
+                "qoder" | "workbuddy" | "grok" | "pi" | "dsh" | "hermes" | "zcode"
             ) {
                 let configured = match scope.provider.as_str() {
                     "qoder" => request.dirs.qoder_dir.as_deref(),
                     "workbuddy" => request.dirs.workbuddy_dir.as_deref(),
                     "grok" => request.dirs.grok_dir.as_deref(),
                     "pi" => request.dirs.pi_dir.as_deref(),
+                    "dsh" => request.dirs.dsh_dir.as_deref(),
+                    "hermes" => request.dirs.hermes_dir.as_deref(),
+                    "zcode" => request.dirs.zcode_dir.as_deref(),
                     _ => None,
                 };
                 let root = std::path::Path::new(configured.unwrap_or(""));
@@ -328,6 +335,17 @@ fn execute_search(job: &SearchJob, request: &SearchRequest) -> AppResult<()> {
                             std::path::Path::new(path),
                             Some(&job.cancel),
                         ),
+                        "dsh" => crate::dsh_sessions::parse_session(
+                            root,
+                            std::path::Path::new(path),
+                            Some(&job.cancel),
+                        ),
+                        "hermes" => {
+                            crate::hermes_sessions::parse_session(root, path, Some(&job.cancel))
+                        }
+                        "zcode" => {
+                            crate::zcode_sessions::parse_session(root, path, Some(&job.cancel))
+                        }
                         _ => unreachable!(),
                     };
                     match result {
@@ -438,18 +456,29 @@ fn execute_search(job: &SearchJob, request: &SearchRequest) -> AppResult<()> {
                     request.dirs.grok_dir.as_deref().unwrap_or("")
                 } else if session.provider == "pi" {
                     request.dirs.pi_dir.as_deref().unwrap_or("")
+                } else if session.provider == "dsh" {
+                    request.dirs.dsh_dir.as_deref().unwrap_or("")
+                } else if session.provider == "opencode" {
+                    request.dirs.opencode_dir.as_deref().unwrap_or("")
                 } else if session.provider == "qoder" {
                     request.dirs.qoder_dir.as_deref().unwrap_or("")
                 } else {
                     request.dirs.claude_dir.as_deref().unwrap_or("")
                 };
-                crate::path_safety::validate_descendant(
-                    std::path::Path::new(root),
-                    std::path::Path::new(&session.rollout_path),
-                    crate::path_safety::EntryKind::File,
-                    false,
-                    "正文搜索文件",
-                )?;
+                if session.provider == "opencode" {
+                    crate::opencode_sessions::validate_scope(
+                        std::path::Path::new(root),
+                        &session.rollout_path,
+                    )?;
+                } else if !matches!(session.provider.as_str(), "hermes" | "zcode") {
+                    crate::path_safety::validate_descendant(
+                        std::path::Path::new(root),
+                        std::path::Path::new(&session.rollout_path),
+                        crate::path_safety::EntryKind::File,
+                        false,
+                        "正文搜索文件",
+                    )?;
+                }
             }
             scan_session_checked(
                 job,
@@ -461,6 +490,7 @@ fn execute_search(job: &SearchJob, request: &SearchRequest) -> AppResult<()> {
         })();
         let outcome = match scan {
             Ok(outcome) => outcome,
+            Err(AppError::Cancelled) => return Err(AppError::Cancelled),
             Err(error) if request.scopes.is_some() => {
                 let mut status = job.status.lock().unwrap_or_else(|error| error.into_inner());
                 status.failed_files += 1;
@@ -535,6 +565,33 @@ fn scan_session_checked(
         "grok" => {
             let events = crate::grok_sessions::events(&session.rollout_path, Some(&job.cancel))?;
             return scan_event_sequence(job, session, query, completed_bytes, events);
+        }
+        "dsh" => {
+            return scan_event_sequence(
+                job,
+                session,
+                query,
+                completed_bytes,
+                crate::dsh_sessions::events(&session.rollout_path, Some(&job.cancel))?,
+            );
+        }
+        "hermes" => {
+            return scan_event_sequence(
+                job,
+                session,
+                query,
+                completed_bytes,
+                crate::hermes_sessions::events(&session.rollout_path, Some(&job.cancel))?,
+            );
+        }
+        "zcode" => {
+            return scan_event_sequence(
+                job,
+                session,
+                query,
+                completed_bytes,
+                crate::zcode_sessions::events(&session.rollout_path, Some(&job.cancel))?,
+            );
         }
         "pi" => {
             let events = crate::pi_sessions::events(&session.rollout_path, Some(&job.cancel))?;
@@ -1328,6 +1385,9 @@ mod tests {
                 qoder_dir: None,
                 workbuddy_dir: None,
                 grok_dir: None,
+                dsh_dir: None,
+                hermes_dir: None,
+                zcode_dir: None,
                 pi_dir: None,
             },
             query: "needle".to_string(),

@@ -11,6 +11,10 @@ test("search scope preserves providers, deduplicates paths and keeps empty scope
     { provider: "workbuddy", rollout_path: "/one" },
     { provider: "grok", rollout_path: "/one" },
     { provider: "pi", rollout_path: "/one" },
+    { provider: "dsh", rollout_path: "/one" },
+    { provider: "hermes", rollout_path: "/one" },
+    { provider: "opencode", rollout_path: "/one" },
+    { provider: "zcode", rollout_path: "/one" },
     { provider: "codex", rollout_path: "/one" },
   ] as SessionSummary[];
   assert.deepEqual(workbenchSearchScopes(rows), [
@@ -20,6 +24,10 @@ test("search scope preserves providers, deduplicates paths and keeps empty scope
     { provider: "workbuddy", rollout_paths: ["/one"] },
     { provider: "grok", rollout_paths: ["/one"] },
     { provider: "pi", rollout_paths: ["/one"] },
+    { provider: "dsh", rollout_paths: ["/one"] },
+    { provider: "hermes", rollout_paths: ["/one"] },
+    { provider: "opencode", rollout_paths: ["/one"] },
+    { provider: "zcode", rollout_paths: ["/one"] },
   ]);
   assert.deepEqual(workbenchSearchScopes([]), []);
 });

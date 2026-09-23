@@ -4,6 +4,12 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
+    #[serde(default = "default_zcode_dir")]
+    pub zcode_dir: String,
+    #[serde(default = "default_hermes_dir")]
+    pub hermes_dir: String,
+    #[serde(default = "default_dsh_dir")]
+    pub dsh_dir: String,
     #[serde(default = "default_workbuddy_dir")]
     pub workbuddy_dir: String,
     #[serde(default = "default_grok_dir")]
@@ -29,6 +35,24 @@ pub struct Settings {
     /// true = 过程消息默认全部收起；false = 默认全部展开。
     #[serde(default = "default_true")]
     pub preview_collapse_process: bool,
+}
+
+fn default_dsh_dir() -> String {
+    crate::paths::default_dsh_dir()
+        .to_string_lossy()
+        .into_owned()
+}
+
+fn default_hermes_dir() -> String {
+    crate::paths::default_hermes_dir()
+        .to_string_lossy()
+        .into_owned()
+}
+
+fn default_zcode_dir() -> String {
+    crate::paths::default_zcode_dir()
+        .to_string_lossy()
+        .into_owned()
 }
 
 fn default_open_cmd() -> String {
@@ -88,6 +112,9 @@ impl Default for Settings {
             qoder_dir: default_qoder_dir(),
             workbuddy_dir: default_workbuddy_dir(),
             grok_dir: default_grok_dir(),
+            dsh_dir: default_dsh_dir(),
+            hermes_dir: default_hermes_dir(),
+            zcode_dir: default_zcode_dir(),
             pi_dir: default_pi_dir(),
             codex_dir: codex.to_string_lossy().into_owned(),
             claude_dir: claude.to_string_lossy().into_owned(),
@@ -109,6 +136,9 @@ impl Default for Settings {
 /// 字段为 `None` 表示"用该 provider 的默认目录"。
 #[derive(Debug, Clone, Default)]
 pub struct ProviderDirs {
+    pub zcode_dir: Option<String>,
+    pub hermes_dir: Option<String>,
+    pub dsh_dir: Option<String>,
     pub workbuddy_dir: Option<String>,
     pub grok_dir: Option<String>,
     pub pi_dir: Option<String>,

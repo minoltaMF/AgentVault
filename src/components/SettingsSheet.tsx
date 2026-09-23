@@ -45,6 +45,9 @@ export function SettingsSheet({ trigger }: Props) {
   const [claude, setClaude] = useState("");
   const [workbuddy, setWorkbuddy] = useState("");
   const [grok, setGrok] = useState("");
+  const [dsh, setDsh] = useState("");
+  const [hermes, setHermes] = useState("");
+  const [zcode, setZcode] = useState("");
   const [pi, setPi] = useState("");
   const [qoder, setQoder] = useState("");
   const [opencode, setOpenCode] = useState("");
@@ -65,6 +68,9 @@ export function SettingsSheet({ trigger }: Props) {
     setClaude(settings.claude_dir);
     setWorkbuddy(settings.workbuddy_dir ?? "");
     setGrok(settings.grok_dir ?? "");
+    setDsh(settings.dsh_dir ?? "");
+    setHermes(settings.hermes_dir ?? "");
+    setZcode(settings.zcode_dir ?? "");
     setPi(settings.pi_dir ?? "");
     setQoder(settings.qoder_dir ?? "");
     setOpenCode(settings.opencode_dir);
@@ -161,6 +167,9 @@ export function SettingsSheet({ trigger }: Props) {
       claude_dir: claude,
       workbuddy_dir: workbuddy,
       grok_dir: grok,
+      dsh_dir: dsh,
+      hermes_dir: hermes,
+      zcode_dir: zcode,
       pi_dir: pi,
       qoder_dir: qoder,
       opencode_dir: opencode,
@@ -305,6 +314,9 @@ export function SettingsSheet({ trigger }: Props) {
           <DirField label="官方 Grok Build CLI 配置目录（只读）" value={grok} onChange={setGrok} placeholder="~/.grok" onPick={() => pick(setGrok, grok)} onRestoreDefault={() => { void api.defaultGrokDir().then(setGrok).catch((error) => toast.error(String(error))); }}>
             <p className="text-xs text-muted-foreground">在“全部会话”读取 sessions 下的本地会话。默认使用 GROK_HOME 或 ~/.grok；不包含 Grok 网页或手机应用。</p>
           </DirField>
+          <DirField label="DeepSeek Harness 配置目录（只读）" value={dsh} onChange={setDsh} placeholder="~/.dsh" onPick={() => pick(setDsh, dsh)} onRestoreDefault={() => { void api.defaultDshDir().then(setDsh).catch((error) => toast.error(String(error))); }}><p className="text-xs text-muted-foreground">在“全部会话”读取本地记录。支持 v3/v4，旧版本会明确报告不支持。</p></DirField>
+          <DirField label="Hermes Agent 配置目录（只读）" value={hermes} onChange={setHermes} placeholder="~/.hermes" onPick={() => pick(setHermes, hermes)} onRestoreDefault={() => { void api.defaultHermesDir().then(setHermes).catch((error) => toast.error(String(error))); }}><p className="text-xs text-muted-foreground">在“全部会话”读取本地记录。选择包含 state.db 的目录。</p></DirField>
+          <DirField label="ZCode 配置目录（只读）" value={zcode} onChange={setZcode} placeholder="~/.zcode" onPick={() => pick(setZcode, zcode)} onRestoreDefault={() => { void api.defaultZcodeDir().then(setZcode).catch((error) => toast.error(String(error))); }}><p className="text-xs text-muted-foreground">在“全部会话”读取本地记录。选择包含 cli/db/db.sqlite 的 .zcode 目录。</p></DirField>
           <DirField label="Pi 配置目录（只读）" value={pi} onChange={setPi} placeholder="~/.pi/agent" onPick={() => pick(setPi, pi)} onRestoreDefault={() => { void api.defaultPiDir().then(setPi).catch((error) => toast.error(String(error))); }}>
             <p className="text-xs text-muted-foreground">在“全部会话”读取 sessions 下的本地会话，仅显示当前分支。</p>
           </DirField>

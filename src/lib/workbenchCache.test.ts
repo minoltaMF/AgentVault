@@ -47,10 +47,10 @@ test("Qoder source and view are isolated when its configured root changes", () =
   assert.deepEqual(cache.view("/codex", "/claude", "/qoder-b"), { search: "", page: 0, scrollTop: 0 });
 });
 
-for (const [provider, rootIndex] of [["workbuddy", 3], ["grok", 4], ["pi", 5]] as const) {
+for (const [provider, rootIndex] of [["workbuddy", 3], ["grok", 4], ["pi", 5], ["dsh", 6], ["hermes", 7], ["opencode", 8], ["zcode", 9]] as const) {
   test(provider + " source changes clear retained view and reject late results", () => {
     const cache = createWorkbenchCache();
-    const roots: [string, string, string, string, string, string] = ["/codex", "/claude", "/qoder", "/workbuddy", "/grok", "/pi"];
+    const roots: [string, string, string, string, string, string, string, string, string, string] = ["/codex", "/claude", "/qoder", "/workbuddy", "/grok", "/pi", "/dsh", "/hermes", "/opencode", "/zcode"];
     const old = cache.source(provider, roots[rootIndex], roots[0]);
     old.completed = completed;
     cache.view(...roots).page = 5;

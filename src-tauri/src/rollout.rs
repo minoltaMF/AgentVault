@@ -449,6 +449,9 @@ fn preview_range_by_provider(
         "qoder" => crate::qoder_sessions::preview_range(path, offset, limit),
         "workbuddy" => crate::workbuddy_sessions::preview_range(path, offset, limit),
         "grok" => crate::grok_sessions::preview_range(path, offset, limit),
+        "dsh" => crate::dsh_sessions::preview_range(path, offset, limit),
+        "hermes" => crate::hermes_sessions::preview_range(path, offset, limit),
+        "zcode" => crate::zcode_sessions::preview_range(path, offset, limit),
         "pi" => crate::pi_sessions::preview_range(path, offset, limit),
         "claude" => crate::claude_sessions::preview_range(path, offset, limit),
         "opencode" => crate::opencode_sessions::preview_range(path, offset, limit),
@@ -517,6 +520,18 @@ pub fn preview_session_user_prompts(
         }
         "grok" => Ok(user_prompts_from_events(
             crate::grok_sessions::events(&rollout_path, None)?,
+            claude_event_is_agent_activity,
+        )),
+        "dsh" => Ok(user_prompts_from_events(
+            crate::dsh_sessions::events(&rollout_path, None)?,
+            claude_event_is_agent_activity,
+        )),
+        "hermes" => Ok(user_prompts_from_events(
+            crate::hermes_sessions::events(&rollout_path, None)?,
+            claude_event_is_agent_activity,
+        )),
+        "zcode" => Ok(user_prompts_from_events(
+            crate::zcode_sessions::events(&rollout_path, None)?,
             claude_event_is_agent_activity,
         )),
         "pi" => Ok(user_prompts_from_events(
@@ -858,6 +873,9 @@ pub fn preview_session_meta(
         }
         "workbuddy" => return crate::workbuddy_sessions::preview_meta(&rollout_path),
         "grok" => return crate::grok_sessions::preview_meta(&rollout_path),
+        "dsh" => return crate::dsh_sessions::preview_meta(&rollout_path),
+        "hermes" => return crate::hermes_sessions::preview_meta(&rollout_path),
+        "zcode" => return crate::zcode_sessions::preview_meta(&rollout_path),
         "pi" => return crate::pi_sessions::preview_meta(&rollout_path),
         "claude" => return crate::claude_sessions::preview_meta(&rollout_path),
         "opencode" => return crate::opencode_sessions::preview_meta(&rollout_path),

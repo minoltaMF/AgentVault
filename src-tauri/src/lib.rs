@@ -21,11 +21,13 @@ pub mod cursor_blobs;
 pub mod cursor_mutate;
 pub mod cursor_sessions;
 pub mod cursor_transfer;
+mod dsh_sessions;
 pub mod edit;
 pub mod error;
 pub mod family;
 pub mod fs_ops;
 mod grok_sessions;
+mod hermes_sessions;
 pub mod history;
 pub mod logs_db;
 pub mod markdown_export;
@@ -40,6 +42,7 @@ mod pi_sessions;
 pub mod provenance;
 pub mod provider_sync;
 mod qoder_sessions;
+mod readonly_source;
 pub(crate) mod release_channel;
 pub mod repair;
 pub mod rollout;
@@ -50,6 +53,7 @@ pub mod stats;
 pub mod webui;
 pub mod workbench_scan;
 mod workbuddy_sessions;
+mod zcode_sessions;
 
 #[cfg(feature = "desktop")]
 use tauri::Manager;
@@ -90,6 +94,9 @@ pub fn run() {
             settings::default_qoder_dir,
             settings::default_workbuddy_dir,
             settings::default_grok_dir,
+            settings::default_dsh_dir,
+            settings::default_hermes_dir,
+            settings::default_zcode_dir,
             settings::default_pi_dir,
             settings::default_opencode_dir,
             settings::default_cursor_dir,
@@ -192,3 +199,6 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
+#[cfg(test)]
+mod source_batch_tests;

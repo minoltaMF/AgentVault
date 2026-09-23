@@ -375,3 +375,16 @@ pub fn default_grok_dir() -> String {
 pub fn default_pi_dir() -> String {
     paths::default_pi_dir().to_string_lossy().into_owned()
 }
+
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub fn default_dsh_dir() -> String {
+    paths::default_dsh_dir().to_string_lossy().into_owned()
+}
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub fn default_hermes_dir() -> String {
+    paths::default_hermes_dir().to_string_lossy().into_owned()
+}
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub fn default_zcode_dir() -> String {
+    paths::default_zcode_dir().to_string_lossy().into_owned()
+}

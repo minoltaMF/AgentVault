@@ -8,11 +8,11 @@
 
 AgentVault 用来管理 Codex、Claude Code、OpenCode 和 Cursor 保存在本机的会话。你可以在一个界面里查找对话、预览内容、备份恢复、移动会话目录，也可以修复部分索引和可见性问题。
 
-Codex、Claude、Qoder CLI、腾讯 WorkBuddy、官方 Grok Build CLI 与 Pi 可从「全局 → 全部会话」统一查找和只读预览，支持来源、项目路径与归档筛选；某个来源读取失败时保留其他结果。Qoder CLI、WorkBuddy、Grok Build CLI 与 Pi 当前仅支持只读接入，不提供编辑、删除、恢复或原生续聊。预览支持最早／最新切换和分段读取，长会话使用虚拟列表。当前范围和使用方式见 [统一会话工作台](docs/unified-session-workbench.md)。
+Codex、Claude、Qoder CLI、腾讯 WorkBuddy、官方 Grok Build CLI、Pi、DSH、Hermes Agent、ZCode 与 OpenCode 可从「全局 → 全部会话」统一查找和只读预览，支持来源、项目路径与归档筛选；某个来源读取失败时保留其他结果。Qoder CLI、WorkBuddy、Grok Build CLI、Pi、DSH、Hermes Agent 与 ZCode 当前仅支持只读接入，不提供编辑、删除、恢复或原生续聊。预览支持最早／最新切换和分段读取，长会话使用虚拟列表。OpenCode 在工作台中仅提供只读操作，原有独立页面的功能保持不变。DSH 当前支持 v3/v4 的 canonical JSONL/Zstd，旧版及未知必要事件明确报告不支持；Hermes 和 ZCode 只读访问本机 SQLite。当前范围和使用方式见 [统一会话工作台](docs/unified-session-workbench.md)。
 
 当前仓库以 [cc-sessions](https://github.com/ccpopy/cc-sessions) 的锁定 commit 为 fork 基线，已配置独立的 [AgentVault 发布仓库](https://github.com/minoltaMF/AgentVault/releases)。上方标注 Upstream 的徽章仅指向上游兼容基线；来源、许可证和验证范围见 [上游基线](docs/upstream-baseline.md) 与 [第三方声明](THIRD_PARTY_NOTICES.md)。
 
-当前版本为 `0.1.0-alpha.9` internal alpha draft candidate；范围、平台状态和未覆盖能力见 [发布说明](docs/releases/0.1.0-alpha.9.md)。
+当前版本为 `0.1.0-alpha.10` internal alpha draft candidate；范围、平台状态和未覆盖能力见 [发布说明](docs/releases/0.1.0-alpha.10.md)。
 
 [查看功能](#功能模块) · [进阶功能](#进阶功能) · [常见问题](#常见问题) · [开发与打包](#开发与打包)
 
@@ -53,7 +53,7 @@ Cursor 的会话存在一个共享数据库里，改动方式和其他三个工�
 
 ## 安装
 
-AgentVault 目前没有公开稳定包。`0.1.0-alpha.9` 由版本标签触发 CI 生成内部 draft 制品；应从 AgentVault 仓库取得与目标 tag 对应且通过 CI 的制品，不能把 [cc-sessions Releases](https://github.com/ccpopy/cc-sessions/releases/latest) 中的上游程序当作 AgentVault。下列制品名称因兼容性而保留，本轮不迁移包名、binary 名或安装标识。
+AgentVault 目前没有公开稳定包。`0.1.0-alpha.10` 由版本标签触发 CI 生成内部 draft 制品；应从 AgentVault 仓库取得与目标 tag 对应且通过 CI 的制品，不能把 [cc-sessions Releases](https://github.com/ccpopy/cc-sessions/releases/latest) 中的上游程序当作 AgentVault。下列制品名称因兼容性而保留，本轮不迁移包名、binary 名或安装标识。
 
 | 系统与用途 | 推荐下载 | 说明 |
 | --- | --- | --- |
@@ -79,7 +79,7 @@ AgentVault 目前没有公开稳定包。`0.1.0-alpha.9` 由版本标签触发 C
 
 Release 最下方的 `Source code (zip)` 和 `Source code (tar.gz)` 是 GitHub 自动生成的源码压缩包，不是桌面版安装包。
 
-第一次打开后，到设置页确认 Codex、Claude Code、OpenCode 和 Cursor 的数据路径。应用会尝试使用默认位置，没有安装的工具可以留空。
+第一次打开后，到设置页确认所需来源的数据路径；DSH 配置 home 目录，Hermes 配置包含 state.db 的目录，ZCode 配置包含 cli/db/db.sqlite 的 home 目录。应用会尝试使用默认位置，没有安装的工具可以留空。
 
 ### 快速开始
 

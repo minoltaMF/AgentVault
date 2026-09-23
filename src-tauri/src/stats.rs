@@ -475,6 +475,9 @@ mod tests {
             qoder_dir: Some(root.join("qoder").to_string_lossy().into_owned()),
             workbuddy_dir: Some(root.join("workbuddy").to_string_lossy().into_owned()),
             grok_dir: Some(root.join("grok").to_string_lossy().into_owned()),
+            dsh_dir: Some(root.join("dsh").to_string_lossy().into_owned()),
+            hermes_dir: Some(root.join("hermes").to_string_lossy().into_owned()),
+            zcode_dir: Some(root.join("zcode").to_string_lossy().into_owned()),
             pi_dir: Some(root.join("pi").to_string_lossy().into_owned()),
         }
     }
