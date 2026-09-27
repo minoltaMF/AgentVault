@@ -73,6 +73,10 @@ impl MenuContext {
             dsh_dir: None,
             hermes_dir: None,
             zcode_dir: None,
+            qwen_dir: None,
+            cline_dir: None,
+            copilot_dir: None,
+            antigravity_dir: None,
             pi_dir: None,
             backup_dir: Some(paths::default_backup_dir().to_string_lossy().into_owned()),
         }

@@ -452,6 +452,10 @@ fn preview_range_by_provider(
         "dsh" => crate::dsh_sessions::preview_range(path, offset, limit),
         "hermes" => crate::hermes_sessions::preview_range(path, offset, limit),
         "zcode" => crate::zcode_sessions::preview_range(path, offset, limit),
+        "qwen" => crate::qwen_sessions::preview_range(path, offset, limit),
+        "cline" => crate::cline_sessions::preview_range(path, offset, limit),
+        "copilot" => crate::copilot_sessions::preview_range(path, offset, limit),
+        "antigravity" => crate::antigravity_sessions::preview_range(path, offset, limit),
         "pi" => crate::pi_sessions::preview_range(path, offset, limit),
         "claude" => crate::claude_sessions::preview_range(path, offset, limit),
         "opencode" => crate::opencode_sessions::preview_range(path, offset, limit),
@@ -528,6 +532,22 @@ pub fn preview_session_user_prompts(
         )),
         "hermes" => Ok(user_prompts_from_events(
             crate::hermes_sessions::events(&rollout_path, None)?,
+            claude_event_is_agent_activity,
+        )),
+        "qwen" => Ok(user_prompts_from_events(
+            crate::qwen_sessions::events(&rollout_path, None)?,
+            claude_event_is_agent_activity,
+        )),
+        "cline" => Ok(user_prompts_from_events(
+            crate::cline_sessions::events(&rollout_path, None)?,
+            claude_event_is_agent_activity,
+        )),
+        "copilot" => Ok(user_prompts_from_events(
+            crate::copilot_sessions::events(&rollout_path, None)?,
+            claude_event_is_agent_activity,
+        )),
+        "antigravity" => Ok(user_prompts_from_events(
+            crate::antigravity_sessions::events(&rollout_path, None)?,
             claude_event_is_agent_activity,
         )),
         "zcode" => Ok(user_prompts_from_events(
@@ -876,6 +896,10 @@ pub fn preview_session_meta(
         "dsh" => return crate::dsh_sessions::preview_meta(&rollout_path),
         "hermes" => return crate::hermes_sessions::preview_meta(&rollout_path),
         "zcode" => return crate::zcode_sessions::preview_meta(&rollout_path),
+        "qwen" => return crate::qwen_sessions::preview_meta(&rollout_path),
+        "cline" => return crate::cline_sessions::preview_meta(&rollout_path),
+        "copilot" => return crate::copilot_sessions::preview_meta(&rollout_path),
+        "antigravity" => return crate::antigravity_sessions::preview_meta(&rollout_path),
         "pi" => return crate::pi_sessions::preview_meta(&rollout_path),
         "claude" => return crate::claude_sessions::preview_meta(&rollout_path),
         "opencode" => return crate::opencode_sessions::preview_meta(&rollout_path),

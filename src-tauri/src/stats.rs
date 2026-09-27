@@ -478,6 +478,10 @@ mod tests {
             dsh_dir: Some(root.join("dsh").to_string_lossy().into_owned()),
             hermes_dir: Some(root.join("hermes").to_string_lossy().into_owned()),
             zcode_dir: Some(root.join("zcode").to_string_lossy().into_owned()),
+            qwen_dir: Some(root.join("qwen").to_string_lossy().into_owned()),
+            cline_dir: Some(root.join("cline").to_string_lossy().into_owned()),
+            copilot_dir: Some(root.join("copilot").to_string_lossy().into_owned()),
+            antigravity_dir: Some(root.join("antigravity").to_string_lossy().into_owned()),
             pi_dir: Some(root.join("pi").to_string_lossy().into_owned()),
         }
     }

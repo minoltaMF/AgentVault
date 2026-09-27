@@ -195,6 +195,10 @@ pub fn start_workbench_content_search(
             "dsh" => dirs.dsh_dir.as_deref(),
             "hermes" => dirs.hermes_dir.as_deref(),
             "zcode" => dirs.zcode_dir.as_deref(),
+            "qwen" => dirs.qwen_dir.as_deref(),
+            "cline" => dirs.cline_dir.as_deref(),
+            "copilot" => dirs.copilot_dir.as_deref(),
+            "antigravity" => dirs.antigravity_dir.as_deref(),
             "opencode" => dirs.opencode_dir.as_deref(),
             _ => return Err(AppError::Other("不支持的工作台搜索来源".into())),
         };
@@ -295,7 +299,17 @@ fn execute_search(job: &SearchJob, request: &SearchRequest) -> AppResult<()> {
                 .collect::<HashSet<_>>();
             if matches!(
                 scope.provider.as_str(),
-                "qoder" | "workbuddy" | "grok" | "pi" | "dsh" | "hermes" | "zcode"
+                "qoder"
+                    | "workbuddy"
+                    | "grok"
+                    | "pi"
+                    | "dsh"
+                    | "hermes"
+                    | "zcode"
+                    | "qwen"
+                    | "cline"
+                    | "copilot"
+                    | "antigravity"
             ) {
                 let configured = match scope.provider.as_str() {
                     "qoder" => request.dirs.qoder_dir.as_deref(),
@@ -305,6 +319,10 @@ fn execute_search(job: &SearchJob, request: &SearchRequest) -> AppResult<()> {
                     "dsh" => request.dirs.dsh_dir.as_deref(),
                     "hermes" => request.dirs.hermes_dir.as_deref(),
                     "zcode" => request.dirs.zcode_dir.as_deref(),
+                    "qwen" => request.dirs.qwen_dir.as_deref(),
+                    "cline" => request.dirs.cline_dir.as_deref(),
+                    "copilot" => request.dirs.copilot_dir.as_deref(),
+                    "antigravity" => request.dirs.antigravity_dir.as_deref(),
                     _ => None,
                 };
                 let root = std::path::Path::new(configured.unwrap_or(""));
@@ -336,6 +354,26 @@ fn execute_search(job: &SearchJob, request: &SearchRequest) -> AppResult<()> {
                             Some(&job.cancel),
                         ),
                         "dsh" => crate::dsh_sessions::parse_session(
+                            root,
+                            std::path::Path::new(path),
+                            Some(&job.cancel),
+                        ),
+                        "qwen" => crate::qwen_sessions::parse_session(
+                            root,
+                            std::path::Path::new(path),
+                            Some(&job.cancel),
+                        ),
+                        "cline" => crate::cline_sessions::parse_session(
+                            root,
+                            std::path::Path::new(path),
+                            Some(&job.cancel),
+                        ),
+                        "copilot" => crate::copilot_sessions::parse_session(
+                            root,
+                            std::path::Path::new(path),
+                            Some(&job.cancel),
+                        ),
+                        "antigravity" => crate::antigravity_sessions::parse_session(
                             root,
                             std::path::Path::new(path),
                             Some(&job.cancel),
@@ -460,6 +498,14 @@ fn execute_search(job: &SearchJob, request: &SearchRequest) -> AppResult<()> {
                     request.dirs.dsh_dir.as_deref().unwrap_or("")
                 } else if session.provider == "opencode" {
                     request.dirs.opencode_dir.as_deref().unwrap_or("")
+                } else if session.provider == "qwen" {
+                    request.dirs.qwen_dir.as_deref().unwrap_or("")
+                } else if session.provider == "cline" {
+                    request.dirs.cline_dir.as_deref().unwrap_or("")
+                } else if session.provider == "copilot" {
+                    request.dirs.copilot_dir.as_deref().unwrap_or("")
+                } else if session.provider == "antigravity" {
+                    request.dirs.antigravity_dir.as_deref().unwrap_or("")
                 } else if session.provider == "qoder" {
                     request.dirs.qoder_dir.as_deref().unwrap_or("")
                 } else {
@@ -565,6 +611,42 @@ fn scan_session_checked(
         "grok" => {
             let events = crate::grok_sessions::events(&session.rollout_path, Some(&job.cancel))?;
             return scan_event_sequence(job, session, query, completed_bytes, events);
+        }
+        "qwen" => {
+            return scan_event_sequence(
+                job,
+                session,
+                query,
+                completed_bytes,
+                crate::qwen_sessions::events(&session.rollout_path, Some(&job.cancel))?,
+            );
+        }
+        "cline" => {
+            return scan_event_sequence(
+                job,
+                session,
+                query,
+                completed_bytes,
+                crate::cline_sessions::events(&session.rollout_path, Some(&job.cancel))?,
+            );
+        }
+        "copilot" => {
+            return scan_event_sequence(
+                job,
+                session,
+                query,
+                completed_bytes,
+                crate::copilot_sessions::events(&session.rollout_path, Some(&job.cancel))?,
+            );
+        }
+        "antigravity" => {
+            return scan_event_sequence(
+                job,
+                session,
+                query,
+                completed_bytes,
+                crate::antigravity_sessions::events(&session.rollout_path, Some(&job.cancel))?,
+            );
         }
         "dsh" => {
             return scan_event_sequence(
@@ -1388,6 +1470,10 @@ mod tests {
                 dsh_dir: None,
                 hermes_dir: None,
                 zcode_dir: None,
+                qwen_dir: None,
+                cline_dir: None,
+                copilot_dir: None,
+                antigravity_dir: None,
                 pi_dir: None,
             },
             query: "needle".to_string(),

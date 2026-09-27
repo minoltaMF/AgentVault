@@ -1,6 +1,6 @@
 # 统一只读会话工作台
 
-入口是侧栏「全局 → 全部会话」（`/all-sessions`）。支持设置中的 Codex、Claude、Qoder CLI、WorkBuddy、Grok Build CLI、Pi、DSH、Hermes Agent、ZCode 与 OpenCode 十个来源；打开页面不会自动扫描，点击来源卡片可单独读取，顶部刷新可同时读取已配置来源。
+入口是侧栏「全局 → 全部会话」（`/all-sessions`）。支持设置中的 Codex、Claude、Qoder CLI、WorkBuddy、Grok Build CLI、Pi、DSH、Hermes Agent、ZCode、OpenCode、Qwen Code、Cline CLI/Desktop、GitHub Copilot CLI 与 Antigravity 十四个来源；打开页面不会自动扫描，点击来源卡片可单独读取，顶部刷新可同时读取已配置来源。
 
 ## 当前行为
 
@@ -20,7 +20,7 @@
 
 扫描任务复用现有 Codex 索引摘要、Claude 解析、归档解析和来源注记，旧 `list_sessions` 行为保留。没有迁移数据库、配置路径或修改原生会话的写入逻辑；DSH 的 Zstd 解压新增 Rust zstd 依赖。读取成功只表示本次扫描完成，不表示备份健康、完整索引或原生续聊可用。
 
-本功能仍不包含 Registry/FTS、Doctor 诊断或后台自动刷新。任务在内存中保留，最多 10 个运行任务、16 个任务记录，仅淘汰已结束记录；同一 Provider 与来源的运行任务会被复用。运行中状态查询不复制完整会话结果，终态才返回结果。
+本功能仍不包含 Registry/FTS、Doctor 诊断或后台自动刷新。任务在内存中保留，最多 14 个运行任务、16 个任务记录，仅淘汰已结束记录；同一 Provider 与来源的运行任务会被复用。运行中状态查询不复制完整会话结果，终态才返回结果。
 
 新扫描入口逐文件先检查 JSONL 格式，再复用原解析器，可能发生两次读取；含坏行的文件整项报告失败，旧列表的宽松解析行为不变。取消在目录项、文件和行处理边界检查，不能中断操作系统正在阻塞的单次读取。JSONL 来源按文件计数，SQLite 来源按会话计数；这些计数不代表数据库行数或读取字节数；大规模耗时与内存仍需独立基准验证。
 
@@ -29,7 +29,7 @@
 ## 正文搜索与命中定位
 
 - 列表筛选仍只匹配标题、首条消息、ID 和路径；「搜索正文」由用户手动启动，针对筛选后的全部已读取会话，不限于当前页。
-- 复用现有 content_search 单活动任务管理，在一个任务内处理上述十个来源的显式会话集合。空集合不发现默认来源；最终文件来自对应来源列表，并在读取前检查路径边界。
+- 复用现有 content_search 单活动任务管理，在一个任务内处理上述十四个来源的显式会话集合。空集合不发现默认来源；最终文件来自对应来源列表，并在读取前检查路径边界。
 - 搜索用户与助手消息，不包括全部工具输出。最多返回 100 个会话，每会话展示 3 处命中；结果达到上限时提示截断。
 - 命中携带来源、消息行号和预览偏移，复用只读 PreviewDialog 定位。关闭预览返回原搜索结果，关闭搜索返回原列表页。
 - 同一应用会话内保留查询和已结束结果；来源、项目、归档或列表筛选范围变化时失效，不持久化到磁盘。关闭或离页取消任务，迟到启动响应补发取消。
@@ -112,3 +112,24 @@ Hermes/ZCode 以只读连接与查询事务读取 SQLite，OpenCode 复用现有
 复用来源已锁定并登记在 [第三方声明](../THIRD_PARTY_NOTICES.md)：agent-sessions 的 DSH/Hermes 规则、DeepSeek 官方 v4 事件目录与 canonical 文件规则、ZCode 官方路径和排序规则。只移植小模块与合成测试，不引入上游应用或跨语言运行环境。
 
 2026-09-24 本地验证：前端 93/93、Rust lib 548/548、安全矩阵 12/12 及前端构建通过。新增 Rust 联动测试覆盖四来源扫描、正文搜索与同一投影偏移的命中预览，并检查 SQLite 源文件内容不变、ZCode 原生顺序、取消以及 DSH 连续压缩帧、坏序号、截断和未知版本拒绝。最终 DSH 工具事件补充回归 3/3、格式与版本元数据检查通过。Rust WebUI + Edge 完成四来源扫描、正文搜索、命中预览、返回条件保留、来源筛选与设置保存验证；1280×820、390×844 无横向溢出或应用错误，测试源文件 SHA-256 不变。CI 制品以对应标签工作流结果为准；此记录不表示原生 Tauri 窗口或安装包验收通过。
+
+## Qwen Code、Cline CLI/Desktop、Copilot CLI 与 Antigravity（alpha.11）
+
+本批增加四个只读来源，工作台共十四个来源。来源配置、单独读取和同时刷新、筛选、返回状态、取消扫描、失败报告及正文命中预览沿用既有流程；不启用这四个来源的编辑、删除、恢复或原生续聊。
+
+| 来源 | 默认配置与文件布局 | 兼容范围 |
+| --- | --- | --- |
+| Qwen Code | QWEN_HOME 或 ~/.qwen；projects/<project>/chats/<ID>.jsonl 及 chats/archive/<ID>.jsonl | ID 为 32–36 位十六进制或连字符；按父链选取当前分支，聚合同 UUID 片段；不读 telemetry/backup |
+| Cline CLI/Desktop | CLINE_DATA_DIR 或 ~/.cline/data；sessions/<id>/<id>.json 与同目录 <id>.messages.json；自选目录可直接指向 sessions | version 1 成对产物，核验 manifest/companion 身份；不跟随 messages_path，不包含 VS Code 扩展任务目录 |
+| GitHub Copilot CLI | ~/.copilot；session-state/<id>/events.jsonl，兼容旧 session-state/<id>.jsonl | session.start 持久化版本 1；读取用户/助手正文和工具事件，不包含 VS Code Copilot Chat |
+| Antigravity | ~/.gemini 下 antigravity、antigravity-cli、antigravity-ide 的 brain/<id>；也可配置单一 app_data_dir 或 brain 目录 | .system_generated/logs/transcript.jsonl，以及会话目录直接子级 Markdown 产物；暂不读取 transcript_full.jsonl |
+
+Qwen 会话解析拒绝未知记录类型、缺失父节点、循环、片段身份不一致和混合 session ID；接受物理行中的多个完整 JSON 对象，但不接受任意杂质或未完整写入的尾行。Copilot 按磁盘历史顺序投影，不重建压缩后的模型上下文；未知事件、子代理注入、临时事件和自动继续上下文保留为元数据，不混入普通正文。两者单会话读取上限为 128 MiB，附件不解引用，Copilot 不额外读取 workspace.yaml。
+
+Cline 按消息与内容块顺序投影，工具结果与普通用户正文分离，manifest/companion 不完整或身份、版本不匹配时报告失败；会话文件合计限制 50 MiB。Antigravity 每文件限制 50 MiB，transcript 保留上游截断标记，未知事件作为元数据；Markdown 每文件单独列为「产物·非完整对话」，可以搜索产物文字，但不冒充完整聊天，不访问文内本地路径。各 app surface 的相同会话目录不合并为同一身份。官方文档确认目录合同，事件字段仍以锁定开源夹具为兼容基线，不宣称全部官方历史版本受支持。
+
+所有新增来源都只读原生文件；预览仍可能先完整解析单会话再按窗口返回，不代表随机访问或大规模性能验收。跨语言复用仅移植读取规则与小夹具，不引入上游 Agent/Swift/Node 运行环境。来源与许可证见 [第三方声明](../THIRD_PARTY_NOTICES.md)。
+
+QoderWork 本批仅完成[格式核实](qoderwork-format-verification-2026-09.md)：官方证明存在本地历史，但没有已验证的持久化 schema 或脱敏夹具，因此尚未增加来源入口。
+
+alpha.11 已验证：前端测试 97/97，Rust lib 回归 562/562。新增联动测试覆盖四来源扫描、坏文件隔离、正文搜索、命中预览偏移和源文件不变。前端构建、CLI 构建、格式检查、12/12 安全矩阵及版本一致性检查均通过。真实 Rust WebUI 配合合成/开源夹具，在 1280×820 和 390×844 下验证四来源读取、正文搜索、命中预览、只读菜单、返回筛选及搜索状态、设置目录和源文件哈希不变，浏览器无 console/page error；未使用真实用户会话。标签 CI/draft 制品须以 GitHub 最终结果为准；上方 alpha.10 记录仅对应历史版本，不表示本批原生安装运行或大规模性能验收通过。

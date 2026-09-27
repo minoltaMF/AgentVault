@@ -1,20 +1,21 @@
 # Agent 来源接入核实与复用基线
 
-初次核实日期：2026-09-23；实现状态更新：2026-09-24；AgentVault 基线：`c7db198` / `0.1.0-alpha.9`。
-本轮已实现 DSH/Hermes/ZCode 只读适配器，并把 OpenCode 接入工作台，准备 alpha.10 draft。下列后续候选不代表已经接入；实际移植范围同步至 `THIRD_PARTY_NOTICES.md`、原始许可证与文件级修改说明。
+初次核实日期：2026-09-23；实现状态更新：2026-09-27；本批开发基线：`c7fd1d3` / `0.1.0-alpha.10`。
+alpha.10 已完成 DSH/Hermes/ZCode 只读接入并纳入已有 OpenCode 解析器。本轮 alpha.11 增加 Qwen Code、Cline CLI/Desktop、GitHub Copilot CLI、Antigravity 四个只读来源；QoderWork 格式证据仍不足，未增加适配器。实际移植范围同步至 `THIRD_PARTY_NOTICES.md`、原始许可证与文件级修改说明。
 
 ## 已选定范围
 
 - DSH：只读来源发现、列表、正文预览、搜索定位；已支持 v3/v4 canonical JSONL、Zstandard 连续帧；v0–v2、未知版本或必要事件明确拒绝。基于官方 v4 目录补足候选解析器规则，不承诺全部历史版本兼容。
 - Hermes Agent：已接入 state.db 中 sessions/messages，只读查询并检测可选字段；不引入 Python 运行环境。
 - ZCode：已接入 cli/db/db.sqlite 的 session/message/part，复用官方路径与 sequence 排序规则；不创建或迁移数据库。
-- 下一轮 Cline：先覆盖已经有格式证据的 CLI/Desktop；VS Code 扩展历史另行核对，不宣称自动兼容。
-- 下一轮 Antigravity：分别识别 transcript 和 Markdown 任务产物；只有产物时标明内容不完整，不充当完整对话。
+- Cline：已接入 version 1 CLI/Desktop manifest/messages 成对文件，核验身份且不跟随 messages_path；VS Code 扩展历史另行核对，不宣称自动兼容。
+- Antigravity：已分别识别 transcript 和 Markdown 任务产物；Markdown 按文件标明内容不完整，不充当完整对话。
 - OpenCode：复用现有 `opencode_sessions.rs` 与 `content_search.rs`，已补齐统一工作台来源、筛选、扫描和命中定位，不重写已有解析器。
-- 下一轮 GitHub Copilot CLI：读取 CLI 会话 events.jsonl；不包含 VS Code Copilot Chat。
+- GitHub Copilot CLI：已读取 session.start version 1 的当前 events.jsonl 和旧单文件布局；不包含 VS Code Copilot Chat。
+- Qwen Code：已读取 projects/<project>/chats 及 archive 下的 JSONL，按父链选择当前分支并聚合 UUID 片段，排除 telemetry/backup。
 - Roo Code、Kilo Code：按用户要求暂不安排。
 
-用户确认批次：本轮 DSH + Hermes + OpenCode + ZCode；下一轮 Qwen Code + Cline CLI/Desktop + Copilot CLI + Antigravity。QoderWork 先验证格式，确认后加入下一轮。VS Code Copilot Chat 与 Cline 扩展版延后。各批继承取消扫描、真实进度、文件级失败、有界预览和只读保护。每批实现完成后按 release-workflow.md 独立验证和生成 draft，本轮实现进入 alpha.10 验证与 draft 交付流程，后续候选调研不单独发版。
+用户确认批次：alpha.10 为 DSH + Hermes + OpenCode + ZCode；alpha.11 为 Qwen Code + Cline CLI/Desktop + Copilot CLI + Antigravity。QoderWork 已完成[格式核实](qoderwork-format-verification-2026-09.md)，官方确认存在本地历史，但尚无已验证的持久化 schema 或脱敏样本，因此未加入本批。VS Code Copilot Chat 与 Cline 扩展版延后。各批继承取消扫描、真实进度、文件级失败、有界预览和只读保护。每批实现完成后按 release-workflow.md 独立验证和生成 draft，本轮实现进入 alpha.11 验证与 draft 交付流程，后续候选调研不单独发版。
 
 ## agent-sessions 候选复用基线
 
@@ -65,3 +66,9 @@ ZCode 核对基线：`872ad960de7ec172591f7e1952f7849229f94521`。
 ## alpha.10 本地验证与限制
 
 前端 93/93、Rust lib 548/548、安全矩阵 12/12 与前端构建通过；四来源联动测试覆盖扫描、正文命中及预览偏移。测试使用合成临时数据。最终 DSH 工具事件补充回归 3/3 通过；Rust WebUI + Edge 完成四来源扫描、搜索、命中预览、返回、筛选及设置保存验证，桌面和窄屏无横向溢出或应用错误，测试源文件 SHA-256 不变。标签 CI/draft 制品以工作流结果为准，不把本地 WebUI 测试视为安装运行证明。DSH 为历史事件投影，SQLite 与压缩日志仍可能完整读取单会话后分页；详细读取边界见 [统一工作台](unified-session-workbench.md)。
+
+## alpha.11 复用与验证
+
+Qwen 官方格式核对锁定 `QwenLM/qwen-code@085e98c00cac2f8dd29eb39c760409bc6da889a9`；Copilot 事件字段核对锁定 `github/copilot-sdk@075f027363fc3b1e904d09370763731c3ecd2d88`；Cline 成对存储核对锁定 `cline/cline@dcf8c3c33596e3d561a941202297c564a1cbcd49`。小模块移植及 Cline/Antigravity/Copilot 夹具仍使用上述 agent-sessions 锁定基线，Qwen 夹具为合成数据。Antigravity 官方目录合同与锁定开源夹具分别提供路径和事件形状证据，不视为全部产品版本的兼容保证。完整许可和文件范围见 [第三方声明](../THIRD_PARTY_NOTICES.md)。
+
+已验证：`npm run test:frontend` 97/97；`cargo test -p cc-session-manager --no-default-features --lib -j2` 562/562。新增联动回归覆盖四来源扫描、坏文件隔离、正文搜索、命中预览偏移与源文件不变；模块测试覆盖格式/身份拒绝、分支或角色投影及取消。前端构建、CLI 构建、格式检查、12/12 安全矩阵及版本一致性检查均通过。真实 Rust WebUI 配合合成/开源夹具，在 1280×820 和 390×844 下验证四来源读取、正文搜索、命中预览、只读菜单、返回筛选及搜索状态、设置目录和源文件哈希不变，浏览器无 console/page error；未使用真实用户会话。标签 CI/draft 制品须以 GitHub 最终结果为准。未进行原生 Tauri 窗口、安装运行或大规模性能验收。

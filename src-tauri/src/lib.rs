@@ -1,3 +1,4 @@
+mod antigravity_sessions;
 #[cfg(feature = "desktop")]
 pub mod app_update;
 pub mod archive_ledger;
@@ -7,6 +8,7 @@ pub mod bundle;
 pub mod claude_memory;
 pub mod claude_sessions;
 pub mod claude_transfer;
+mod cline_sessions;
 pub(crate) mod codex_app_server;
 pub mod codex_delete_snapshot;
 pub mod codex_projects;
@@ -16,6 +18,7 @@ pub(crate) mod codex_writer_guard;
 pub mod commands;
 pub mod content_search;
 pub mod convert;
+mod copilot_sessions;
 pub mod cursor_agent_store;
 pub mod cursor_blobs;
 pub mod cursor_mutate;
@@ -42,6 +45,7 @@ mod pi_sessions;
 pub mod provenance;
 pub mod provider_sync;
 mod qoder_sessions;
+mod qwen_sessions;
 mod readonly_source;
 pub(crate) mod release_channel;
 pub mod repair;
@@ -97,6 +101,10 @@ pub fn run() {
             settings::default_dsh_dir,
             settings::default_hermes_dir,
             settings::default_zcode_dir,
+            settings::default_qwen_dir,
+            settings::default_cline_dir,
+            settings::default_copilot_dir,
+            settings::default_antigravity_dir,
             settings::default_pi_dir,
             settings::default_opencode_dir,
             settings::default_cursor_dir,

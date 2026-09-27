@@ -1,7 +1,7 @@
 import type { SessionSummary, WorkbenchScanStatus } from "./api";
 import { sessionIdentity } from "./sessionIdentity";
 
-export type WorkbenchProvider = "codex" | "claude" | "qoder" | "workbuddy" | "grok" | "pi" | "dsh" | "hermes" | "opencode" | "zcode";
+export type WorkbenchProvider = "codex" | "claude" | "qoder" | "workbuddy" | "grok" | "pi" | "dsh" | "hermes" | "opencode" | "zcode" | "qwen" | "cline" | "copilot" | "antigravity";
 export type WorkbenchFilters = { query: string; provider: string; project: string; archive: string };
 
 export function scanProgressText(scan: WorkbenchScanStatus): string {

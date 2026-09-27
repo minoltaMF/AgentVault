@@ -83,6 +83,10 @@ impl CliContext {
             dsh_dir: None,
             hermes_dir: None,
             zcode_dir: None,
+            qwen_dir: None,
+            cline_dir: None,
+            copilot_dir: None,
+            antigravity_dir: None,
             pi_dir: None,
             backup_dir: None,
         }

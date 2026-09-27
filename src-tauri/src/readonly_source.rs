@@ -197,3 +197,38 @@ pub fn optional(cols: &HashSet<String>, name: &str, fallback: &str) -> String {
         fallback.into()
     }
 }
+
+#[cfg(test)]
+pub(crate) mod test_support {
+    use std::{
+        io,
+        path::{Path, PathBuf},
+        sync::atomic::{AtomicU64, Ordering},
+    };
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    pub struct TempDir(PathBuf);
+    impl TempDir {
+        pub fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    pub fn tempdir() -> io::Result<TempDir> {
+        loop {
+            let path = std::env::temp_dir().join(format!(
+                "agentvault-readonly-tests-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            match std::fs::create_dir(&path) {
+                Ok(()) => return Ok(TempDir(path)),
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(e) => return Err(e),
+            }
+        }
+    }
+}

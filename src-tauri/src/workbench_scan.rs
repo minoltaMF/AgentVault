@@ -10,7 +10,7 @@ use crate::models::SessionSummary;
 use serde::Serialize;
 
 const MAX_JOBS: usize = 16;
-const MAX_RUNNING: usize = 10;
+const MAX_RUNNING: usize = 14;
 const MAX_ERRORS: usize = 200;
 
 #[derive(Clone, Serialize)]
@@ -112,6 +112,10 @@ pub fn start_workbench_scan(
     hermes_dir: Option<String>,
     zcode_dir: Option<String>,
     opencode_dir: Option<String>,
+    qwen_dir: Option<String>,
+    cline_dir: Option<String>,
+    copilot_dir: Option<String>,
+    antigravity_dir: Option<String>,
 ) -> AppResult<ScanStarted> {
     let root = match provider.as_str() {
         "codex" => PathBuf::from(&codex_dir),
@@ -123,6 +127,10 @@ pub fn start_workbench_scan(
         "hermes" => PathBuf::from(hermes_dir.unwrap_or_default()),
         "zcode" => PathBuf::from(zcode_dir.unwrap_or_default()),
         "opencode" => PathBuf::from(opencode_dir.unwrap_or_default()),
+        "qwen" => PathBuf::from(qwen_dir.unwrap_or_default()),
+        "cline" => PathBuf::from(cline_dir.unwrap_or_default()),
+        "copilot" => PathBuf::from(copilot_dir.unwrap_or_default()),
+        "antigravity" => PathBuf::from(antigravity_dir.unwrap_or_default()),
         "pi" => PathBuf::from(pi_dir.unwrap_or_default()),
         _ => return Err(AppError::Other("不支持的工作台来源".into())),
     };
@@ -259,6 +267,15 @@ fn discover_depth(
     job: &Job,
     root: &Path,
     max_directory_depth: usize,
+    visit: impl FnMut(&Path) -> AppResult<()>,
+) -> AppResult<()> {
+    discover_files(job, root, max_directory_depth, &["jsonl", "zstd"], visit)
+}
+fn discover_files(
+    job: &Job,
+    root: &Path,
+    max_directory_depth: usize,
+    extensions: &[&str],
     mut visit: impl FnMut(&Path) -> AppResult<()>,
 ) -> AppResult<()> {
     let mut stack = vec![root.to_path_buf()];
@@ -299,10 +316,10 @@ fn discover_depth(
                 Err(e) => job.failure(&path, e),
             }
         } else if metadata.is_file()
-            && matches!(
-                path.extension().and_then(|v| v.to_str()),
-                Some("jsonl" | "zstd")
-            )
+            && path
+                .extension()
+                .and_then(|v| v.to_str())
+                .is_some_and(|v| extensions.contains(&v))
         {
             visit(&path)?;
         }
@@ -399,6 +416,39 @@ fn scan(job: &Job, provider: &str, root: &Path) -> AppResult<()> {
             "zcode" => crate::zcode_sessions::scan(root, Some(&job.cancel), &mut callback)?,
             _ => crate::opencode_sessions::scan(root, Some(&job.cancel), &mut callback)?,
         }
+    } else if matches!(provider, "qwen" | "cline" | "copilot" | "antigravity") {
+        discover_files(job, root, 6, &["jsonl", "json", "md"], |path| {
+            let valid = match provider {
+                "qwen" => crate::qwen_sessions::is_main_transcript(root, path),
+                "cline" => crate::cline_sessions::is_main_transcript(root, path),
+                "copilot" => crate::copilot_sessions::is_main_transcript(root, path),
+                "antigravity" => crate::antigravity_sessions::is_main_transcript(root, path),
+                _ => false,
+            };
+            if !valid {
+                return Ok(());
+            }
+            job.check()?;
+            job.current("reading", path);
+            job.update(|s| s.discovered_files += 1);
+            let result = match provider {
+                "qwen" => crate::qwen_sessions::parse_session(root, path, Some(&job.cancel)),
+                "cline" => crate::cline_sessions::parse_session(root, path, Some(&job.cancel)),
+                "copilot" => crate::copilot_sessions::parse_session(root, path, Some(&job.cancel)),
+                "antigravity" => {
+                    crate::antigravity_sessions::parse_session(root, path, Some(&job.cancel))
+                }
+                _ => unreachable!(),
+            };
+            match result {
+                Ok(Some(session)) => job.update(|s| s.results.push(session)),
+                Ok(None) => {}
+                Err(AppError::Cancelled) => return Err(AppError::Cancelled),
+                Err(e) => job.failure(path, e),
+            }
+            job.update(|s| s.processed_files += 1);
+            Ok(())
+        })?;
     } else if provider == "dsh" {
         let directory = root.join("sessions");
         crate::path_safety::validate_descendant(
@@ -810,12 +860,20 @@ mod tests {
             None,
             None,
             None,
+            None,
+            None,
+            None,
+            None,
         )
         .is_err());
         assert!(start_workbench_scan(
             "cursor".into(),
             "".into(),
             "".into(),
+            None,
+            None,
+            None,
+            None,
             None,
             None,
             None,
@@ -843,6 +901,10 @@ mod tests {
             "claude".into(),
             "".into(),
             root.to_string_lossy().into_owned(),
+            None,
+            None,
+            None,
+            None,
             None,
             None,
             None,

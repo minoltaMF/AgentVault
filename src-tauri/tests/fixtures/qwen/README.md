@@ -1,0 +1,7 @@
+# Qwen Code read-only adapter fixtures
+
+- Official source: https://github.com/QwenLM/qwen-code at `085e98c00cac2f8dd29eb39c760409bc6da889a9` (Apache-2.0; `LICENSE.qwen-code`). Checked `packages/core/src/config/storage.ts`, `services/session-transcript-reader.ts`, and `utils/transcript-records.ts`.
+- Small parsing/projection rules ported from https://github.com/jazzyalex/agent-sessions at `ab439f13211e56b809f4a917d5c38e80d2bb5258`, `QwenSessionParser.swift` / `QwenSessionDiscovery.swift` (MIT, Copyright (c) 2026 Alexander Malakhov; `LICENSE.agent-sessions`).
+- The JSONL fixture is synthetic, authored for AgentVault. It contains no user data. It covers the selected parent chain, abandoned rewind branch, repeated-UUID fragments, tool calls/results, reserved hook context, custom title and non-conversation artifact records.
+
+Configured root is `QWEN_HOME` or `~/.qwen`. Only `projects/<project>/chats/<32..36 hex-or-dash ID>.jsonl` and `chats/archive/<ID>.jsonl` are supported. Auxiliary telemetry and backups are not sessions. This is an event-shape implementation, not a claim that every released Qwen version was runtime-tested. Unknown record types, cycles, missing parents, inconsistent fragment identity, mixed session IDs and incomplete lines fail visibly. Complete concatenated JSON objects on a physical line are accepted, arbitrary junk is rejected. Reads are capped at 128 MiB and cancellation is checked while reading/projecting. Attachments are not dereferenced; no native writes or runtime dependencies are introduced.

@@ -47,6 +47,10 @@ export function SettingsSheet({ trigger }: Props) {
   const [grok, setGrok] = useState("");
   const [dsh, setDsh] = useState("");
   const [hermes, setHermes] = useState("");
+  const [qwen, setQwen] = useState("");
+  const [cline, setCline] = useState("");
+  const [copilot, setCopilot] = useState("");
+  const [antigravity, setAntigravity] = useState("");
   const [zcode, setZcode] = useState("");
   const [pi, setPi] = useState("");
   const [qoder, setQoder] = useState("");
@@ -70,6 +74,10 @@ export function SettingsSheet({ trigger }: Props) {
     setGrok(settings.grok_dir ?? "");
     setDsh(settings.dsh_dir ?? "");
     setHermes(settings.hermes_dir ?? "");
+    setQwen(settings.qwen_dir ?? "");
+    setCline(settings.cline_dir ?? "");
+    setCopilot(settings.copilot_dir ?? "");
+    setAntigravity(settings.antigravity_dir ?? "");
     setZcode(settings.zcode_dir ?? "");
     setPi(settings.pi_dir ?? "");
     setQoder(settings.qoder_dir ?? "");
@@ -170,6 +178,10 @@ export function SettingsSheet({ trigger }: Props) {
       dsh_dir: dsh,
       hermes_dir: hermes,
       zcode_dir: zcode,
+      qwen_dir: qwen,
+      cline_dir: cline,
+      copilot_dir: copilot,
+      antigravity_dir: antigravity,
       pi_dir: pi,
       qoder_dir: qoder,
       opencode_dir: opencode,
@@ -316,6 +328,10 @@ export function SettingsSheet({ trigger }: Props) {
           </DirField>
           <DirField label="DeepSeek Harness 配置目录（只读）" value={dsh} onChange={setDsh} placeholder="~/.dsh" onPick={() => pick(setDsh, dsh)} onRestoreDefault={() => { void api.defaultDshDir().then(setDsh).catch((error) => toast.error(String(error))); }}><p className="text-xs text-muted-foreground">在“全部会话”读取本地记录。支持 v3/v4，旧版本会明确报告不支持。</p></DirField>
           <DirField label="Hermes Agent 配置目录（只读）" value={hermes} onChange={setHermes} placeholder="~/.hermes" onPick={() => pick(setHermes, hermes)} onRestoreDefault={() => { void api.defaultHermesDir().then(setHermes).catch((error) => toast.error(String(error))); }}><p className="text-xs text-muted-foreground">在“全部会话”读取本地记录。选择包含 state.db 的目录。</p></DirField>
+          <DirField label="Qwen Code 配置目录（只读）" value={qwen} onChange={setQwen} onPick={() => pick(setQwen, qwen)} onRestoreDefault={() => { void api.defaultQwenDir().then(setQwen).catch((error) => toast.error(String(error))); }}><p className="text-xs text-muted-foreground">选择 ~/.qwen（或 QWEN_HOME），读取 projects 下的会话。</p></DirField>
+          <DirField label="Cline CLI/Desktop 配置目录（只读）" value={cline} onChange={setCline} onPick={() => pick(setCline, cline)} onRestoreDefault={() => { void api.defaultClineDir().then(setCline).catch((error) => toast.error(String(error))); }}><p className="text-xs text-muted-foreground">选择 ~/.cline/data（或 CLINE_DATA_DIR），读取 sessions；不包含 VS Code 扩展历史。</p></DirField>
+          <DirField label="GitHub Copilot CLI 配置目录（只读）" value={copilot} onChange={setCopilot} onPick={() => pick(setCopilot, copilot)} onRestoreDefault={() => { void api.defaultCopilotDir().then(setCopilot).catch((error) => toast.error(String(error))); }}><p className="text-xs text-muted-foreground">选择 ~/.copilot，读取 session-state；不包含 VS Code Copilot Chat。</p></DirField>
+          <DirField label="Antigravity 配置目录（只读）" value={antigravity} onChange={setAntigravity} onPick={() => pick(setAntigravity, antigravity)} onRestoreDefault={() => { void api.defaultAntigravityDir().then(setAntigravity).catch((error) => toast.error(String(error))); }}><p className="text-xs text-muted-foreground">选择 ~/.gemini，区分 CLI 对话与 brain Markdown 产物；产物不代表完整对话。</p></DirField>
           <DirField label="ZCode 配置目录（只读）" value={zcode} onChange={setZcode} placeholder="~/.zcode" onPick={() => pick(setZcode, zcode)} onRestoreDefault={() => { void api.defaultZcodeDir().then(setZcode).catch((error) => toast.error(String(error))); }}><p className="text-xs text-muted-foreground">在“全部会话”读取本地记录。选择包含 cli/db/db.sqlite 的 .zcode 目录。</p></DirField>
           <DirField label="Pi 配置目录（只读）" value={pi} onChange={setPi} placeholder="~/.pi/agent" onPick={() => pick(setPi, pi)} onRestoreDefault={() => { void api.defaultPiDir().then(setPi).catch((error) => toast.error(String(error))); }}>
             <p className="text-xs text-muted-foreground">在“全部会话”读取 sessions 下的本地会话，仅显示当前分支。</p>

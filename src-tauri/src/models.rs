@@ -4,6 +4,14 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
+    #[serde(default = "default_qwen_dir")]
+    pub qwen_dir: String,
+    #[serde(default = "default_cline_dir")]
+    pub cline_dir: String,
+    #[serde(default = "default_copilot_dir")]
+    pub copilot_dir: String,
+    #[serde(default = "default_antigravity_dir")]
+    pub antigravity_dir: String,
     #[serde(default = "default_zcode_dir")]
     pub zcode_dir: String,
     #[serde(default = "default_hermes_dir")]
@@ -35,6 +43,27 @@ pub struct Settings {
     /// true = 过程消息默认全部收起；false = 默认全部展开。
     #[serde(default = "default_true")]
     pub preview_collapse_process: bool,
+}
+
+fn default_qwen_dir() -> String {
+    crate::paths::default_qwen_dir()
+        .to_string_lossy()
+        .into_owned()
+}
+fn default_cline_dir() -> String {
+    crate::paths::default_cline_dir()
+        .to_string_lossy()
+        .into_owned()
+}
+fn default_copilot_dir() -> String {
+    crate::paths::default_copilot_dir()
+        .to_string_lossy()
+        .into_owned()
+}
+fn default_antigravity_dir() -> String {
+    crate::paths::default_antigravity_dir()
+        .to_string_lossy()
+        .into_owned()
 }
 
 fn default_dsh_dir() -> String {
@@ -115,6 +144,10 @@ impl Default for Settings {
             dsh_dir: default_dsh_dir(),
             hermes_dir: default_hermes_dir(),
             zcode_dir: default_zcode_dir(),
+            qwen_dir: default_qwen_dir(),
+            cline_dir: default_cline_dir(),
+            copilot_dir: default_copilot_dir(),
+            antigravity_dir: default_antigravity_dir(),
             pi_dir: default_pi_dir(),
             codex_dir: codex.to_string_lossy().into_owned(),
             claude_dir: claude.to_string_lossy().into_owned(),
@@ -136,6 +169,10 @@ impl Default for Settings {
 /// 字段为 `None` 表示"用该 provider 的默认目录"。
 #[derive(Debug, Clone, Default)]
 pub struct ProviderDirs {
+    pub qwen_dir: Option<String>,
+    pub cline_dir: Option<String>,
+    pub copilot_dir: Option<String>,
+    pub antigravity_dir: Option<String>,
     pub zcode_dir: Option<String>,
     pub hermes_dir: Option<String>,
     pub dsh_dir: Option<String>,

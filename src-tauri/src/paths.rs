@@ -416,3 +416,22 @@ pub fn default_dsh_dir() -> PathBuf {
         .map(PathBuf::from)
         .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".dsh"))
 }
+
+pub fn default_qwen_dir() -> PathBuf {
+    std::env::var_os("QWEN_HOME")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".qwen"))
+}
+pub fn default_cline_dir() -> PathBuf {
+    std::env::var_os("CLINE_DATA_DIR")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".cline/data"))
+}
+pub fn default_copilot_dir() -> PathBuf {
+    dirs::home_dir().unwrap_or_default().join(".copilot")
+}
+pub fn default_antigravity_dir() -> PathBuf {
+    dirs::home_dir().unwrap_or_default().join(".gemini")
+}

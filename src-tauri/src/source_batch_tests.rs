@@ -75,6 +75,10 @@ fn workbench_four_sources_search_and_preview_share_exact_positions() -> AppResul
             Some(hermes.to_string_lossy().into_owned()),
             Some(zcode.to_string_lossy().into_owned()),
             Some(opencode.to_string_lossy().into_owned()),
+            None,
+            None,
+            None,
+            None,
         )?;
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         loop {
@@ -267,5 +271,134 @@ fn dsh_compressed_generation_and_failure_contract() -> AppResult<()> {
         crate::dsh_sessions::parse_session(&f.0, &directory.join("session.v5.jsonl"), None)
             .is_err()
     );
+    Ok(())
+}
+
+#[test]
+fn batch11_workbench_scans_searches_and_locates_readonly_content() -> AppResult<()> {
+    let f = Fixture::new();
+    let qwen = f.0.join("qwen");
+    let cline = f.0.join("cline");
+    let copilot = f.0.join("copilot");
+    let antigravity = f.0.join("antigravity");
+    let files = [
+        (
+            qwen.join("projects/demo/chats/019f0000-0000-7000-8000-000000000001.jsonl"),
+            include_str!("../tests/fixtures/qwen/019f0000-0000-7000-8000-000000000001.jsonl"),
+        ),
+        (
+            cline.join("sessions/cline-cli-tool/cline-cli-tool.json"),
+            include_str!("../tests/fixtures/cline/cli_tool/cline-cli-tool.json"),
+        ),
+        (
+            cline.join("sessions/cline-cli-tool/cline-cli-tool.messages.json"),
+            include_str!("../tests/fixtures/cline/cli_tool/cline-cli-tool.messages.json"),
+        ),
+        (
+            copilot.join("session-state/copilot_stage0_small/events.jsonl"),
+            include_str!("../tests/fixtures/copilot/copilot_stage0_small.jsonl"),
+        ),
+        (
+            antigravity.join("antigravity-cli/brain/demo/.system_generated/logs/transcript.jsonl"),
+            include_str!("../tests/fixtures/antigravity/cli_small.jsonl"),
+        ),
+        (
+            antigravity.join("antigravity/brain/demo/task.md"),
+            include_str!("../tests/fixtures/antigravity/small.md"),
+        ),
+    ];
+    for (path, content) in &files {
+        fs::create_dir_all(path.parent().unwrap())?;
+        fs::write(path, content)?;
+    }
+    // One broken source must remain a visible per-file failure alongside usable sessions.
+    let bad = qwen.join("projects/demo/chats/019f0000-0000-7000-8000-000000000002.jsonl");
+    fs::write(&bad, "{broken\n")?;
+    let dirs = crate::models::ProviderDirs {
+        codex_dir: f.0.to_string_lossy().into_owned(),
+        qwen_dir: Some(qwen.to_string_lossy().into_owned()),
+        cline_dir: Some(cline.to_string_lossy().into_owned()),
+        copilot_dir: Some(copilot.to_string_lossy().into_owned()),
+        antigravity_dir: Some(antigravity.to_string_lossy().into_owned()),
+        ..Default::default()
+    };
+    for (provider, query, count) in [
+        ("qwen", "visible question", 1),
+        ("cline", "Inspect fixture.txt", 1),
+        ("copilot", "List the files", 1),
+        ("antigravity", "List the files", 2),
+    ] {
+        let job = crate::workbench_scan::start_workbench_scan(
+            provider.into(),
+            dirs.codex_dir.clone(),
+            String::new(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            dirs.qwen_dir.clone(),
+            dirs.cline_dir.clone(),
+            dirs.copilot_dir.clone(),
+            dirs.antigravity_dir.clone(),
+        )?;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let sessions = loop {
+            let status = crate::workbench_scan::workbench_scan_status(job.job_id)?;
+            if status.state != "running" {
+                assert_eq!(status.state, "completed", "{:?}", status.error);
+                assert_eq!(status.failed_files, if provider == "qwen" { 1 } else { 0 });
+                assert_eq!(status.results.len(), count);
+                break status.results;
+            }
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        };
+        assert!(sessions.iter().all(|s| s.resume_command.is_empty()));
+        if provider == "antigravity" {
+            assert!(sessions
+                .iter()
+                .any(|s| s.source.as_deref() == Some("artifact-incomplete")
+                    && s.title.contains("非完整对话")));
+        }
+        let job = crate::content_search::start_workbench_content_search(
+            dirs.clone(),
+            query.into(),
+            vec![crate::content_search::ContentSearchScope {
+                provider: provider.into(),
+                rollout_paths: sessions.iter().map(|s| s.rollout_path.clone()).collect(),
+            }],
+        )?;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        loop {
+            let status = crate::content_search::content_search_status(job.job_id)?;
+            if status.state != "running" {
+                assert_eq!(status.state, "completed", "{:?}", status.error);
+                assert_eq!(status.failed_files, 0, "{:?}", status.failures);
+                assert!(!status.results.is_empty(), "{provider}");
+                for result in status.results {
+                    for hit in result.matches {
+                        let events = crate::rollout::preview_session_range(
+                            Some(provider.into()),
+                            result.session.rollout_path.clone(),
+                            hit.event_offset,
+                            1,
+                        )?;
+                        assert_eq!(events[0].index, hit.event_index);
+                        assert!(crate::rollout::preview_event_text(&events[0]).contains(query));
+                    }
+                }
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+    for (path, content) in files {
+        assert_eq!(fs::read_to_string(path)?, content);
+    }
     Ok(())
 }

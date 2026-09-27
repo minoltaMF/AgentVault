@@ -25,7 +25,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 type Props = {
-  workbenchScopes?: { provider: "codex" | "claude" | "qoder" | "workbuddy" | "grok" | "pi" | "dsh" | "hermes" | "opencode" | "zcode"; rollout_paths: string[] }[];
+  workbenchScopes?: { provider: "codex" | "claude" | "qoder" | "workbuddy" | "grok" | "pi" | "dsh" | "hermes" | "opencode" | "zcode" | "qwen" | "cline" | "copilot" | "antigravity"; rollout_paths: string[] }[];
   retained?: { query: string; status: ContentSearchStatus | null; scrollTop?: number };
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -39,6 +39,10 @@ type Props = {
   dshDir?: string;
   hermesDir?: string;
   zcodeDir?: string;
+  qwenDir?: string;
+  clineDir?: string;
+  copilotDir?: string;
+  antigravityDir?: string;
   opencodeDir: string;
   cursorDir: string;
   showSubagentSessions: boolean;
@@ -66,6 +70,10 @@ export function ContentSearchDialog({
   dshDir,
   hermesDir,
   zcodeDir,
+  qwenDir,
+  clineDir,
+  copilotDir,
+  antigravityDir,
   opencodeDir,
   cursorDir,
   showSubagentSessions,
@@ -101,6 +109,10 @@ export function ContentSearchDialog({
   dshDir,
   hermesDir,
   zcodeDir,
+  qwenDir,
+  clineDir,
+  copilotDir,
+  antigravityDir,
     opencodeDir,
     cursorDir,
     showSubagentSessions,
@@ -260,7 +272,7 @@ export function ContentSearchDialog({
     setStatus(null);
     try {
       const started = workbenchScopes ? await api.startWorkbenchContentSearch({
-        codexDir, claudeDir, qoderDir, workbuddyDir, grokDir, piDir, dshDir, hermesDir, opencodeDir, zcodeDir, query: normalized, scopes: workbenchScopes,
+        codexDir, claudeDir, qoderDir, workbuddyDir, grokDir, piDir, dshDir, hermesDir, opencodeDir, zcodeDir, qwenDir, clineDir, copilotDir, antigravityDir, query: normalized, scopes: workbenchScopes,
       }) : await api.startContentSearch({
         provider,
         codexDir,

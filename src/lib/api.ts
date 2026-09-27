@@ -53,12 +53,16 @@ function resumeCommandText(provider: SessionProvider, sessionId: string, cwd?: s
     case "dsh":
     case "hermes":
     case "zcode":
+    case "qwen":
+    case "cline":
+    case "copilot":
+    case "antigravity":
       return "";
   }
 }
 
 export type CoreSessionProvider = "codex" | "claude";
-export type SessionProvider = CoreSessionProvider | "opencode" | "cursor" | "qoder" | "workbuddy" | "grok" | "pi" | "dsh" | "hermes" | "zcode";
+export type SessionProvider = CoreSessionProvider | "opencode" | "cursor" | "qoder" | "workbuddy" | "grok" | "pi" | "dsh" | "hermes" | "zcode" | "qwen" | "cline" | "copilot" | "antigravity";
 export type StatsProvider = "all" | SessionProvider;
 
 export type Settings = {
@@ -71,6 +75,10 @@ export type Settings = {
   dsh_dir: string;
   hermes_dir: string;
   zcode_dir: string;
+  qwen_dir: string;
+  cline_dir: string;
+  copilot_dir: string;
+  antigravity_dir: string;
   opencode_dir: string;
   cursor_dir: string;
   backup_dir: string;
@@ -1027,6 +1035,10 @@ export const api = {
   defaultGrokDir: () => invokeCommand<string>("default_grok_dir"),
   defaultDshDir: () => invokeCommand<string>("default_dsh_dir"),
   defaultHermesDir: () => invokeCommand<string>("default_hermes_dir"),
+  defaultQwenDir: () => invokeCommand<string>("default_qwen_dir"),
+  defaultClineDir: () => invokeCommand<string>("default_cline_dir"),
+  defaultCopilotDir: () => invokeCommand<string>("default_copilot_dir"),
+  defaultAntigravityDir: () => invokeCommand<string>("default_antigravity_dir"),
   defaultZcodeDir: () => invokeCommand<string>("default_zcode_dir"),
   defaultPiDir: () => invokeCommand<string>("default_pi_dir"),
   defaultQoderDir: () => invokeCommand<string>("default_qoder_dir"),
@@ -1040,8 +1052,8 @@ export const api = {
   listSessions: (provider: SessionProvider, codexDir: string, claudeDir?: string, opencodeDir?: string, cursorDir?: string) =>
     invokeCommand<SessionSummary[]>("list_sessions", { provider, codexDir, claudeDir, opencodeDir, cursorDir }),
 
-  startWorkbenchScan: (provider: "codex" | "claude" | "qoder" | "workbuddy" | "grok" | "pi" | "dsh" | "hermes" | "opencode" | "zcode", codexDir: string, claudeDir: string, qoderDir?: string, workbuddyDir?: string, grokDir?: string, piDir?: string, dshDir?: string, hermesDir?: string, opencodeDir?: string, zcodeDir?: string) =>
-    invokeCommand<{ job_id: number }>("start_workbench_scan", { provider, codexDir, claudeDir, qoderDir, workbuddyDir, grokDir, piDir, dshDir, hermesDir, opencodeDir, zcodeDir }),
+  startWorkbenchScan: (provider: "codex" | "claude" | "qoder" | "workbuddy" | "grok" | "pi" | "dsh" | "hermes" | "opencode" | "zcode" | "qwen" | "cline" | "copilot" | "antigravity", codexDir: string, claudeDir: string, qoderDir?: string, workbuddyDir?: string, grokDir?: string, piDir?: string, dshDir?: string, hermesDir?: string, opencodeDir?: string, zcodeDir?: string, qwenDir?: string, clineDir?: string, copilotDir?: string, antigravityDir?: string) =>
+    invokeCommand<{ job_id: number }>("start_workbench_scan", { provider, codexDir, claudeDir, qoderDir, workbuddyDir, grokDir, piDir, dshDir, hermesDir, opencodeDir, zcodeDir, qwenDir, clineDir, copilotDir, antigravityDir }),
   workbenchScanStatus: (jobId: number) => invokeCommand<WorkbenchScanStatus>("workbench_scan_status", { jobId }),
   cancelWorkbenchScan: (jobId: number) => invokeCommand<void>("cancel_workbench_scan", { jobId }),
   groupByProject: (provider: SessionProvider, codexDir: string, claudeDir?: string, opencodeDir?: string, cursorDir?: string) =>
@@ -1059,7 +1071,7 @@ export const api = {
   }) => invokeCommand<{ job_id: number }>("start_content_search", p),
   contentSearchStatus: (jobId: number) =>
     invokeCommand<ContentSearchStatus>("content_search_status", { jobId }),
-  startWorkbenchContentSearch: (p: { codexDir: string; claudeDir: string; qoderDir?: string; workbuddyDir?: string; grokDir?: string; piDir?: string; dshDir?: string; hermesDir?: string; opencodeDir?: string; zcodeDir?: string; query: string; scopes: { provider: "codex" | "claude" | "qoder" | "workbuddy" | "grok" | "pi" | "dsh" | "hermes" | "opencode" | "zcode"; rollout_paths: string[] }[] }) =>
+  startWorkbenchContentSearch: (p: { codexDir: string; claudeDir: string; qoderDir?: string; workbuddyDir?: string; grokDir?: string; piDir?: string; dshDir?: string; hermesDir?: string; opencodeDir?: string; zcodeDir?: string; qwenDir?: string; clineDir?: string; copilotDir?: string; antigravityDir?: string; query: string; scopes: { provider: "codex" | "claude" | "qoder" | "workbuddy" | "grok" | "pi" | "dsh" | "hermes" | "opencode" | "zcode" | "qwen" | "cline" | "copilot" | "antigravity"; rollout_paths: string[] }[] }) =>
     invokeCommand<{ job_id: number }>("start_workbench_content_search", p),
   activeContentSearch: () =>
     invokeCommand<{ job_id: number } | null>("active_content_search"),

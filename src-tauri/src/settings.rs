@@ -388,3 +388,22 @@ pub fn default_hermes_dir() -> String {
 pub fn default_zcode_dir() -> String {
     paths::default_zcode_dir().to_string_lossy().into_owned()
 }
+
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub fn default_qwen_dir() -> String {
+    paths::default_qwen_dir().to_string_lossy().into_owned()
+}
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub fn default_cline_dir() -> String {
+    paths::default_cline_dir().to_string_lossy().into_owned()
+}
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub fn default_copilot_dir() -> String {
+    paths::default_copilot_dir().to_string_lossy().into_owned()
+}
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub fn default_antigravity_dir() -> String {
+    paths::default_antigravity_dir()
+        .to_string_lossy()
+        .into_owned()
+}
