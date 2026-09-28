@@ -61,3 +61,18 @@ for (const [provider, rootIndex] of [["workbuddy", 3], ["grok", 4], ["pi", 5], [
     assert.deepEqual(cache.view(...roots), { search: "", page: 0, scrollTop: 0 });
   });
 }
+
+test("source presentation survives return but resets when a directory changes", () => {
+  const cache = createWorkbenchCache();
+  const source = cache.source("qwen", "/qwen", "/codex");
+  source.used = true; // A failed or cancelled read also counts as used.
+  const view = cache.view("/codex", "/claude");
+  view.sourcesExpanded = true;
+  view.sourceDetails = ["Qwen Code"];
+  assert.equal(cache.source("qwen", "/qwen", "/codex").used, true);
+  assert.equal(cache.view("/codex", "/claude").sourcesExpanded, true);
+  assert.deepEqual(cache.view("/codex", "/claude").sourceDetails, ["Qwen Code"]);
+  assert.equal(cache.source("qwen", "/new-qwen", "/codex").used, undefined);
+  assert.equal(cache.view("/codex", "/new-claude").sourcesExpanded, undefined);
+  assert.equal(cache.view("/codex", "/new-claude").sourceDetails, undefined);
+});

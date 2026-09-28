@@ -25,6 +25,7 @@ export function useWorkbenchSource(provider: WorkbenchProvider, root: string, co
 
   const refresh = useCallback(async () => {
     if (!root || inFlight.current) return;
+    cache.used = true;
     inFlight.current = true; cancelRequested.current = false;
     const request = requests.current.next();
     const current = () => requests.current.current(request);
@@ -81,5 +82,5 @@ export function useWorkbenchSource(provider: WorkbenchProvider, root: string, co
       if (job.current === activeJob) { setCancelling(false); setError(`停止请求失败：${error instanceof Error ? error.message : String(error)}`); }
     }
   };
-  return { sessions, state, error, checkedAt, progress, cancelling, refresh, cancel, retry: () => retryPoll.current?.() };
+  return { used: cache.used || !!cache.completed, sessions, state, error, checkedAt, progress, cancelling, refresh, cancel, retry: () => retryPoll.current?.() };
 }

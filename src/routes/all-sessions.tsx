@@ -2,12 +2,13 @@ import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
 import { useSettings } from "@/stores/settings";
 import { useWorkbenchSource } from "@/hooks/useWorkbenchSource";
-import { scanProgressText, workbenchSessions } from "@/lib/allSessions";
+import { workbenchSessions } from "@/lib/allSessions";
 import { workbenchCache } from "@/lib/workbenchCache";
 import { providerLabel } from "@/lib/providerTheme";
 import { sessionIdentity } from "@/lib/sessionIdentity";
 import type { SessionSummary } from "@/lib/api";
 import { absoluteTime } from "@/lib/format";
+import { WorkbenchSources } from "@/components/WorkbenchSources";
 import { TopBar } from "@/components/TopBar";
 import { PreviewDialog, type PreviewJump } from "@/components/PreviewDialog";
 import { ContentSearchDialog } from "@/components/ContentSearchDialog";
@@ -88,36 +89,14 @@ function Workbench({ codexRoot, claudeRoot, qoderRoot, workbuddyRoot, grokRoot, 
     setParams((old) => { const next = new URLSearchParams(old); if (value) next.set(name, value); else next.delete(name); return next; }, { replace: true });
     setPage(0);
   };
-  const refresh = () => { void codex.refresh(); void claude.refresh(); void qoder.refresh(); void workbuddy.refresh(); void grok.refresh(); void pi.refresh(); };
+  const refresh = () => { for (const source of sources) if (source.root) void source.data.refresh(); };
 
   return <>
     <TopBar title="全部会话" stats={`${filtered.length} 条`} refreshing={busy} onRefresh={refresh} showListTools={false} />
     <ScrollArea className="min-h-0 flex-1" viewportRef={viewport}>
       <div className="space-y-5 p-4 md:p-6">
         <p className="text-sm text-muted-foreground">在一处查找已支持来源的本地会话。选择读取来源后开始；预览为只读。</p>
-        <div className="grid min-w-0 gap-3 lg:grid-cols-3">
-          {sources.map(({ name, root, data }) => <section key={name} aria-label={`${name} 来源`} className="min-w-0 space-y-2 rounded-lg border p-3">
-            <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="font-medium">{name}</h2><Badge variant="outline">{!root ? "未配置" : data.state === "interrupted" ? "状态待确认" : data.state === "cancelled" ? "已停止" : data.state === "loading" ? data.cancelling ? "正在停止" : "正在读取" : data.state === "error" ? "读取失败" : data.state === "ready" ? `${data.progress?.failed_files ? "部分完成 · " : ""}已读取 ${data.sessions.length} 条` : "尚未读取"}</Badge></div>
-            <p className="break-all text-xs text-muted-foreground">设置中的来源：{root || "请先配置数据目录"}</p>
-            {data.checkedAt && <p className="text-xs text-muted-foreground">上次扫描完成：{new Date(data.checkedAt).toLocaleString()}；显示上次结果，刷新后更新</p>}
-            {data.error && <p role="alert" className="break-all text-xs text-destructive">{data.error}</p>}
-            {data.progress && <div className="space-y-1 text-xs">
-              <p role="status">{scanProgressText(data.progress)}</p>
-              {data.progress.current_path && data.state === "loading" && <p className="truncate text-muted-foreground" title={data.progress.current_path}>当前：{data.progress.current_path}</p>}
-              {!!data.progress.failed_files && <details><summary className="cursor-pointer text-destructive">查看文件 / 目录失败报告（{data.progress.failed_files}）</summary>
-                <ul className="mt-2 max-h-48 space-y-2 overflow-auto">{data.progress.errors.map((item, index) => <li key={`${item.path}:${index}`} className="break-all rounded border p-2"><p className="font-mono">{item.path}</p><p className="mt-1">{item.message}</p></li>)}</ul>
-                {data.progress.errors_truncated && <p className="mt-2 text-muted-foreground">报告过长，仅显示部分失败详情；总数仍计入上方统计。</p>}
-              </details>}
-            </div>}
-            {data.state === "cancelled" && <p className="text-xs text-muted-foreground">本次扫描已停止，未用未完成的结果替换列表。可重新读取。</p>}
-            {data.state === "interrupted" && <p className="text-xs text-muted-foreground">扫描可能仍在运行。请重试查询，或请求停止；此时不会创建重复任务。</p>}
-            <div className="flex flex-wrap gap-2">
-              <Button size="sm" variant="outline" disabled={!root || data.state === "loading" || data.state === "interrupted"} onClick={() => { void data.refresh(); }}>{data.state === "loading" ? "正在读取…" : data.state === "error" ? `重试 ${name}` : data.checkedAt ? `刷新 ${name}` : `读取 ${name}`}</Button>
-              {(data.state === "loading" || data.state === "interrupted") && <Button size="sm" variant="outline" disabled={data.cancelling} onClick={() => { void data.cancel(); }}>{data.cancelling ? "正在停止…" : `停止 ${name} 扫描`}</Button>}
-              {data.state === "interrupted" && <Button size="sm" variant="outline" onClick={data.retry}>重试查询 {name}</Button>}
-            </div>
-          </section>)}
-        </div>
+        <WorkbenchSources sources={sources} view={savedView} />
         <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <label className="min-w-0 space-y-1 text-xs">搜索标题、首条消息、ID 或路径<Input aria-label="搜索会话" value={query} onChange={(e) => filter("q", e.target.value)} placeholder="不搜索全部正文" /></label>
           <label className="min-w-0 space-y-1 text-xs">来源<select aria-label="来源" className={selectClass} value={provider} onChange={(e) => filter("provider", e.target.value)}><option value="">所有来源</option><option value="codex">Codex</option><option value="claude">Claude</option><option value="qoder">Qoder CLI</option><option value="workbuddy">WorkBuddy</option><option value="grok">Grok Build CLI</option><option value="pi">Pi</option><option value="dsh">DeepSeek Harness</option><option value="hermes">Hermes Agent</option><option value="opencode">OpenCode</option><option value="zcode">ZCode</option><option value="qwen">Qwen Code</option><option value="cline">Cline CLI/Desktop</option><option value="copilot">GitHub Copilot CLI</option><option value="antigravity">Antigravity</option></select></label>
@@ -126,7 +105,7 @@ function Workbench({ codexRoot, claudeRoot, qoderRoot, workbuddyRoot, grokRoot, 
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground"><span>按更新时间降序 · 共 {filtered.length} 条 · 每页 {PAGE_SIZE} 条</span>{(query || provider || project || archive) && <Button size="sm" variant="ghost" onClick={() => { setParams({}); setPage(0); }}>清除筛选</Button>}</div>
         <div className="flex flex-wrap items-center gap-3"><Button variant="outline" disabled={!filtered.length || busy} onClick={() => setContentSearchOpen(true)}>搜索正文</Button><span className="text-xs text-muted-foreground">手动搜索当前筛选范围内全部会话的用户与助手消息，不限于当前页。</span></div>
-        {!filtered.length && <p role="status" className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">{busy ? "正在读取来源，请稍候…" : all.length ? "没有符合筛选条件的会话。" : sources.every((s) => s.data.state === "idle") ? "点击来源卡片读取，或使用顶部刷新读取已配置的来源。" : "当前没有可显示的会话，请检查来源状态或重试。"}</p>}
+        {!filtered.length && <p role="status" className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">{busy ? "正在读取来源，请稍候…" : all.length ? "没有符合筛选条件的会话。" : sources.every((s) => s.data.state === "idle") ? "展开未使用来源选择读取，或使用顶部刷新读取已配置的来源。" : "当前没有可显示的会话，请检查来源状态或重试。"}</p>}
         <section aria-label="统一会话列表" className="space-y-2">
           {filtered.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE).map((session) => <article key={sessionIdentity(session)} className="min-w-0 rounded-lg border p-4">
             <div className="flex flex-wrap items-center gap-2"><Badge variant="outline">{providerLabel(session.provider)}</Badge>{session.archived && <Badge variant="secondary">已归档</Badge>}<span className="ml-auto text-xs text-muted-foreground">{absoluteTime(session.updated_at)}</span></div>

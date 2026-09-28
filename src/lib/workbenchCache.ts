@@ -1,8 +1,8 @@
 import type { WorkbenchScanStatus } from "./api";
 import type { WorkbenchProvider } from "./allSessions";
 
-export type SourceCache = { completed: { progress: WorkbenchScanStatus; checkedAt: string } | null };
-export type WorkbenchView = { search: string; page: number; scrollTop: number };
+export type SourceCache = { used?: boolean; completed: { progress: WorkbenchScanStatus; checkedAt: string } | null };
+export type WorkbenchView = { search: string; page: number; scrollTop: number; sourcesExpanded?: boolean; sourceDetails?: string[] };
 
 /** Application-lifetime only. Keep one scope per provider; abandoned scopes cannot publish
  * into their replacements, and changing back to an old root does not resurrect its data. */
