@@ -227,6 +227,9 @@ export type ContentSearchResult = {
 };
 
 export type ContentSearchStatus = {
+  reused_files?: number;
+  indexed_files?: number;
+  index_updated_at_ms?: number | null;
   failures?: string[];
   failed_files?: number;
   job_id: number;
@@ -1075,6 +1078,8 @@ export const api = {
     invokeCommand<{ job_id: number }>("start_workbench_content_search", p),
   activeContentSearch: () =>
     invokeCommand<{ job_id: number } | null>("active_content_search"),
+  cachedWorkbenchSessions: (codexDir: string, claudeDir: string) =>
+    invokeCommand<{ sessions: SessionSummary[]; index_updated_at_ms: number | null }>("cached_workbench_sessions", { codexDir, claudeDir }),
   cancelContentSearch: (jobId: number) =>
     invokeCommand<void>("cancel_content_search", { jobId }),
   setArchived: (provider: SessionProvider, codexDir: string, id: string, v: boolean, opencodeDir?: string, cursorDir?: string) =>

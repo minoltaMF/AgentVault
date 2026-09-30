@@ -1,5 +1,12 @@
 import type { ContentSearchStatus, SessionSummary } from "./api";
 
+/** A completed native scan, even empty, supersedes historical index metadata. */
+export function mergeIndexedSessions(live: readonly SessionSummary[], indexed: readonly SessionSummary[], refreshed: readonly string[]) {
+  const keys = new Set(live.map(row => JSON.stringify([row.provider, row.rollout_path])));
+  return [...live, ...indexed.filter(row => !refreshed.includes(row.provider)
+    && !keys.has(JSON.stringify([row.provider, row.rollout_path])))];
+}
+
 export function workbenchSearchScopes(sessions: readonly SessionSummary[]) {
   return (["codex", "claude", "qoder", "workbuddy", "grok", "pi", "dsh", "hermes", "opencode", "zcode", "qwen", "cline", "copilot", "antigravity"] as const).map(provider => ({
     provider,

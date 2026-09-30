@@ -52,6 +52,13 @@ struct WebuiState {
 pub fn run(config: WebuiConfig) -> AppResult<()> {
     let dist_dir = resolve_dist_dir()?;
     let settings_file = resolve_settings_file()?;
+    crate::workbench_index::configure_index_path(
+        std::path::absolute(&settings_file)?
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join("search-index")
+            .join("registry.sqlite3"),
+    )?;
     let settings_exists = settings_file.exists();
     let mut initial_settings = if settings_exists {
         settings::read_settings_file(&settings_file)?
@@ -237,6 +244,9 @@ fn dispatch_invoke(state: &WebuiState, command: &str, args: Value) -> AppResult<
             opt_string_arg(&args, "provider")?,
             provider_dirs_arg(&args)?,
             string_arg(&args, "query")?,
+        )),
+        "cached_workbench_sessions" => to_result_value(crate::workbench_index::cached_sessions(
+            &provider_dirs_arg(&args)?,
         )),
         "start_workbench_content_search" => {
             to_result_value(content_search::start_workbench_content_search(

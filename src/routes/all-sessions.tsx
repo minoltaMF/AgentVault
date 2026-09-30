@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
 import { useSettings } from "@/stores/settings";
 import { useWorkbenchSource } from "@/hooks/useWorkbenchSource";
@@ -6,13 +6,13 @@ import { workbenchSessions } from "@/lib/allSessions";
 import { workbenchCache } from "@/lib/workbenchCache";
 import { providerLabel } from "@/lib/providerTheme";
 import { sessionIdentity } from "@/lib/sessionIdentity";
-import type { SessionSummary } from "@/lib/api";
+import { api, type SessionSummary } from "@/lib/api";
 import { absoluteTime } from "@/lib/format";
 import { WorkbenchSources } from "@/components/WorkbenchSources";
 import { TopBar } from "@/components/TopBar";
 import { PreviewDialog, type PreviewJump } from "@/components/PreviewDialog";
 import { ContentSearchDialog } from "@/components/ContentSearchDialog";
-import { contentSearchCache, workbenchSearchScopes } from "@/lib/workbenchContentSearch";
+import { contentSearchCache, mergeIndexedSessions, workbenchSearchScopes } from "@/lib/workbenchContentSearch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -43,6 +43,23 @@ function Workbench({ codexRoot, claudeRoot, qoderRoot, workbuddyRoot, grokRoot, 
   const antigravity = useWorkbenchSource("antigravity", antigravityRoot, codexRoot);
   const pi = useWorkbenchSource("pi", piRoot, codexRoot);
   const [savedView] = useState(() => workbenchCache.view(codexRoot, claudeRoot, qoderRoot, workbuddyRoot, grokRoot, piRoot, dshRoot, hermesRoot, opencodeRoot, zcodeRoot, qwenRoot, clineRoot, copilotRoot, antigravityRoot));
+  const [indexed, setIndexed] = useState(savedView.indexed);
+  const [indexLoading, setIndexLoading] = useState(false);
+  const [indexError, setIndexError] = useState("");
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const loadIndexed = async () => {
+    if (indexLoading) return;
+    setIndexLoading(true); setIndexError("");
+    try {
+      const snapshot = await api.cachedWorkbenchSessions(codexRoot, claudeRoot);
+      if (!mounted.current) return;
+      savedView.indexed = snapshot;
+      setIndexed(snapshot);
+    } catch (error) {
+      if (mounted.current) setIndexError(error instanceof Error ? error.message : String(error));
+    } finally { if (mounted.current) setIndexLoading(false); }
+  };
   const location = useLocation();
   // An explicit URL is authoritative; ordinary sidebar navigation restores the last view.
   const [initialSearch] = useState(() => location.search ? location.search.slice(1) : savedView.search);
@@ -65,7 +82,10 @@ function Workbench({ codexRoot, claudeRoot, qoderRoot, workbuddyRoot, grokRoot, 
   const provider = ["codex", "claude", "qoder", "workbuddy", "grok", "pi", "dsh", "hermes", "opencode", "zcode", "qwen", "cline", "copilot", "antigravity"].includes(params.get("provider") ?? "") ? params.get("provider")! : "";
   const project = params.get("project") ?? "";
   const archive = ["active", "archived"].includes(params.get("archive") ?? "") ? params.get("archive")! : "";
-  const all = useMemo(() => [...codex.sessions, ...claude.sessions, ...qoder.sessions, ...workbuddy.sessions, ...grok.sessions, ...pi.sessions, ...dsh.sessions, ...hermes.sessions, ...opencode.sessions, ...zcode.sessions, ...qwen.sessions, ...cline.sessions, ...copilot.sessions, ...antigravity.sessions], [codex.sessions, claude.sessions, qoder.sessions, workbuddy.sessions, grok.sessions, pi.sessions, dsh.sessions, hermes.sessions, opencode.sessions, zcode.sessions, qwen.sessions, cline.sessions, copilot.sessions, antigravity.sessions]);
+  const live = useMemo(() => [...codex.sessions, ...claude.sessions, ...qoder.sessions, ...workbuddy.sessions, ...grok.sessions, ...pi.sessions, ...dsh.sessions, ...hermes.sessions, ...opencode.sessions, ...zcode.sessions, ...qwen.sessions, ...cline.sessions, ...copilot.sessions, ...antigravity.sessions], [codex.sessions, claude.sessions, qoder.sessions, workbuddy.sessions, grok.sessions, pi.sessions, dsh.sessions, hermes.sessions, opencode.sessions, zcode.sessions, qwen.sessions, cline.sessions, copilot.sessions, antigravity.sessions]);
+  const all = useMemo(() => mergeIndexedSessions(live, indexed?.sessions ?? [], [
+    ...(codex.checkedAt ? ["codex"] : []), ...(claude.checkedAt ? ["claude"] : []),
+  ]), [live, indexed, codex.checkedAt, claude.checkedAt]);
   const filtered = useMemo(() => workbenchSessions(all, { query, provider, project, archive }), [all, query, provider, project, archive]);
   const contentScopes = useMemo(() => workbenchSearchScopes(filtered), [filtered]);
   const contentScopeKey = JSON.stringify([codexRoot, claudeRoot, qoderRoot, workbuddyRoot, grokRoot, piRoot, dshRoot, hermesRoot, opencodeRoot, zcodeRoot, qwenRoot, clineRoot, copilotRoot, antigravityRoot, query, provider, project, archive, contentScopes]);
@@ -97,6 +117,14 @@ function Workbench({ codexRoot, claudeRoot, qoderRoot, workbuddyRoot, grokRoot, 
       <div className="space-y-5 p-4 md:p-6">
         <p className="text-sm text-muted-foreground">在一处查找已支持来源的本地会话。选择读取来源后开始；预览为只读。</p>
         <WorkbenchSources sources={sources} view={savedView} />
+        <div className="space-y-2 rounded-lg border p-3 text-xs text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-3">
+            <Button size="sm" variant="outline" disabled={indexLoading || busy || (!codexRoot && !claudeRoot)} onClick={() => void loadIndexed()}>{indexLoading ? "正在载入索引…" : "载入已索引会话"}</Button>
+            <span>Codex / Claude 搜索后，正文索引仅保存在本机；重启后可载入并继续搜索。</span>
+          </div>
+          {indexed && <p role="status">已载入 {indexed.sessions.length} 条索引记录{indexed.index_updated_at_ms ? " · 最近写入 " + new Date(indexed.index_updated_at_ms).toLocaleString() : ""}。这是历史列表；搜索时检查文件变化，新会话请读取来源。</p>}
+          {indexError && <p role="alert" className="break-all text-destructive">{indexError}</p>}
+        </div>
         <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <label className="min-w-0 space-y-1 text-xs">搜索标题、首条消息、ID 或路径<Input aria-label="搜索会话" value={query} onChange={(e) => filter("q", e.target.value)} placeholder="不搜索全部正文" /></label>
           <label className="min-w-0 space-y-1 text-xs">来源<select aria-label="来源" className={selectClass} value={provider} onChange={(e) => filter("provider", e.target.value)}><option value="">所有来源</option><option value="codex">Codex</option><option value="claude">Claude</option><option value="qoder">Qoder CLI</option><option value="workbuddy">WorkBuddy</option><option value="grok">Grok Build CLI</option><option value="pi">Pi</option><option value="dsh">DeepSeek Harness</option><option value="hermes">Hermes Agent</option><option value="opencode">OpenCode</option><option value="zcode">ZCode</option><option value="qwen">Qwen Code</option><option value="cline">Cline CLI/Desktop</option><option value="copilot">GitHub Copilot CLI</option><option value="antigravity">Antigravity</option></select></label>

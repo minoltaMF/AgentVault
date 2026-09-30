@@ -490,7 +490,7 @@ dependencies = [
 
 [[package]]
 name = "cc-session-manager"
-version = "0.1.0-alpha.12"
+version = "0.1.0-alpha.13"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -503,6 +503,7 @@ dependencies = [
  "provider-codex",
  "provider-pi",
  "provider-sdk",
+ "registry",
  "reqwest",
  "rusqlite",
  "same-file",

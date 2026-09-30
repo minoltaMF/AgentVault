@@ -70,3 +70,11 @@ AgentVault 当前直接包含下列上游项目的源代码。本文件只记录
 - MIT；Copyright GitHub, Inc.；原文见 [LICENSE.copilot-sdk](src-tauri/tests/fixtures/copilot/LICENSE.copilot-sdk)。
 - 使用范围：copilot_sessions.rs 依据 nodejs/src/generated/session-events.ts 核对事件信封和正文、工具字段；Rust 投影及测试来源另见上述 agent-sessions 条目。
 - github/copilot-cli 的文档/分发仓库核对 commit 为 `57dd2440141be0b7d6d628472890f861e3b3ca55`。该仓库不提供 CLI 运行时实现；此接入不声称 Copilot CLI 本身开源，没有复制其专有运行时代码。
+
+## Wake：持久搜索索引查询规则
+
+- 仓库：https://github.com/iAmCorey/Wake
+- 锁定 commit：`71aeca67ec80f8645d1f9d5199290c2c732036ce`。
+- 许可证：MIT；Copyright (c) 2026 Corey Chiu。完整许可证见 `docs/licenses/Wake-MIT.txt`。
+- 移植范围：`crates/registry/src/lib.rs` 的 `body_matches` 改编自 `crates/wake-core/src/db.rs` 的 `fts_match_expr` / `needs_like_fallback`：复用 FTS5 字面量引号转义及短查询降级规则，改为本项目既有的完整子串语义和指定 session 主键范围。
+- `src-tauri/src/workbench_index.rs` 参考 Wake scanner 的文件大小、修改时间和解析器版本失效设计；复用 AgentVault 既有 Registry schema、消息分类器与原子事务，不复制 Wake Store/schema、GPUI、MCP 或整套扫描器。新增夹具由 AgentVault 合成。

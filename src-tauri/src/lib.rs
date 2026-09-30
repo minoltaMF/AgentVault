@@ -55,6 +55,7 @@ pub mod settings;
 pub mod state_db;
 pub mod stats;
 pub mod webui;
+pub mod workbench_index;
 pub mod workbench_scan;
 mod workbuddy_sessions;
 mod zcode_sessions;
@@ -78,6 +79,12 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .manage(std::sync::Arc::new(family::FamilyLock::default()))
         .setup(|_app| {
+            workbench_index::configure_index_path(
+                _app.path()
+                    .app_config_dir()?
+                    .join("search-index")
+                    .join("registry.sqlite3"),
+            )?;
             app_update::cleanup_stale_update_dirs();
             #[cfg(debug_assertions)]
             {
@@ -123,6 +130,7 @@ pub fn run() {
             commands::search_sessions,
             commands::start_content_search,
             commands::start_workbench_content_search,
+            commands::cached_workbench_sessions,
             commands::content_search_status,
             commands::active_content_search,
             commands::cancel_content_search,

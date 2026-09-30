@@ -438,6 +438,16 @@ impl Registry {
     /// compatible prior cursor and is rejected when identity, parser version, size, or offsets
     /// indicate that a full rebuild is necessary.
     pub fn commit_file_projection(&mut self, projection: &FileProjection) -> RegistryResult<()> {
+        self.commit_search_file_projection(projection, None, None)
+    }
+
+    /// Commit events, cursor and optional search text in the same transaction.
+    pub fn commit_search_file_projection(
+        &mut self,
+        projection: &FileProjection,
+        content: Option<&str>,
+        metadata: Option<&serde_json::Value>,
+    ) -> RegistryResult<()> {
         validate_projection(projection)?;
         let transaction = self
             .connection
@@ -575,8 +585,57 @@ impl Registry {
                 ],
             )?;
         }
+        if let Some(metadata) = metadata {
+            transaction.execute(
+                "UPDATE native_sessions SET metadata_json = ?2 WHERE pk = ?1",
+                params![
+                    projection.native_session_pk,
+                    serde_json::to_string(metadata)?
+                ],
+            )?;
+        }
+        if let Some(content) = content {
+            let changed = transaction.execute(
+                "UPDATE session_search_projection SET content = ?2 WHERE rowid = ?1",
+                params![projection.native_session_pk, content],
+            )?;
+            if changed != 1 {
+                return Err(RegistryError::MissingRecord {
+                    kind: "search projection",
+                    id: projection.native_session_pk.to_string(),
+                });
+            }
+        }
         transaction.commit()?;
         Ok(())
+    }
+
+    pub fn session_pk_for_source(
+        &self,
+        source: &str,
+        native_id: &str,
+    ) -> RegistryResult<Option<i64>> {
+        Ok(self.connection.query_row("SELECT pk FROM native_sessions WHERE source_instance_id = ?1 AND native_session_id = ?2", params![source,native_id], |row| row.get(0)).optional()?)
+    }
+
+    pub fn session_ids_for_source(&self, source: &str) -> RegistryResult<Vec<i64>> {
+        let mut stmt = self.connection.prepare("SELECT pk FROM native_sessions WHERE source_instance_id = ?1 AND EXISTS (SELECT 1 FROM source_files WHERE native_session_pk = native_sessions.pk)")?;
+        let result = stmt
+            .query_map([source], |row| row.get(0))?
+            .collect::<Result<Vec<i64>, _>>()?;
+        Ok(result)
+    }
+
+    /// Literal body candidate lookup; the caller validates the exact message substring.
+    pub fn body_matches(&self, pk: i64, query: &str) -> RegistryResult<bool> {
+        // Adapted from Wake db.rs fts_match_expr / needs_like_fallback (MIT),
+        // iAmCorey/Wake@71aeca67ec80f8645d1f9d5199290c2c732036ce.
+        // Preserve one literal phrase instead of splitting the user's query into words.
+        if query.chars().count() >= 3 {
+            let literal = format!("\"{}\"", query.replace('"', "\"\""));
+            return Ok(self.connection.query_row("SELECT EXISTS(SELECT 1 FROM session_events_trigram WHERE rowid = ?1 AND session_events_trigram MATCH ?2)", params![pk, literal], |row| row.get(0))?);
+        }
+        Ok(self.connection.query_row("SELECT EXISTS(SELECT 1 FROM session_search_projection WHERE rowid = ?1 AND instr(lower(content), lower(?2)) > 0)", params![pk, query], |row| row.get(0))?)
     }
 
     pub fn events_for_session(

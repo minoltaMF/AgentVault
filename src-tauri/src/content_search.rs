@@ -2,7 +2,7 @@
 //!
 //! Data flow:
 //! 1. The UI starts one job with an explicit provider and visibility scope.
-//! 2. A single worker streams matching rollout files without creating an index.
+//! 2. Workbench Codex/Claude reuse a persistent projection; other sources stream files.
 //! 3. Existing preview classifiers decide which JSONL rows are real conversation messages.
 //! 4. The UI polls a bounded status snapshot and may cancel the active job.
 
@@ -91,6 +91,9 @@ impl SearchManager {
             id,
             cancel: Arc::new(AtomicBool::new(false)),
             status: Arc::new(Mutex::new(ContentSearchStatus {
+                reused_files: 0,
+                indexed_files: 0,
+                index_updated_at_ms: None,
                 failures: Vec::new(),
                 failed_files: 0,
                 job_id: id,
@@ -283,6 +286,21 @@ fn run_job(job: SearchJob, request: SearchRequest) {
 }
 
 fn execute_search(job: &SearchJob, request: &SearchRequest) -> AppResult<()> {
+    let use_index = request.scopes.as_ref().is_some_and(|scopes| {
+        scopes.iter().any(|s| {
+            matches!(s.provider.as_str(), "codex" | "claude") && !s.rollout_paths.is_empty()
+        })
+    });
+    let cached = if use_index {
+        crate::workbench_index::cached_sessions(&request.dirs)?.sessions
+    } else {
+        Vec::new()
+    };
+    let mut index = if use_index {
+        Some(crate::workbench_index::open()?)
+    } else {
+        None
+    };
     let sessions = if let Some(scopes) = &request.scopes {
         let mut found = Vec::new();
         for scope in scopes {
@@ -402,6 +420,63 @@ fn execute_search(job: &SearchJob, request: &SearchRequest) -> AppResult<()> {
                         }
                     }
                 }
+                continue;
+            }
+            if scope.provider == "claude" {
+                for path in &paths {
+                    if let Some(session) = cached
+                        .iter()
+                        .find(|s| s.provider == "claude" && s.rollout_path == *path)
+                    {
+                        found.push(session.clone());
+                        continue;
+                    }
+                    let result = (|| {
+                        crate::path_safety::validate_descendant(
+                            &request.dirs.claude_path(),
+                            std::path::Path::new(path),
+                            crate::path_safety::EntryKind::File,
+                            false,
+                            "搜索来源文件",
+                        )?;
+                        crate::claude_sessions::parse_session(
+                            std::path::Path::new(path),
+                            Some(&job.cancel),
+                        )
+                    })();
+                    match result {
+                        Ok(Some(session)) => found.push(session),
+                        Err(AppError::Cancelled) => return Err(AppError::Cancelled),
+                        result => {
+                            let message = match result {
+                                Err(error) => error.to_string(),
+                                _ => "未找到有效会话元数据".into(),
+                            };
+                            let mut status = job.status.lock().unwrap_or_else(|e| e.into_inner());
+                            status.failed_files += 1;
+                            if status.failures.len() < 100 {
+                                status.failures.push(format!("{path}: {message}"));
+                            }
+                        }
+                    }
+                }
+                continue;
+            }
+            if matches!(scope.provider.as_str(), "codex" | "claude")
+                && paths.iter().all(|path| {
+                    cached
+                        .iter()
+                        .any(|s| s.provider == scope.provider && s.rollout_path == *path)
+                })
+            {
+                found.extend(
+                    cached
+                        .iter()
+                        .filter(|s| {
+                            s.provider == scope.provider && paths.contains(s.rollout_path.as_str())
+                        })
+                        .cloned(),
+                );
                 continue;
             }
             let listed = match sessions::list_sessions_cancellable_with_dirs(
@@ -526,6 +601,38 @@ fn execute_search(job: &SearchJob, request: &SearchRequest) -> AppResult<()> {
                     )?;
                 }
             }
+            if matches!(session.provider.as_str(), "codex" | "claude") && request.scopes.is_some() {
+                let truncated = job
+                    .status
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .truncated;
+                let indexed = crate::workbench_index::refresh_and_search(
+                    index.as_mut().expect("indexed scope"),
+                    &session,
+                    &crate::workbench_index::root(&request.dirs, &session.provider),
+                    (!truncated).then_some(request.query.as_str()),
+                    &job.cancel,
+                )?;
+                let mut status = job.status.lock().unwrap_or_else(|e| e.into_inner());
+                if indexed.reused {
+                    status.reused_files += 1;
+                } else {
+                    status.indexed_files += 1;
+                }
+                status.index_updated_at_ms = Some(
+                    status
+                        .index_updated_at_ms
+                        .unwrap_or(0)
+                        .max(indexed.updated_at_ms),
+                );
+                return Ok(FileScanOutcome {
+                    matches: indexed.matches,
+                    bytes_read: session.rollout_bytes,
+                    cancelled: false,
+                    missing: false,
+                });
+            }
             scan_session_checked(
                 job,
                 &session,
@@ -572,11 +679,15 @@ fn execute_search(job: &SearchJob, request: &SearchRequest) -> AppResult<()> {
             continue;
         }
         if !outcome.matches.is_empty() {
+            if status.results.len() >= MAX_MATCHING_SESSIONS {
+                status.truncated = true;
+                continue;
+            }
             status.results.push(ContentSearchResult {
                 session,
                 matches: outcome.matches,
             });
-            if status.results.len() >= MAX_MATCHING_SESSIONS {
+            if !use_index && status.results.len() >= MAX_MATCHING_SESSIONS {
                 status.truncated = status.scanned_files < status.total_files;
                 return Ok(());
             }
@@ -851,7 +962,11 @@ fn scan_event_sequence(
     })
 }
 
-fn classify_event(provider: &str, index: usize, raw: Value) -> Option<crate::models::PreviewEvent> {
+pub(crate) fn classify_event(
+    provider: &str,
+    index: usize,
+    raw: Value,
+) -> Option<crate::models::PreviewEvent> {
     match provider {
         "codex" => Some(rollout::classify_preview(index, raw)),
         // Cursor 与 OpenCode 都会先合成 Claude 形状的记录再分类。
@@ -862,11 +977,11 @@ fn classify_event(provider: &str, index: usize, raw: Value) -> Option<crate::mod
     }
 }
 
-fn find_query(text: &str, query: &str) -> Option<usize> {
+pub(crate) fn find_query(text: &str, query: &str) -> Option<usize> {
     if query.is_ascii() {
-        text.as_bytes()
-            .windows(query.len())
-            .position(|window| window.eq_ignore_ascii_case(query.as_bytes()))
+        // ASCII case folding preserves byte offsets, including in mixed UTF-8
+        // text. Use str's substring search instead of comparing every window.
+        text.to_ascii_lowercase().find(&query.to_ascii_lowercase())
     } else {
         text.find(query)
     }
@@ -885,7 +1000,7 @@ fn line_might_contain_query(line: &str, query: &str, escaped_query: &str) -> boo
         || line.contains("\\u")
 }
 
-fn make_snippet(text: &str, query: &str) -> String {
+pub(crate) fn make_snippet(text: &str, query: &str) -> String {
     let Some(position) = find_query(text, query) else {
         return String::new();
     };
@@ -923,6 +1038,18 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn literal_search_preserves_utf8_offsets_and_ascii_case_rules() {
+        let text = "中文🙂 Prefix NEEDLE suffix Éclair";
+        assert_eq!(find_query(text, "needle"), text.find("NEEDLE"));
+        assert_eq!(find_query(text, "中文🙂"), Some(0));
+        assert_eq!(find_query(text, "éclair"), None);
+        assert_eq!(find_query("a%_\"b", "%_\""), Some(1));
+        let long = format!("{}NEEDLE", "正文 abc ".repeat(20_000));
+        assert_eq!(find_query(&long, "needle"), Some(long.len() - 6));
+        assert!(make_snippet(&long, "needle").ends_with("NEEDLE"));
+    }
 
     #[test]
     fn empty_workbench_scope_never_discovers_default_sources() {
@@ -1235,6 +1362,9 @@ mod tests {
             id: 1,
             cancel: Arc::new(AtomicBool::new(false)),
             status: Arc::new(Mutex::new(ContentSearchStatus {
+                reused_files: 0,
+                indexed_files: 0,
+                index_updated_at_ms: None,
                 failures: Vec::new(),
                 failed_files: 0,
                 job_id: 1,

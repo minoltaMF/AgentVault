@@ -1,7 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { SessionSummary } from "./api.ts";
-import { createContentSearchCache, workbenchSearchScopes } from "./workbenchContentSearch.ts";
+import { createContentSearchCache, mergeIndexedSessions, workbenchSearchScopes } from "./workbenchContentSearch.ts";
+
+test("fresh source results supersede cached metadata including empty scans", () => {
+  const cached = [
+    { provider: "codex", rollout_path: "/old", title: "old" },
+    { provider: "claude", rollout_path: "/claude" },
+  ] as SessionSummary[];
+  assert.deepEqual(mergeIndexedSessions([], cached, []), cached);
+  assert.deepEqual(mergeIndexedSessions([], cached, ["codex"]), [cached[1]]);
+  const live = [{ ...cached[0], title: "fresh" }];
+  assert.deepEqual(mergeIndexedSessions(live, cached, []), [live[0], cached[1]]);
+  assert.deepEqual(workbenchSearchScopes(mergeIndexedSessions([], cached, ["codex", "claude"])), []);
+});
 
 test("search scope preserves providers, deduplicates paths and keeps empty scope empty", () => {
   const rows = [

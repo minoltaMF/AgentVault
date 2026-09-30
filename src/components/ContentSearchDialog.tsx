@@ -252,9 +252,11 @@ export function ContentSearchDialog({
 
   const running = jobId !== null || starting;
   const progress = useMemo(() => {
-    if (!status || status.total_bytes === 0) return 0;
+    if (!status) return 0;
+    if (workbenchScopes) return status.total_files ? Math.min(100, Math.round(status.scanned_files / status.total_files * 100)) : 0;
+    if (status.total_bytes === 0) return 0;
     return Math.min(100, Math.round((status.scanned_bytes / status.total_bytes) * 100));
-  }, [status]);
+  }, [status, workbenchScopes]);
   const skippedLabel = status?.skipped_files
     ? `，跳过 ${status.skipped_files} 个无正文记录`
     : "";
@@ -351,7 +353,7 @@ export function ContentSearchDialog({
             </div>
           </div>
           <DialogDescription className="sr-only">
-            手动扫描当前范围内的用户与助手对话内容
+            搜索当前范围内的用户与助手对话内容
           </DialogDescription>
         </DialogHeader>
 
@@ -392,6 +394,7 @@ export function ContentSearchDialog({
             )}
           </div>
 
+          {workbenchScopes && <p className="mt-2 text-xs text-muted-foreground">Codex / Claude 首次搜索建立本机索引，后续检查变化并复用；其他来源逐次读取。</p>}
           {status && (
             <div className="mt-3 space-y-1.5">
               <div className="flex min-w-0 items-center justify-between gap-4 text-[11px] text-muted-foreground">
@@ -399,17 +402,18 @@ export function ContentSearchDialog({
                   {status.state === "running"
                     ? status.total_files === 0
                       ? "正在读取会话列表"
-                      : `正在扫描 ${status.scanned_files}/${status.total_files} 个会话${skippedLabel}`
+                      : `正在检查 ${status.scanned_files}/${status.total_files} 个会话${skippedLabel}`
                     : status.state === "completed"
-                      ? `已扫描 ${status.scanned_files} 个会话${skippedLabel}`
+                      ? `已检查 ${status.scanned_files} 个会话${skippedLabel}`
                       : status.state === "cancelled"
                         ? `搜索已停止${skippedLabel}`
                         : "搜索失败"}
                 </span>
                 <span className="shrink-0 tabular-nums">
-                  {humanBytes(status.scanned_bytes)} / {humanBytes(status.total_bytes)}
+                  {workbenchScopes ? `${status.scanned_files} / ${status.total_files} 个会话` : `${humanBytes(status.scanned_bytes)} / ${humanBytes(status.total_bytes)}`}
                 </span>
               </div>
+              {workbenchScopes && <p className="text-[11px] text-muted-foreground" role="status">索引复用 {status.reused_files ?? 0} 个 · 新建或更新 {status.indexed_files ?? 0} 个{status.index_updated_at_ms ? " · 最近写入 " + new Date(status.index_updated_at_ms).toLocaleString() : ""}</p>}
               <div className="h-1 overflow-hidden rounded-full bg-muted">
                 <div
                   className="h-full rounded-full bg-primary transition-[width] duration-200"

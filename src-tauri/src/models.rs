@@ -245,7 +245,7 @@ pub struct DirValidation {
     pub threads_count: u32,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionSummary {
     pub provider: String,
     pub id: String,
@@ -293,6 +293,9 @@ pub struct ContentSearchStart {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ContentSearchStatus {
+    pub reused_files: usize,
+    pub indexed_files: usize,
+    pub index_updated_at_ms: Option<i64>,
     pub failures: Vec<String>,
     pub failed_files: usize,
     pub job_id: u64,

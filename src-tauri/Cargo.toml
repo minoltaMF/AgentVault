@@ -1,6 +1,6 @@
 [package]
 name = "cc-session-manager"
-version = "0.1.0-alpha.12"
+version = "0.1.0-alpha.13"
 description = "AgentVault"
 authors = ["zjsmew"]
 edition = "2021"
@@ -65,6 +65,7 @@ provider-claude = { path = "../crates/provider-claude" }
 provider-codex = { path = "../crates/provider-codex" }
 provider-pi = { path = "../crates/provider-pi" }
 provider-sdk = { path = "../crates/provider-sdk" }
+registry = { path = "../crates/registry" }
 vault-io = { path = "../crates/vault-io" }
 
 [target.'cfg(windows)'.dependencies]
