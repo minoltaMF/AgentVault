@@ -2,7 +2,7 @@
 
 use std::{
     fs::{self, File, Metadata},
-    io::{BufRead, BufReader},
+    io::{BufRead, BufReader, Read},
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -28,7 +28,17 @@ use crate::{
 };
 
 const PARSER: &str = "workbench-conversation-v1";
-pub(crate) const PROVIDERS: [&str; 6] = ["codex", "claude", "qoder", "workbuddy", "grok", "pi"];
+const PROJECTED_SOURCE_MAX_BYTES: u64 = 128 * 1024 * 1024;
+pub(crate) const PROVIDERS: [&str; 8] = [
+    "codex",
+    "claude",
+    "qoder",
+    "workbuddy",
+    "grok",
+    "pi",
+    "qwen",
+    "copilot",
+];
 pub(crate) fn supports(provider: &str) -> bool {
     PROVIDERS.contains(&provider)
 }
@@ -96,6 +106,8 @@ pub fn root(dirs: &ProviderDirs, provider: &str) -> PathBuf {
         "workbuddy" => dirs.workbuddy_dir.as_deref().unwrap_or(""),
         "grok" => dirs.grok_dir.as_deref().unwrap_or(""),
         "pi" => dirs.pi_dir.as_deref().unwrap_or(""),
+        "qwen" => dirs.qwen_dir.as_deref().unwrap_or(""),
+        "copilot" => dirs.copilot_dir.as_deref().unwrap_or(""),
         _ => "",
     })
 }
@@ -164,6 +176,8 @@ fn register_source(provider: &str, root: &Path, path: &Path) -> AppResult<()> {
         "workbuddy" => crate::workbuddy_sessions::register_source(root, path),
         "grok" => crate::grok_sessions::register_source(root, path),
         "pi" => crate::pi_sessions::register_source(root, path),
+        "qwen" => crate::qwen_sessions::register_source(root, path),
+        "copilot" => crate::copilot_sessions::register_source(root, path),
         "codex" | "claude" => Ok(()),
         _ => Err(err("该来源不支持持久索引")),
     }
@@ -310,6 +324,11 @@ pub(crate) fn refresh_and_search(
 
     let before = source_fingerprint(&file.metadata()?, session)?;
     register_source(&session.provider, root, Path::new(&session.rollout_path))?;
+    // Keep the adapters' 128 MiB bound before the hashing pass can allocate a line.
+    let bounded_projection = matches!(session.provider.as_str(), "qwen" | "copilot");
+    if bounded_projection && before.size > PROJECTED_SOURCE_MAX_BYTES {
+        return Err(err("会话超过 128 MiB 安全读取上限"));
+    }
 
     let cursor = existing
         .map(|pk| db.source_cursor(pk, &session.rollout_path))
@@ -327,7 +346,14 @@ pub(crate) fn refresh_and_search(
     let (pk, updated_at_ms) = if reused {
         (existing.unwrap(), cursor.unwrap().last_seen_at_ms)
     } else {
-        let mut reader = BufReader::new(file);
+        // Bound the actual read as well: the native writer may append after metadata().
+        let read_limit = if bounded_projection {
+            PROJECTED_SOURCE_MAX_BYTES + 1
+        } else {
+            u64::MAX
+        };
+        let mut reader = BufReader::new(file.take(read_limit));
+        let mut bytes_read = 0u64;
 
         let mut line = String::new();
 
@@ -346,8 +372,13 @@ pub(crate) fn refresh_and_search(
 
             line.clear();
 
-            if reader.read_line(&mut line)? == 0 {
+            let count = reader.read_line(&mut line)?;
+            if count == 0 {
                 break;
+            }
+            bytes_read += count as u64;
+            if bounded_projection && bytes_read > PROJECTED_SOURCE_MAX_BYTES {
+                return Err(err("会话超过 128 MiB 安全读取上限"));
             }
 
             hash.update(line.as_bytes());
@@ -359,6 +390,11 @@ pub(crate) fn refresh_and_search(
                 continue;
             }
 
+            // These providers validate and project the complete native transcript below.
+            // Qwen permits several complete JSON objects on one physical line.
+            if matches!(session.provider.as_str(), "qwen" | "copilot") {
+                continue;
+            }
             let raw = serde_json::from_str(&line)
                 .map_err(|e| err(format!("第 {index} 行 JSON 无效: {e}")))?;
             if let Some(event) =
@@ -378,6 +414,14 @@ pub(crate) fn refresh_and_search(
                 &session.rollout_path,
                 Some(cancel),
             )?),
+            "qwen" => Some(crate::qwen_sessions::events(
+                &session.rollout_path,
+                Some(cancel),
+            )?),
+            "copilot" => Some(crate::copilot_sessions::events(
+                &session.rollout_path,
+                Some(cancel),
+            )?),
             _ => None,
         };
         if let Some(projected) = projected {
@@ -389,7 +433,7 @@ pub(crate) fn refresh_and_search(
             }
         }
 
-        if before != source_fingerprint(&reader.get_ref().metadata()?, session)?
+        if before != source_fingerprint(&reader.get_ref().get_ref().metadata()?, session)?
             || before != source_fingerprint(&fs::metadata(&session.rollout_path)?, session)?
         {
             return Err(err("文件读取期间发生变化；保留旧索引，本次不使用旧结果"));
@@ -705,12 +749,14 @@ mod additional_provider_tests {
             "workbuddy" => crate::workbuddy_sessions::preview_range(path, offset, 1),
             "grok" => crate::grok_sessions::preview_range(path, offset, 1),
             "pi" => crate::pi_sessions::preview_range(path, offset, 1),
+            "qwen" => crate::qwen_sessions::preview_range(path, offset, 1),
+            "copilot" => crate::copilot_sessions::preview_range(path, offset, 1),
             _ => unreachable!(),
         }
         .unwrap()
     }
     #[test]
-    fn four_providers_reuse_restart_refresh_and_preserve_preview_offsets() {
+    fn additional_providers_reuse_restart_refresh_and_preserve_preview_offsets() {
         for (provider, relative, body, query, excluded) in [
             (
                 "qoder",
@@ -739,6 +785,20 @@ mod additional_provider_tests {
                 PI,
                 "current answer",
                 "obsolete answer",
+            ),
+            (
+                "qwen",
+                "projects/demo/chats/019f0000-0000-7000-8000-000000000001.jsonl",
+                include_str!("../tests/fixtures/qwen/019f0000-0000-7000-8000-000000000001.jsonl"),
+                "active answer",
+                "dead branch",
+            ),
+            (
+                "copilot",
+                "session-state/copilot_stage0_small/events.jsonl",
+                include_str!("../tests/fixtures/copilot/copilot_stage0_small.jsonl"),
+                "Listing the files.",
+                "trimmed for fixture",
             ),
         ] {
             let root = std::env::temp_dir().join(format!(
@@ -786,9 +846,17 @@ mod additional_provider_tests {
                 "workbuddy" => dirs.workbuddy_dir = Some(root.to_string_lossy().into_owned()),
                 "grok" => dirs.grok_dir = Some(root.to_string_lossy().into_owned()),
                 "pi" => dirs.pi_dir = Some(root.to_string_lossy().into_owned()),
+                "qwen" => dirs.qwen_dir = Some(root.to_string_lossy().into_owned()),
+                "copilot" => dirs.copilot_dir = Some(root.to_string_lossy().into_owned()),
                 _ => unreachable!(),
             }
+            match provider {
+                "qwen" => crate::qwen_sessions::forget_source_for_test(&root),
+                "copilot" => crate::copilot_sessions::forget_source_for_test(&root),
+                _ => {}
+            }
             assert_eq!(cached_from(&db, &dirs).unwrap().sessions.len(), 1);
+            assert!(!preview(provider, file.to_str().unwrap(), 0).is_empty());
             assert!(cached_from(&db, &ProviderDirs::default())
                 .unwrap()
                 .sessions
@@ -807,6 +875,19 @@ mod additional_provider_tests {
             assert!(search_with(&mut db, &session, &root, "replacement", &cancel).is_err());
             assert_eq!(db.source_cursor(pk, &session.rollout_path).unwrap(), cursor);
             assert!(db.body_matches(pk, "replacement").unwrap());
+            if matches!(provider, "qwen" | "copilot") {
+                File::options()
+                    .write(true)
+                    .open(&file)
+                    .unwrap()
+                    .set_len(128 * 1024 * 1024 + 1)
+                    .unwrap();
+                let error = search_with(&mut db, &session, &root, "replacement", &cancel)
+                    .err()
+                    .expect("oversized source must be rejected");
+                assert!(error.to_string().contains("128 MiB"));
+                assert_eq!(db.source_cursor(pk, &session.rollout_path).unwrap(), cursor);
+            }
             fs::write(&file, &changed).unwrap();
             cancel.store(true, Ordering::Release);
             assert!(matches!(
@@ -871,5 +952,151 @@ mod grok_cache_visibility_tests {
             .is_empty());
         drop(db);
         fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod qwen_copilot_projection_tests {
+    use super::*;
+    use serde_json::{json, Value};
+
+    #[test]
+    fn qwen_concatenated_fragments_preserve_active_branch_and_reject_invalid_refresh() {
+        let temp = crate::readonly_source::test_support::tempdir().unwrap();
+        let root = temp.path();
+        let file = root.join("projects/demo/chats/019f0000-0000-7000-8000-000000000001.jsonl");
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        let body =
+            include_str!("../tests/fixtures/qwen/019f0000-0000-7000-8000-000000000001.jsonl");
+        let compact = format!("{}\n", body.lines().collect::<String>());
+        fs::write(&file, &compact).unwrap();
+        let session = crate::qwen_sessions::parse_session(root, &file, None)
+            .unwrap()
+            .unwrap();
+        let mut db = Registry::open_in_memory().unwrap();
+        let cancel = AtomicBool::new(false);
+        let result = search_with(&mut db, &session, root, "fragment tail", &cancel).unwrap();
+        assert_eq!(result.matches.len(), 1);
+        let hit = &result.matches[0];
+        let preview =
+            crate::qwen_sessions::preview_range(file.to_str().unwrap(), hit.event_offset, 1)
+                .unwrap();
+        assert_eq!(preview[0].index, hit.event_index);
+        assert!(rollout::preview_event_text(&preview[0]).contains("active answer"));
+        assert!(rollout::preview_event_text(&preview[0]).contains("fragment tail"));
+        for absent in [
+            "dead branch",
+            "hidden hook",
+            "secret-tool",
+            "Qwen synthetic branch",
+        ] {
+            assert!(search_with(&mut db, &session, root, absent, &cancel)
+                .unwrap()
+                .matches
+                .is_empty());
+        }
+        let pk = db
+            .session_pk_for_source(&source_id("qwen", root).unwrap(), &session.rollout_path)
+            .unwrap()
+            .unwrap();
+        let cursor = db.source_cursor(pk, &session.rollout_path).unwrap();
+        for broken in [
+            format!("{}junk\n", compact.trim_end()),
+            compact.replace("\"parentUuid\":\"tool\"", "\"parentUuid\":\"missing\""),
+            compact.trim_end().to_owned(),
+        ] {
+            fs::write(&file, broken).unwrap();
+            assert!(search_with(&mut db, &session, root, "active answer", &cancel).is_err());
+            assert_eq!(db.source_cursor(pk, &session.rollout_path).unwrap(), cursor);
+            assert!(db.body_matches(pk, "active answer").unwrap());
+        }
+        fs::write(&file, &compact).unwrap();
+        let foreign = root.join("other-root");
+        fs::create_dir_all(&foreign).unwrap();
+        assert!(search_with(&mut db, &session, &foreign, "active answer", &cancel).is_err());
+        let dirs = ProviderDirs {
+            qwen_dir: Some(foreign.to_string_lossy().into_owned()),
+            ..Default::default()
+        };
+        assert!(cached_from(&db, &dirs).unwrap().sessions.is_empty());
+        assert_eq!(fs::read_to_string(file).unwrap(), compact);
+    }
+
+    #[test]
+    fn copilot_index_excludes_injected_messages_in_both_native_layouts() {
+        for relative in [
+            "session-state/copilot_stage0_small/events.jsonl",
+            "session-state/copilot_stage0_small.jsonl",
+        ] {
+            let temp = crate::readonly_source::test_support::tempdir().unwrap();
+            let root = temp.path();
+            let file = root.join(relative);
+            fs::create_dir_all(file.parent().unwrap()).unwrap();
+            let mut body =
+                include_str!("../tests/fixtures/copilot/copilot_stage0_small.jsonl").to_owned();
+            for (index, extra) in [
+                json!({"agentId":"background"}),
+                json!({"ephemeral":true}),
+                json!({"data":{"isAutopilotContinuation":true}}),
+                json!({"data":{"source":"skill-injection"}}),
+                json!({"data":{"source":"agent-injection"}}),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let mut row = json!({"id":format!("injected-{index}"),"type":"user.message","timestamp":"2026-09-24T00:00:00Z","parentId":null,"data":{"content":"hidden injected content"}});
+                for (key, value) in extra.as_object().unwrap() {
+                    if key == "data" {
+                        for (k, v) in value.as_object().unwrap() {
+                            row["data"][k] = v.clone();
+                        }
+                    } else {
+                        row[key] = value.clone();
+                    }
+                }
+                body.push_str(&format!("{row}\n"));
+            }
+            fs::write(&file, &body).unwrap();
+            let session = crate::copilot_sessions::parse_session(root, &file, None)
+                .unwrap()
+                .unwrap();
+            let mut db = Registry::open_in_memory().unwrap();
+            let cancel = AtomicBool::new(false);
+            let result =
+                search_with(&mut db, &session, root, "Listing the files.", &cancel).unwrap();
+            assert_eq!(result.matches.len(), 1);
+            let hit = &result.matches[0];
+            let preview =
+                crate::copilot_sessions::preview_range(file.to_str().unwrap(), hit.event_offset, 1)
+                    .unwrap();
+            assert_eq!(hit.event_offset, 8);
+            assert_eq!(preview[0].index, hit.event_index);
+            for absent in ["hidden injected", "a.txt", "trimmed for fixture"] {
+                assert!(search_with(&mut db, &session, root, absent, &cancel)
+                    .unwrap()
+                    .matches
+                    .is_empty());
+            }
+            let pk = db
+                .session_pk_for_source(&source_id("copilot", root).unwrap(), &session.rollout_path)
+                .unwrap()
+                .unwrap();
+            let cursor = db.source_cursor(pk, &session.rollout_path).unwrap();
+            let duplicate: Value = serde_json::from_str(body.lines().nth(6).unwrap()).unwrap();
+            fs::write(&file, format!("{body}{duplicate}\n")).unwrap();
+            assert!(search_with(&mut db, &session, root, "Listing", &cancel).is_err());
+            assert_eq!(db.source_cursor(pk, &session.rollout_path).unwrap(), cursor);
+            assert!(db.body_matches(pk, "Listing").unwrap());
+            fs::write(&file, &body).unwrap();
+            let foreign = root.join("other-root");
+            fs::create_dir_all(&foreign).unwrap();
+            assert!(search_with(&mut db, &session, &foreign, "Listing", &cancel).is_err());
+            let dirs = ProviderDirs {
+                copilot_dir: Some(foreign.to_string_lossy().into_owned()),
+                ..Default::default()
+            };
+            assert!(cached_from(&db, &dirs).unwrap().sessions.is_empty());
+            assert_eq!(fs::read_to_string(file).unwrap(), body);
+        }
     }
 }

@@ -35,6 +35,8 @@ pub async fn cached_workbench_sessions(
     workbuddy_dir: Option<String>,
     grok_dir: Option<String>,
     pi_dir: Option<String>,
+    qwen_dir: Option<String>,
+    copilot_dir: Option<String>,
 ) -> AppResult<crate::workbench_index::CachedSessions> {
     run_blocking(move || {
         crate::workbench_index::cached_sessions(&ProviderDirs {
@@ -42,6 +44,8 @@ pub async fn cached_workbench_sessions(
             workbuddy_dir,
             grok_dir,
             pi_dir,
+            qwen_dir,
+            copilot_dir,
             ..provider_dirs(codex_dir, Some(claude_dir), None, None)
         })
     })

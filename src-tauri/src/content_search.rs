@@ -2,7 +2,7 @@
 //!
 //! Data flow:
 //! 1. The UI starts one job with an explicit provider and visibility scope.
-//! 2. Workbench Codex/Claude reuse a persistent projection; other sources stream files.
+//! 2. Supported workbench providers reuse a persistent projection; others read native sources.
 //! 3. Existing preview classifiers decide which JSONL rows are real conversation messages.
 //! 4. The UI polls a bounded status snapshot and may cancel the active job.
 

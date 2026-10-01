@@ -1,0 +1,413 @@
+{
+  "date": "2026-10-01",
+  "application_commit": "deda592df51fb84da27609421790fab2af86219f",
+  "cli_version": "0.1.0-alpha.14",
+  "cli_sha256": "fa69ab4a13add50b310dee19f079a468da074b43e2de524d1135c45c896639d5",
+  "cli_target": "x86_64-pc-windows-gnu",
+  "machine": {
+    "platform": "win32",
+    "arch": "arm64",
+    "os_release": "10.0.26200",
+    "cpu": "Apple Silicon",
+    "logical_cpus": 6,
+    "total_memory_bytes": 9657057280,
+    "node": "v24.19.0"
+  },
+  "sample": {
+    "sessions_per_provider": 1000,
+    "messages_per_session": 100,
+    "body_characters": 1024
+  },
+  "methodology": "Synthetic repetitive ASCII text, not representative real-world language or compression ratios. Sequential providers; fresh application index, OS filesystem cache not flushed. Timings include HTTP start/poll overhead (25 ms polling). Restart retains the derived index. Sparse query matches one session; absent query matches none. Fixtures and logs are retained, never deleted.",
+  "selection_notes": "Qoder/Pi: original schema v1 run. WorkBuddy/Grok: schema v2 rerun. Initial WorkBuddy user wrapper was invalid; its original timings are excluded. Original Grok run overlapped a 4.64 second smoke; rerun is used. Schema v2 adds a separate user keyword and preview checks. Qoder/Pi passed schema v2 small-sample user/preview gates.",
+  "providers": [
+    {
+      "provider": "qoder",
+      "source_bytes": 124570000,
+      "source_files": 1000,
+      "phases": [
+        {
+          "phase": "scan",
+          "elapsed_ms": 2313.478,
+          "sessions": 1000
+        },
+        {
+          "phase": "first_index_sparse",
+          "elapsed_ms": 211895.968959,
+          "indexed_files": 1000,
+          "reused_files": 0,
+          "matching_sessions": 1,
+          "scanned_files": 1000,
+          "scanned_bytes": 124570000
+        },
+        {
+          "phase": "warm_sparse_1",
+          "elapsed_ms": 2667.6432090000017,
+          "indexed_files": 0,
+          "reused_files": 1000,
+          "matching_sessions": 1,
+          "scanned_files": 1000,
+          "scanned_bytes": 124570000
+        },
+        {
+          "phase": "warm_sparse_2",
+          "elapsed_ms": 4317.1157079999975,
+          "indexed_files": 0,
+          "reused_files": 1000,
+          "matching_sessions": 1,
+          "scanned_files": 1000,
+          "scanned_bytes": 124570000
+        },
+        {
+          "phase": "warm_sparse_3",
+          "elapsed_ms": 2712.256250000006,
+          "indexed_files": 0,
+          "reused_files": 1000,
+          "matching_sessions": 1,
+          "scanned_files": 1000,
+          "scanned_bytes": 124570000
+        },
+        {
+          "phase": "warm_absent",
+          "elapsed_ms": 9625.444000000018,
+          "indexed_files": 0,
+          "reused_files": 1000,
+          "matching_sessions": 0,
+          "scanned_files": 1000,
+          "scanned_bytes": 124570000
+        },
+        {
+          "phase": "restart_cached_list",
+          "elapsed_ms": 877.6262500000012,
+          "sessions": 1000
+        },
+        {
+          "phase": "restart_sparse",
+          "elapsed_ms": 2546.0903340000077,
+          "indexed_files": 0,
+          "reused_files": 1000,
+          "matching_sessions": 1,
+          "scanned_files": 1000,
+          "scanned_bytes": 124570000
+        },
+        {
+          "phase": "single_file_rebuild",
+          "elapsed_ms": 3493.825666000019,
+          "indexed_files": 1,
+          "reused_files": 999,
+          "matching_sessions": 1,
+          "scanned_files": 1000,
+          "scanned_bytes": 124570000
+        },
+        {
+          "phase": "old_marker_absent",
+          "elapsed_ms": 4219.803874999983,
+          "indexed_files": 0,
+          "reused_files": 1000,
+          "matching_sessions": 0,
+          "scanned_files": 1000,
+          "scanned_bytes": 124570000
+        }
+      ],
+      "source_hashes_unchanged_before_edit": true,
+      "source_hashes_unchanged_after_edit": true,
+      "index_bytes": 406409216
+    },
+    {
+      "provider": "workbuddy",
+      "source_bytes": 116557000,
+      "source_files": 1000,
+      "phases": [
+        {
+          "phase": "scan",
+          "elapsed_ms": 2746.203708000001,
+          "sessions": 1000
+        },
+        {
+          "phase": "first_index_sparse",
+          "elapsed_ms": 260468.532208,
+          "indexed_files": 1000,
+          "reused_files": 0,
+          "matching_sessions": 1,
+          "scanned_files": 1000,
+          "scanned_bytes": 116557000
+        },
+        {
+          "phase": "warm_sparse_1",
+          "elapsed_ms": 2164.477332999988,
+          "indexed_files": 0,
+          "reused_files": 1000,
+          "matching_sessions": 1,
+          "scanned_files": 1000,
+          "scanned_bytes": 116557000
+        },
+        {
+          "phase": "warm_sparse_2",
+          "elapsed_ms": 1857.845417000004,
+          "indexed_files": 0,
+          "reused_files": 1000,
+          "matching_sessions": 1,
+          "scanned_files": 1000,
+          "scanned_bytes": 116557000
+        },
+        {
+          "phase": "warm_sparse_3",
+          "elapsed_ms": 2316.061457999982,
+          "indexed_files": 0,
+          "reused_files": 1000,
+          "matching_sessions": 1,
+          "scanned_files": 1000,
+          "scanned_bytes": 116557000
+        },
+        {
+          "phase": "warm_absent",
+          "elapsed_ms": 1863.3840419999906,
+          "indexed_files": 0,
+          "reused_files": 1000,
+          "matching_sessions": 0,
+          "scanned_files": 1000,
+          "scanned_bytes": 116557000
+        },
+        {
+          "phase": "warm_user_gate",
+          "elapsed_ms": 11502.589500000002,
+          "indexed_files": 0,
+          "reused_files": 1000,
+          "matching_sessions": 1,
+          "scanned_files": 1000,
+          "scanned_bytes": 116557000
+        },
+        {
+          "phase": "restart_cached_list",
+          "elapsed_ms": 2030.2618329999968,
+          "sessions": 1000
+        },
+        {
+          "phase": "restart_sparse",
+          "elapsed_ms": 2681.338875000016,
+          "indexed_files": 0,
+          "reused_files": 1000,
+          "matching_sessions": 1,
+          "scanned_files": 1000,
+          "scanned_bytes": 116557000
+        },
+        {
+          "phase": "single_file_rebuild",
+          "elapsed_ms": 3474.5602500000386,
+          "indexed_files": 1,
+          "reused_files": 999,
+          "matching_sessions": 1,
+          "scanned_files": 1000,
+          "scanned_bytes": 116557000
+        },
+        {
+          "phase": "old_marker_absent",
+          "elapsed_ms": 1313.5018750000163,
+          "indexed_files": 0,
+          "reused_files": 1000,
+          "matching_sessions": 0,
+          "scanned_files": 1000,
+          "scanned_bytes": 116557000
+        }
+      ],
+      "user_and_assistant_search_preview_verified": true,
+      "source_hashes_unchanged_before_edit": true,
+      "source_hashes_unchanged_after_edit": true,
+      "index_bytes": 406405120
+    },
+    {
+      "provider": "grok",
+      "source_bytes": 121309000,
+      "source_files": 2000,
+      "phases": [
+        {
+          "phase": "scan",
+          "elapsed_ms": 8112.212417000032,
+          "sessions": 1000
+        },
+        {
+          "phase": "first_index_sparse",
+          "elapsed_ms": 193261.13983399997,
+          "indexed_files": 1000,
+          "reused_files": 0,
+          "matching_sessions": 1,
+          "scanned_files": 1000,
+          "scanned_bytes": 121122000
+        },
+        {
+          "phase": "warm_sparse_1",
+          "elapsed_ms": 6062.55237499997,
+          "indexed_files": 0,
+          "reused_files": 1000,
+          "matching_sessions": 1,
+          "scanned_files": 1000,
+          "scanned_bytes": 121122000
+        },
+        {
+          "phase": "warm_sparse_2",
+          "elapsed_ms": 4350.737250000006,
+          "indexed_files": 0,
+          "reused_files": 1000,
+          "matching_sessions": 1,
+          "scanned_files": 1000,
+          "scanned_bytes": 121122000
+        },
+        {
+          "phase": "warm_sparse_3",
+          "elapsed_ms": 3802.3510840000818,
+          "indexed_files": 0,
+          "reused_files": 1000,
+          "matching_sessions": 1,
+          "scanned_files": 1000,
+          "scanned_bytes": 121122000
+        },
+        {
+          "phase": "warm_absent",
+          "elapsed_ms": 3779.0828749999637,
+          "indexed_files": 0,
+          "reused_files": 1000,
+          "matching_sessions": 0,
+          "scanned_files": 1000,
+          "scanned_bytes": 121122000
+        },
+        {
+          "phase": "warm_user_gate",
+          "elapsed_ms": 3834.923833000008,
+          "indexed_files": 0,
+          "reused_files": 1000,
+          "matching_sessions": 1,
+          "scanned_files": 1000,
+          "scanned_bytes": 121122000
+        },
+        {
+          "phase": "restart_cached_list",
+          "elapsed_ms": 1445.1041250000708,
+          "sessions": 1000
+        },
+        {
+          "phase": "restart_sparse",
+          "elapsed_ms": 4527.49687500007,
+          "indexed_files": 0,
+          "reused_files": 1000,
+          "matching_sessions": 1,
+          "scanned_files": 1000,
+          "scanned_bytes": 121122000
+        },
+        {
+          "phase": "single_file_rebuild",
+          "elapsed_ms": 4250.556125000003,
+          "indexed_files": 1,
+          "reused_files": 999,
+          "matching_sessions": 1,
+          "scanned_files": 1000,
+          "scanned_bytes": 121122000
+        },
+        {
+          "phase": "old_marker_absent",
+          "elapsed_ms": 4223.721374999965,
+          "indexed_files": 0,
+          "reused_files": 1000,
+          "matching_sessions": 0,
+          "scanned_files": 1000,
+          "scanned_bytes": 121122000
+        }
+      ],
+      "user_and_assistant_search_preview_verified": true,
+      "source_hashes_unchanged_before_edit": true,
+      "source_hashes_unchanged_after_edit": true,
+      "index_bytes": 406458368
+    },
+    {
+      "provider": "pi",
+      "source_bytes": 116222000,
+      "source_files": 1000,
+      "phases": [
+        {
+          "phase": "scan",
+          "elapsed_ms": 3056.630790999974,
+          "sessions": 1000
+        },
+        {
+          "phase": "first_index_sparse",
+          "elapsed_ms": 125660.33525,
+          "indexed_files": 1000,
+          "reused_files": 0,
+          "matching_sessions": 1,
+          "scanned_files": 1000,
+          "scanned_bytes": 116222000
+        },
+        {
+          "phase": "warm_sparse_1",
+          "elapsed_ms": 1409.5440830000443,
+          "indexed_files": 0,
+          "reused_files": 1000,
+          "matching_sessions": 1,
+          "scanned_files": 1000,
+          "scanned_bytes": 116222000
+        },
+        {
+          "phase": "warm_sparse_2",
+          "elapsed_ms": 1339.618083999958,
+          "indexed_files": 0,
+          "reused_files": 1000,
+          "matching_sessions": 1,
+          "scanned_files": 1000,
+          "scanned_bytes": 116222000
+        },
+        {
+          "phase": "warm_sparse_3",
+          "elapsed_ms": 1374.4316249999683,
+          "indexed_files": 0,
+          "reused_files": 1000,
+          "matching_sessions": 1,
+          "scanned_files": 1000,
+          "scanned_bytes": 116222000
+        },
+        {
+          "phase": "warm_absent",
+          "elapsed_ms": 1224.951457999996,
+          "indexed_files": 0,
+          "reused_files": 1000,
+          "matching_sessions": 0,
+          "scanned_files": 1000,
+          "scanned_bytes": 116222000
+        },
+        {
+          "phase": "restart_cached_list",
+          "elapsed_ms": 331.3338750000112,
+          "sessions": 1000
+        },
+        {
+          "phase": "restart_sparse",
+          "elapsed_ms": 1366.3863750000019,
+          "indexed_files": 0,
+          "reused_files": 1000,
+          "matching_sessions": 1,
+          "scanned_files": 1000,
+          "scanned_bytes": 116222000
+        },
+        {
+          "phase": "single_file_rebuild",
+          "elapsed_ms": 1653.2253340000752,
+          "indexed_files": 1,
+          "reused_files": 999,
+          "matching_sessions": 1,
+          "scanned_files": 1000,
+          "scanned_bytes": 116222000
+        },
+        {
+          "phase": "old_marker_absent",
+          "elapsed_ms": 1224.6438749999506,
+          "indexed_files": 0,
+          "reused_files": 1000,
+          "matching_sessions": 0,
+          "scanned_files": 1000,
+          "scanned_bytes": 116222000
+        }
+      ],
+      "source_hashes_unchanged_before_edit": true,
+      "source_hashes_unchanged_after_edit": true,
+      "index_bytes": 408461312
+    }
+  ]
+}

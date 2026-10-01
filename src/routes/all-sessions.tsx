@@ -52,7 +52,7 @@ function Workbench({ codexRoot, claudeRoot, qoderRoot, workbuddyRoot, grokRoot, 
     if (indexLoading) return;
     setIndexLoading(true); setIndexError("");
     try {
-      const snapshot = await api.cachedWorkbenchSessions(codexRoot, claudeRoot, qoderRoot, workbuddyRoot, grokRoot, piRoot);
+      const snapshot = await api.cachedWorkbenchSessions(codexRoot, claudeRoot, qoderRoot, workbuddyRoot, grokRoot, piRoot, qwenRoot, copilotRoot);
       if (!mounted.current) return;
       savedView.indexed = snapshot;
       setIndexed(snapshot);
@@ -87,7 +87,8 @@ function Workbench({ codexRoot, claudeRoot, qoderRoot, workbuddyRoot, grokRoot, 
     ...(codex.checkedAt ? ["codex"] : []), ...(claude.checkedAt ? ["claude"] : []),
     ...(qoder.checkedAt ? ["qoder"] : []), ...(workbuddy.checkedAt ? ["workbuddy"] : []),
     ...(grok.checkedAt ? ["grok"] : []), ...(pi.checkedAt ? ["pi"] : []),
-  ]), [live, indexed, codex.checkedAt, claude.checkedAt, qoder.checkedAt, workbuddy.checkedAt, grok.checkedAt, pi.checkedAt]);
+    ...(qwen.checkedAt ? ["qwen"] : []), ...(copilot.checkedAt ? ["copilot"] : []),
+  ]), [live, indexed, codex.checkedAt, claude.checkedAt, qoder.checkedAt, workbuddy.checkedAt, grok.checkedAt, pi.checkedAt, qwen.checkedAt, copilot.checkedAt]);
   const filtered = useMemo(() => workbenchSessions(all, { query, provider, project, archive }), [all, query, provider, project, archive]);
   const contentScopes = useMemo(() => workbenchSearchScopes(filtered), [filtered]);
   const contentScopeKey = JSON.stringify([codexRoot, claudeRoot, qoderRoot, workbuddyRoot, grokRoot, piRoot, dshRoot, hermesRoot, opencodeRoot, zcodeRoot, qwenRoot, clineRoot, copilotRoot, antigravityRoot, query, provider, project, archive, contentScopes]);
@@ -121,8 +122,8 @@ function Workbench({ codexRoot, claudeRoot, qoderRoot, workbuddyRoot, grokRoot, 
         <WorkbenchSources sources={sources} view={savedView} />
         <div className="space-y-2 rounded-lg border p-3 text-xs text-muted-foreground">
           <div className="flex flex-wrap items-center gap-3">
-            <Button size="sm" variant="outline" disabled={indexLoading || busy || (!codexRoot && !claudeRoot && !qoderRoot && !workbuddyRoot && !grokRoot && !piRoot)} onClick={() => void loadIndexed()}>{indexLoading ? "正在载入索引…" : "载入已索引会话"}</Button>
-            <span>Codex、Claude、Qoder、WorkBuddy、Grok、Pi 搜索后，正文索引仅保存在本机；重启后可载入并继续搜索。</span>
+            <Button size="sm" variant="outline" disabled={indexLoading || busy || (!codexRoot && !claudeRoot && !qoderRoot && !workbuddyRoot && !grokRoot && !piRoot && !qwenRoot && !copilotRoot)} onClick={() => void loadIndexed()}>{indexLoading ? "正在载入索引…" : "载入已索引会话"}</Button>
+            <span>Codex、Claude、Qoder、WorkBuddy、Grok、Pi、Qwen、Copilot CLI 搜索后，正文索引仅保存在本机；重启后可载入并继续搜索。</span>
           </div>
           {indexed && <p role="status">已载入 {indexed.sessions.length} 条索引记录{indexed.index_updated_at_ms ? " · 最近写入 " + new Date(indexed.index_updated_at_ms).toLocaleString() : ""}。这是历史列表；搜索时检查文件变化，新会话请读取来源。</p>}
           {indexError && <p role="alert" className="break-all text-destructive">{indexError}</p>}

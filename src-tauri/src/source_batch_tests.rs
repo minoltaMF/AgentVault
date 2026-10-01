@@ -6,6 +6,9 @@ use std::{
     sync::atomic::{AtomicBool, AtomicU64, Ordering},
 };
 static NEXT: AtomicU64 = AtomicU64::new(1);
+// These integration tests intentionally exercise the same singleton API used by
+// the app. Serialize their ownership, without weakening its one-active-job guard.
+static SEARCH_API: std::sync::Mutex<()> = std::sync::Mutex::new(());
 struct Fixture(PathBuf);
 impl Fixture {
     fn new() -> Self {
@@ -26,6 +29,7 @@ impl Drop for Fixture {
 
 #[test]
 fn workbench_four_sources_search_and_preview_share_exact_positions() -> AppResult<()> {
+    let _search_api = SEARCH_API.lock().unwrap();
     let f = Fixture::new();
     let dsh = f.0.join("dsh");
     let hermes = f.0.join("hermes");
@@ -276,6 +280,7 @@ fn dsh_compressed_generation_and_failure_contract() -> AppResult<()> {
 
 #[test]
 fn batch11_workbench_scans_searches_and_locates_readonly_content() -> AppResult<()> {
+    let _search_api = SEARCH_API.lock().unwrap();
     let f = Fixture::new();
     let qwen = f.0.join("qwen");
     let cline = f.0.join("cline");

@@ -14,6 +14,27 @@ use std::{
 };
 
 static ROOTS: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
+pub(crate) fn register_source(root: &Path, path: &Path) -> AppResult<()> {
+    if !is_main_transcript(root, path) {
+        return Err(AppError::Path("不是受支持的会话路径".into()));
+    }
+    ro::validate_file(root, path)?;
+    ROOTS
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(root.into());
+    Ok(())
+}
+#[cfg(test)]
+pub(crate) fn forget_source_for_test(root: &Path) {
+    ROOTS
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .remove(root);
+}
+
 pub fn is_main_transcript(root: &Path, path: &Path) -> bool {
     let Ok(relative) = path.strip_prefix(root.join("projects")) else {
         return false;
@@ -299,11 +320,7 @@ pub fn parse_session(
         .parent()
         .and_then(Path::file_name)
         .is_some_and(|s| s == "archive");
-    ROOTS
-        .get_or_init(Default::default)
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .insert(root.into());
+    register_source(root, path)?;
     Ok(Some(summary))
 }
 pub fn events(path: &str, cancel: Option<&AtomicBool>) -> AppResult<Vec<PreviewEvent>> {
