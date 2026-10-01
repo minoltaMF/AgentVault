@@ -287,9 +287,9 @@ fn run_job(job: SearchJob, request: SearchRequest) {
 
 fn execute_search(job: &SearchJob, request: &SearchRequest) -> AppResult<()> {
     let use_index = request.scopes.as_ref().is_some_and(|scopes| {
-        scopes.iter().any(|s| {
-            matches!(s.provider.as_str(), "codex" | "claude") && !s.rollout_paths.is_empty()
-        })
+        scopes
+            .iter()
+            .any(|s| crate::workbench_index::supports(&s.provider) && !s.rollout_paths.is_empty())
     });
     let cached = if use_index {
         crate::workbench_index::cached_sessions(&request.dirs)?.sessions
@@ -350,6 +350,15 @@ fn execute_search(job: &SearchJob, request: &SearchRequest) -> AppResult<()> {
                 // The selected paths are the scope. An unrelated unreadable file must
                 // not prevent healthy selected transcripts from being searched.
                 for path in &paths {
+                    if crate::workbench_index::supports(&scope.provider) {
+                        if let Some(session) = cached
+                            .iter()
+                            .find(|s| s.provider == scope.provider && s.rollout_path == *path)
+                        {
+                            found.push(session.clone());
+                            continue;
+                        }
+                    }
                     let result = match scope.provider.as_str() {
                         "qoder" => crate::qoder_sessions::parse_session(
                             root,
@@ -601,7 +610,7 @@ fn execute_search(job: &SearchJob, request: &SearchRequest) -> AppResult<()> {
                     )?;
                 }
             }
-            if matches!(session.provider.as_str(), "codex" | "claude") && request.scopes.is_some() {
+            if crate::workbench_index::supports(&session.provider) && request.scopes.is_some() {
                 let truncated = job
                     .status
                     .lock()

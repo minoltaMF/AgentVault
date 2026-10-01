@@ -394,7 +394,7 @@ export function ContentSearchDialog({
             )}
           </div>
 
-          {workbenchScopes && <p className="mt-2 text-xs text-muted-foreground">Codex / Claude 首次搜索建立本机索引，后续检查变化并复用；其他来源逐次读取。</p>}
+          {workbenchScopes && <p className="mt-2 text-xs text-muted-foreground">Codex、Claude、Qoder、WorkBuddy、Grok、Pi 首次搜索建立本机索引，后续检查变化并复用；其他来源逐次读取。</p>}
           {status && (
             <div className="mt-3 space-y-1.5">
               <div className="flex min-w-0 items-center justify-between gap-4 text-[11px] text-muted-foreground">

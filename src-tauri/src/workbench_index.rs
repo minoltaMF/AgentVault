@@ -1,4 +1,4 @@
-//! Rebuildable Codex/Claude search cache, never a writer of native sessions.
+//! Rebuildable workbench search cache, never a writer of native sessions.
 
 use std::{
     fs::{self, File, Metadata},
@@ -28,6 +28,10 @@ use crate::{
 };
 
 const PARSER: &str = "workbench-conversation-v1";
+pub(crate) const PROVIDERS: [&str; 6] = ["codex", "claude", "qoder", "workbuddy", "grok", "pi"];
+pub(crate) fn supports(provider: &str) -> bool {
+    PROVIDERS.contains(&provider)
+}
 
 static INDEX_PATH: OnceLock<PathBuf> = OnceLock::new();
 
@@ -85,11 +89,15 @@ fn source_id(provider: &str, root: &Path) -> AppResult<String> {
 }
 
 pub fn root(dirs: &ProviderDirs, provider: &str) -> PathBuf {
-    if provider == "codex" {
-        PathBuf::from(&dirs.codex_dir)
-    } else {
-        PathBuf::from(dirs.claude_dir.as_deref().unwrap_or(""))
-    }
+    PathBuf::from(match provider {
+        "codex" => dirs.codex_dir.as_str(),
+        "claude" => dirs.claude_dir.as_deref().unwrap_or(""),
+        "qoder" => dirs.qoder_dir.as_deref().unwrap_or(""),
+        "workbuddy" => dirs.workbuddy_dir.as_deref().unwrap_or(""),
+        "grok" => dirs.grok_dir.as_deref().unwrap_or(""),
+        "pi" => dirs.pi_dir.as_deref().unwrap_or(""),
+        _ => "",
+    })
 }
 
 #[derive(Serialize)]
@@ -116,7 +124,7 @@ fn cached_from(db: &Registry, dirs: &ProviderDirs) -> AppResult<CachedSessions> 
         index_updated_at_ms: None,
     };
 
-    for provider in ["codex", "claude"] {
+    for provider in PROVIDERS {
         let root = root(dirs, provider);
 
         if !root.is_absolute() || !root.is_dir() {
@@ -131,6 +139,9 @@ fn cached_from(db: &Registry, dirs: &ProviderDirs) -> AppResult<CachedSessions> 
                 let session: SessionSummary =
                     serde_json::from_value(record.metadata).map_err(err)?;
 
+                if register_source(provider, &root, Path::new(&session.rollout_path)).is_err() {
+                    continue;
+                }
                 if let Some(cursor) = db.source_cursor(pk, &session.rollout_path).map_err(err)? {
                     out.index_updated_at_ms = Some(
                         out.index_updated_at_ms
@@ -145,6 +156,62 @@ fn cached_from(db: &Registry, dirs: &ProviderDirs) -> AppResult<CachedSessions> 
     }
 
     Ok(out)
+}
+
+fn register_source(provider: &str, root: &Path, path: &Path) -> AppResult<()> {
+    match provider {
+        "qoder" => crate::qoder_sessions::register_source(root, path),
+        "workbuddy" => crate::workbuddy_sessions::register_source(root, path),
+        "grok" => crate::grok_sessions::register_source(root, path),
+        "pi" => crate::pi_sessions::register_source(root, path),
+        "codex" | "claude" => Ok(()),
+        _ => Err(err("该来源不支持持久索引")),
+    }
+}
+fn source_fingerprint(meta: &Metadata, session: &SessionSummary) -> AppResult<Fingerprint> {
+    let mut fp = fingerprint(meta)?;
+    if session.provider == "grok" {
+        // Companion metadata controls visibility even when the transcript is unchanged.
+        let summary = fingerprint(&fs::metadata(
+            Path::new(&session.rollout_path).with_file_name("summary.json"),
+        )?)?;
+        fp.identity = format!(
+            "{}:summary:{}:{}:{}",
+            fp.identity, summary.identity, summary.size, summary.mtime
+        );
+    }
+    Ok(fp)
+}
+fn push_conversation(
+    events: &mut Vec<CanonicalEvent>,
+    event: crate::models::PreviewEvent,
+    offset: usize,
+) {
+    let mixed = rollout::preview_event_has_assistant_text_tool_use(&event);
+    if !rollout::preview_event_is_conversation(&event) && !mixed {
+        return;
+    }
+    let text = rollout::preview_event_text(&event);
+    events.push(CanonicalEvent {
+        event_id: event.index.to_string(),
+        branch_id: None,
+        native_event_id: None,
+        parent_event_id: None,
+        ordinal: offset as i64,
+        timestamp_ms: None,
+        kind: "conversation".into(),
+        role: Some(if mixed {
+            "assistant".into()
+        } else {
+            event.role
+        }),
+        plain_text: Some(text),
+        tool_call_id: None,
+        structured: serde_json::json!({"event_index": event.index, "timestamp": event.timestamp}),
+        raw_byte_start: None,
+        raw_byte_end: None,
+        parse_quality: "complete".into(),
+    });
 }
 
 #[derive(PartialEq, Eq)]
@@ -241,7 +308,8 @@ pub(crate) fn refresh_and_search(
         .map_err(err)?;
     let file = File::open(&session.rollout_path)?;
 
-    let before = fingerprint(&file.metadata()?)?;
+    let before = source_fingerprint(&file.metadata()?, session)?;
+    register_source(&session.provider, root, Path::new(&session.rollout_path))?;
 
     let cursor = existing
         .map(|pk| db.source_cursor(pk, &session.rollout_path))
@@ -291,29 +359,38 @@ pub(crate) fn refresh_and_search(
                 continue;
             }
 
-            let current_offset = offset;
-            offset += 1;
-
             let raw = serde_json::from_str(&line)
                 .map_err(|e| err(format!("第 {index} 行 JSON 无效: {e}")))?;
-
             if let Some(event) =
                 content_search::classify_event(&session.provider, current_index, raw)
             {
-                let mixed = rollout::preview_event_has_assistant_text_tool_use(&event);
-
-                if !rollout::preview_event_is_conversation(&event) && !mixed {
-                    continue;
+                push_conversation(&mut events, event, offset);
+                offset += 1;
+            }
+        }
+        // Branch/chunk providers must use the same projection as their previews.
+        let projected = match session.provider.as_str() {
+            "grok" => Some(crate::grok_sessions::events(
+                &session.rollout_path,
+                Some(cancel),
+            )?),
+            "pi" => Some(crate::pi_sessions::events(
+                &session.rollout_path,
+                Some(cancel),
+            )?),
+            _ => None,
+        };
+        if let Some(projected) = projected {
+            for (offset, event) in projected.into_iter().enumerate() {
+                if cancel.load(Ordering::Acquire) {
+                    return Err(AppError::Cancelled);
                 }
-
-                let text = rollout::preview_event_text(&event);
-
-                events.push(CanonicalEvent { event_id: current_index.to_string(), branch_id: None, native_event_id: None, parent_event_id: None, ordinal: current_offset as i64, timestamp_ms: None, kind: "conversation".into(), role: Some(if mixed { "assistant".into() } else { event.role }), plain_text: Some(text), tool_call_id: None, structured: serde_json::json!({"event_index":current_index,"timestamp":event.timestamp}), raw_byte_start: None, raw_byte_end: None, parse_quality: "complete".into() });
+                push_conversation(&mut events, event, offset);
             }
         }
 
-        if before != fingerprint(&reader.get_ref().metadata()?)?
-            || before != fingerprint(&fs::metadata(&session.rollout_path)?)?
+        if before != source_fingerprint(&reader.get_ref().metadata()?, session)?
+            || before != source_fingerprint(&fs::metadata(&session.rollout_path)?, session)?
         {
             return Err(err("文件读取期间发生变化；保留旧索引，本次不使用旧结果"));
         }
@@ -434,7 +511,7 @@ pub(crate) fn refresh_and_search(
         }
     }
 
-    if before != fingerprint(&fs::metadata(&session.rollout_path)?)? {
+    if before != source_fingerprint(&fs::metadata(&session.rollout_path)?, session)? {
         return Err(err("查询期间文件发生变化，请重试"));
     }
     Ok(IndexOutcome {
@@ -608,5 +685,191 @@ mod transaction_tests {
         drop(conn);
         drop(db);
         fs::remove_dir_all(dir).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod additional_provider_tests {
+    use super::*;
+    use serde_json::json;
+
+    const PI: &str = concat!(
+        "{\"type\":\"session\",\"version\":3,\"id\":\"sample\",\"cwd\":\"/fixture\"}\n",
+        "{\"type\":\"message\",\"id\":\"root\",\"parentId\":null,\"message\":{\"role\":\"user\",\"content\":\"question\"}}\n",
+        "{\"type\":\"message\",\"id\":\"old\",\"parentId\":\"root\",\"message\":{\"role\":\"assistant\",\"content\":\"obsolete answer\"}}\n",
+        "{\"type\":\"message\",\"id\":\"new\",\"parentId\":\"root\",\"message\":{\"role\":\"assistant\",\"content\":\"current answer\"}}\n"
+    );
+    fn preview(provider: &str, path: &str, offset: usize) -> Vec<crate::models::PreviewEvent> {
+        match provider {
+            "qoder" => crate::qoder_sessions::preview_range(path, offset, 1),
+            "workbuddy" => crate::workbuddy_sessions::preview_range(path, offset, 1),
+            "grok" => crate::grok_sessions::preview_range(path, offset, 1),
+            "pi" => crate::pi_sessions::preview_range(path, offset, 1),
+            _ => unreachable!(),
+        }
+        .unwrap()
+    }
+    #[test]
+    fn four_providers_reuse_restart_refresh_and_preserve_preview_offsets() {
+        for (provider, relative, body, query, excluded) in [
+            (
+                "qoder",
+                "projects/demo/sample.jsonl",
+                include_str!("../tests/fixtures/qoder/sample-qoder-session.jsonl"),
+                "你好",
+                "Caveat",
+            ),
+            (
+                "workbuddy",
+                "projects/demo/sample.jsonl",
+                include_str!("../tests/fixtures/workbuddy/sample.jsonl"),
+                "needle",
+                "hidden",
+            ),
+            (
+                "grok",
+                "sessions/demo/s/updates.jsonl",
+                include_str!("../tests/fixtures/grok/updates.jsonl"),
+                "world",
+                "private tool output",
+            ),
+            (
+                "pi",
+                "sessions/demo/sample.jsonl",
+                PI,
+                "current answer",
+                "obsolete answer",
+            ),
+        ] {
+            let root = std::env::temp_dir().join(format!(
+                "av-index-four-{provider}-{}-{}",
+                std::process::id(),
+                now()
+            ));
+            let file = root.join(relative);
+            fs::create_dir_all(file.parent().unwrap()).unwrap();
+            fs::write(&file, body).unwrap();
+            if provider == "grok" {
+                fs::write(
+                    file.with_file_name("summary.json"),
+                    include_str!("../tests/fixtures/grok/summary.json"),
+                )
+                .unwrap();
+            }
+            let session: SessionSummary = serde_json::from_value(json!({"provider":provider,"id":"fixture","rollout_path":file,"cwd":"/fixture","cwd_display":"fixture","title":"Fixture","first_user_message":"","tokens_used":0,"created_at":0,"updated_at":0,"archived":false,"rollout_bytes":body.len(),"logs_count":0,"has_backup":false,"resume_command":""})).unwrap();
+            let cancel = AtomicBool::new(false);
+            let dbpath = root.join("index.sqlite3");
+            let mut db = Registry::open(&dbpath).unwrap();
+            let cold = search_with(&mut db, &session, &root, query, &cancel).unwrap();
+            assert!(!cold.reused, "{provider}");
+            assert!(!cold.matches.is_empty(), "{provider}");
+            for hit in &cold.matches {
+                let projected = preview(provider, file.to_str().unwrap(), hit.event_offset);
+                assert_eq!(projected[0].index, hit.event_index, "{provider}");
+                assert!(rollout::preview_event_text(&projected[0]).contains(query));
+            }
+            assert!(search_with(&mut db, &session, &root, excluded, &cancel)
+                .unwrap()
+                .matches
+                .is_empty());
+            assert_eq!(fs::read_to_string(&file).unwrap(), body);
+            drop(db);
+            let mut db = Registry::open(&dbpath).unwrap();
+            assert!(
+                search_with(&mut db, &session, &root, query, &cancel)
+                    .unwrap()
+                    .reused
+            );
+            let mut dirs = ProviderDirs::default();
+            match provider {
+                "qoder" => dirs.qoder_dir = Some(root.to_string_lossy().into_owned()),
+                "workbuddy" => dirs.workbuddy_dir = Some(root.to_string_lossy().into_owned()),
+                "grok" => dirs.grok_dir = Some(root.to_string_lossy().into_owned()),
+                "pi" => dirs.pi_dir = Some(root.to_string_lossy().into_owned()),
+                _ => unreachable!(),
+            }
+            assert_eq!(cached_from(&db, &dirs).unwrap().sessions.len(), 1);
+            assert!(cached_from(&db, &ProviderDirs::default())
+                .unwrap()
+                .sessions
+                .is_empty());
+            let changed = body.replace(query, "replacement 中文 foo::bar");
+            fs::write(&file, &changed).unwrap();
+            let updated = search_with(&mut db, &session, &root, "replacement", &cancel).unwrap();
+            assert!(!updated.reused);
+            assert!(!updated.matches.is_empty());
+            let pk = db
+                .session_pk_for_source(&source_id(provider, &root).unwrap(), &session.rollout_path)
+                .unwrap()
+                .unwrap();
+            let cursor = db.source_cursor(pk, &session.rollout_path).unwrap();
+            fs::write(&file, format!("{changed}\n{{\"partial\":")).unwrap();
+            assert!(search_with(&mut db, &session, &root, "replacement", &cancel).is_err());
+            assert_eq!(db.source_cursor(pk, &session.rollout_path).unwrap(), cursor);
+            assert!(db.body_matches(pk, "replacement").unwrap());
+            fs::write(&file, &changed).unwrap();
+            cancel.store(true, Ordering::Release);
+            assert!(matches!(
+                search_with(&mut db, &session, &root, "replacement", &cancel),
+                Err(AppError::Cancelled)
+            ));
+            assert_eq!(db.source_cursor(pk, &session.rollout_path).unwrap(), cursor);
+            drop(db);
+            fs::remove_dir_all(&root).unwrap();
+        }
+    }
+}
+
+#[cfg(test)]
+mod grok_cache_visibility_tests {
+    use super::*;
+    #[test]
+    fn companion_visibility_changes_cannot_reuse_old_hits() {
+        let root = std::env::temp_dir().join(format!(
+            "av-grok-visibility-{}-{}",
+            std::process::id(),
+            now()
+        ));
+        let file = root.join("sessions/demo/s/updates.jsonl");
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(&file, include_str!("../tests/fixtures/grok/updates.jsonl")).unwrap();
+        let summary = file.with_file_name("summary.json");
+        let original = include_str!("../tests/fixtures/grok/summary.json");
+        fs::write(&summary, original).unwrap();
+        let session = crate::grok_sessions::parse_session(&root, &file, None)
+            .unwrap()
+            .unwrap();
+        let mut db = Registry::open(root.join("index.sqlite3")).unwrap();
+        let cancel = AtomicBool::new(false);
+        assert!(
+            !search_with(&mut db, &session, &root, "world", &cancel)
+                .unwrap()
+                .reused
+        );
+        let mut metadata: serde_json::Value = serde_json::from_str(original).unwrap();
+        metadata["hidden"] = true.into();
+        fs::write(&summary, metadata.to_string()).unwrap();
+        assert!(search_with(&mut db, &session, &root, "world", &cancel).is_err());
+        let dirs = ProviderDirs {
+            grok_dir: Some(root.to_string_lossy().into_owned()),
+            ..Default::default()
+        };
+        assert!(cached_from(&db, &dirs).unwrap().sessions.is_empty());
+        fs::write(&summary, original).unwrap();
+        assert!(
+            !search_with(&mut db, &session, &root, "world", &cancel)
+                .unwrap()
+                .reused
+        );
+        use std::io::Write;
+        let mut f = fs::OpenOptions::new().append(true).open(&file).unwrap();
+        writeln!(f, "{}", serde_json::json!({"method":"_x.ai/session/update","params":{"sessionId":"s","update":{"sessionUpdate":"rewind_marker","target_prompt_index":0}}})).unwrap();
+        drop(f);
+        assert!(search_with(&mut db, &session, &root, "world", &cancel)
+            .unwrap()
+            .matches
+            .is_empty());
+        drop(db);
+        fs::remove_dir_all(root).unwrap();
     }
 }

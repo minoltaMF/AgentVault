@@ -31,14 +31,19 @@ where
 pub async fn cached_workbench_sessions(
     codex_dir: String,
     claude_dir: String,
+    qoder_dir: Option<String>,
+    workbuddy_dir: Option<String>,
+    grok_dir: Option<String>,
+    pi_dir: Option<String>,
 ) -> AppResult<crate::workbench_index::CachedSessions> {
     run_blocking(move || {
-        crate::workbench_index::cached_sessions(&provider_dirs(
-            codex_dir,
-            Some(claude_dir),
-            None,
-            None,
-        ))
+        crate::workbench_index::cached_sessions(&ProviderDirs {
+            qoder_dir,
+            workbuddy_dir,
+            grok_dir,
+            pi_dir,
+            ..provider_dirs(codex_dir, Some(claude_dir), None, None)
+        })
     })
     .await
 }

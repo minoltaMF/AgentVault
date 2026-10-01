@@ -97,6 +97,20 @@ fn seconds(value: Option<&Value>) -> i64 {
         .unwrap_or(0)
 }
 
+pub(crate) fn register_source(root: &Path, path: &Path) -> AppResult<()> {
+    if hidden(&metadata(root, path)?) {
+        return Err(AppError::Path(
+            "Grok 隐藏或子 Agent 会话不在当前只读接入范围".into(),
+        ));
+    }
+    ROOTS
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(root.to_path_buf());
+    Ok(())
+}
+
 pub(crate) fn parse_session(
     root: &Path,
     path: &Path,
@@ -160,11 +174,7 @@ pub(crate) fn parse_session(
         has_backup: false,
         resume_command: String::new(),
     };
-    ROOTS
-        .get_or_init(Default::default)
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .insert(root.to_path_buf());
+    register_source(root, path)?;
     Ok(Some(session))
 }
 

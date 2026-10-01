@@ -185,6 +185,16 @@ fn seconds(value: Option<&str>) -> Option<i64> {
         .map(|v| v.timestamp())
 }
 
+pub(crate) fn register_source(root: &Path, path: &Path) -> AppResult<()> {
+    validate(root, path)?;
+    ROOTS
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(root.to_path_buf());
+    Ok(())
+}
+
 pub(crate) fn parse_session(
     root: &Path,
     path: &Path,
@@ -249,11 +259,7 @@ pub(crate) fn parse_session(
         has_backup: false,
         resume_command: String::new(),
     };
-    ROOTS
-        .get_or_init(Default::default)
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .insert(root.to_path_buf());
+    register_source(root, path)?;
     Ok(Some(summary))
 }
 

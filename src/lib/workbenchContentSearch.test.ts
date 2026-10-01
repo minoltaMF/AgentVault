@@ -62,3 +62,12 @@ test("search cache survives return but isolates new source and late writes", () 
   assert.equal(next.query, "");
   assert.equal(cache("old").query, "");
 });
+
+test("all indexed providers replace historical rows after an empty native refresh", () => {
+  for (const provider of ["qoder", "workbuddy", "grok", "pi"]) {
+    const historical = [{ provider, rollout_path: "/fixture" }] as SessionSummary[];
+    assert.deepEqual(mergeIndexedSessions([], historical, []), historical);
+    assert.deepEqual(mergeIndexedSessions([], historical, [provider]), []);
+    assert.deepEqual(workbenchSearchScopes(mergeIndexedSessions([], historical, [])), [{ provider, rollout_paths: ["/fixture"] }]);
+  }
+});

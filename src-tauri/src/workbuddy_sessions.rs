@@ -53,6 +53,16 @@ pub(crate) fn validate_preview(path: &str) -> AppResult<()> {
     ))
 }
 
+pub(crate) fn register_source(root: &Path, path: &Path) -> AppResult<()> {
+    validate(root, path)?;
+    ROOTS
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(root.to_path_buf());
+    Ok(())
+}
+
 pub(crate) fn parse_session(
     root: &Path,
     path: &Path,
@@ -69,11 +79,7 @@ pub(crate) fn parse_session(
     // This adapter deliberately exposes no native execution or mutation capability.
     session.resume_command.clear();
     session.source = Some("desktop".into());
-    ROOTS
-        .get_or_init(Default::default)
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .insert(root.to_path_buf());
+    register_source(root, path)?;
     Ok(Some(session))
 }
 
