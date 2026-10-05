@@ -1,0 +1,1880 @@
+{
+  "date": "2026-10-05",
+  "notes": "Sequential isolated runs on the same Windows ARM64 VM; runs span multiple days and host load is not controlled. Retains both alpha.15 baselines and the intermediate alpha.16 candidate which did not yet skip the initial DELETE scan. Compare final to baseline_repeat; do not infer P95 or universal speedups.",
+  "runs": {
+    "baseline": {
+      "schema_version": 2,
+      "started_at": "2026-10-03T15:40:06.638Z",
+      "machine": {
+        "platform": "win32",
+        "arch": "arm64",
+        "os_release": "10.0.26200",
+        "cpu": "Apple Silicon",
+        "logical_cpus": 6,
+        "total_memory_bytes": 9657057280,
+        "node": "v24.19.0"
+      },
+      "cli": {
+        "sha256": "e35089e1c431d5d66b8cc63e06165554392c51083271aa478cf21802c0e7a3a9",
+        "build_profile": "release",
+        "version": "0.1.0-alpha.15",
+        "target": "x86_64-pc-windows-gnu"
+      },
+      "sample": {
+        "sessions_per_provider": 1000,
+        "messages_per_session": 100,
+        "expected_conversation_messages_per_session": 100,
+        "expected_user_messages_per_session": 50,
+        "expected_assistant_messages_per_session": 50,
+        "body_characters": 1024
+      },
+      "methodology": "Synthetic repetitive ASCII text, not representative real-world language or compression ratios. Sequential providers; fresh application index, OS filesystem cache not flushed. Timings include HTTP start/poll overhead (25 ms polling). Restart retains the derived index. Sparse query matches one session; absent query matches none. Fixtures and logs are retained, never deleted.",
+      "providers": [
+        {
+          "provider": "qoder",
+          "source_bytes": 124570000,
+          "source_files": 1000,
+          "phases": [
+            {
+              "phase": "scan",
+              "elapsed_ms": 1595.5787500000006,
+              "sessions": 1000
+            },
+            {
+              "phase": "first_index_sparse",
+              "elapsed_ms": 101608.32616699999,
+              "indexed_files": 1000,
+              "reused_files": 0,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 124570000
+            },
+            {
+              "phase": "warm_sparse_1",
+              "elapsed_ms": 1345.0200420000037,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 124570000
+            },
+            {
+              "phase": "warm_sparse_2",
+              "elapsed_ms": 1331.5768339999922,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 124570000
+            },
+            {
+              "phase": "warm_sparse_3",
+              "elapsed_ms": 1232.1631669999915,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 124570000
+            },
+            {
+              "phase": "warm_absent",
+              "elapsed_ms": 1382.3343750000058,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 0,
+              "scanned_files": 1000,
+              "scanned_bytes": 124570000
+            },
+            {
+              "phase": "warm_user_gate",
+              "elapsed_ms": 1287.1695830000099,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 124570000
+            },
+            {
+              "phase": "restart_cached_list",
+              "elapsed_ms": 271.85720800000126,
+              "sessions": 1000
+            },
+            {
+              "phase": "restart_sparse",
+              "elapsed_ms": 1225.4639999999927,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 124570000
+            },
+            {
+              "phase": "single_file_rebuild",
+              "elapsed_ms": 1363.185124999989,
+              "indexed_files": 1,
+              "reused_files": 999,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 124570000
+            },
+            {
+              "phase": "old_marker_absent",
+              "elapsed_ms": 1181.9309170000051,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 0,
+              "scanned_files": 1000,
+              "scanned_bytes": 124570000
+            }
+          ],
+          "user_and_assistant_search_preview_verified": true,
+          "source_hashes_unchanged_before_edit": true,
+          "source_hashes_unchanged_after_edit": true,
+          "index_files": [
+            {
+              "path": "registry.sqlite3",
+              "bytes": 406417408,
+              "sha256": "1f65ee9819def998b4e1addc5349eb588318556646ff6b4471ec3b4e2ccc8f25"
+            }
+          ],
+          "index_bytes": 406417408
+        },
+        {
+          "provider": "workbuddy",
+          "source_bytes": 116557000,
+          "source_files": 1000,
+          "phases": [
+            {
+              "phase": "scan",
+              "elapsed_ms": 1868.784290999989,
+              "sessions": 1000
+            },
+            {
+              "phase": "first_index_sparse",
+              "elapsed_ms": 102895.35725,
+              "indexed_files": 1000,
+              "reused_files": 0,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116557000
+            },
+            {
+              "phase": "warm_sparse_1",
+              "elapsed_ms": 1287.8869169999962,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116557000
+            },
+            {
+              "phase": "warm_sparse_2",
+              "elapsed_ms": 1365.176208000019,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116557000
+            },
+            {
+              "phase": "warm_sparse_3",
+              "elapsed_ms": 1257.6618339999986,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116557000
+            },
+            {
+              "phase": "warm_absent",
+              "elapsed_ms": 1164.8796250000014,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 0,
+              "scanned_files": 1000,
+              "scanned_bytes": 116557000
+            },
+            {
+              "phase": "warm_user_gate",
+              "elapsed_ms": 1399.978541999997,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116557000
+            },
+            {
+              "phase": "restart_cached_list",
+              "elapsed_ms": 273.6834589999926,
+              "sessions": 1000
+            },
+            {
+              "phase": "restart_sparse",
+              "elapsed_ms": 1273.0434590000077,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116557000
+            },
+            {
+              "phase": "single_file_rebuild",
+              "elapsed_ms": 1354.6318329999922,
+              "indexed_files": 1,
+              "reused_files": 999,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116557000
+            },
+            {
+              "phase": "old_marker_absent",
+              "elapsed_ms": 1149.4958330000227,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 0,
+              "scanned_files": 1000,
+              "scanned_bytes": 116557000
+            }
+          ],
+          "user_and_assistant_search_preview_verified": true,
+          "source_hashes_unchanged_before_edit": true,
+          "source_hashes_unchanged_after_edit": true,
+          "index_files": [
+            {
+              "path": "registry.sqlite3",
+              "bytes": 406405120,
+              "sha256": "dbf078e21896202f54cdfc5f71a2002668868ef7f35593aca5ccd6f89fb7c238"
+            }
+          ],
+          "index_bytes": 406405120
+        },
+        {
+          "provider": "grok",
+          "source_bytes": 121309000,
+          "source_files": 2000,
+          "phases": [
+            {
+              "phase": "scan",
+              "elapsed_ms": 4401.8227080000215,
+              "sessions": 1000
+            },
+            {
+              "phase": "first_index_sparse",
+              "elapsed_ms": 113946.86966699999,
+              "indexed_files": 1000,
+              "reused_files": 0,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 121122000
+            },
+            {
+              "phase": "warm_sparse_1",
+              "elapsed_ms": 7019.7278750000405,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 121122000
+            },
+            {
+              "phase": "warm_sparse_2",
+              "elapsed_ms": 3863.420541999978,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 121122000
+            },
+            {
+              "phase": "warm_sparse_3",
+              "elapsed_ms": 4014.0786669999943,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 121122000
+            },
+            {
+              "phase": "warm_absent",
+              "elapsed_ms": 3870.2431250000373,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 0,
+              "scanned_files": 1000,
+              "scanned_bytes": 121122000
+            },
+            {
+              "phase": "warm_user_gate",
+              "elapsed_ms": 4106.2263750000275,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 121122000
+            },
+            {
+              "phase": "restart_cached_list",
+              "elapsed_ms": 1443.2521669999696,
+              "sessions": 1000
+            },
+            {
+              "phase": "restart_sparse",
+              "elapsed_ms": 3821.5016250000335,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 121122000
+            },
+            {
+              "phase": "single_file_rebuild",
+              "elapsed_ms": 4662.13629200001,
+              "indexed_files": 1,
+              "reused_files": 999,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 121122000
+            },
+            {
+              "phase": "old_marker_absent",
+              "elapsed_ms": 3695.469416000007,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 0,
+              "scanned_files": 1000,
+              "scanned_bytes": 121122000
+            }
+          ],
+          "user_and_assistant_search_preview_verified": true,
+          "source_hashes_unchanged_before_edit": true,
+          "source_hashes_unchanged_after_edit": true,
+          "index_files": [
+            {
+              "path": "registry.sqlite3",
+              "bytes": 406478848,
+              "sha256": "9a013a11d953416dd79c228cfbdb75bbf12394fd976408f90f86defced58ae1b"
+            }
+          ],
+          "index_bytes": 406478848
+        },
+        {
+          "provider": "pi",
+          "source_bytes": 116222000,
+          "source_files": 1000,
+          "phases": [
+            {
+              "phase": "scan",
+              "elapsed_ms": 2890.132917000039,
+              "sessions": 1000
+            },
+            {
+              "phase": "first_index_sparse",
+              "elapsed_ms": 114567.53316600004,
+              "indexed_files": 1000,
+              "reused_files": 0,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116222000
+            },
+            {
+              "phase": "warm_sparse_1",
+              "elapsed_ms": 1331.4621670000488,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116222000
+            },
+            {
+              "phase": "warm_sparse_2",
+              "elapsed_ms": 1362.9984580000164,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116222000
+            },
+            {
+              "phase": "warm_sparse_3",
+              "elapsed_ms": 1373.3137080000015,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116222000
+            },
+            {
+              "phase": "warm_absent",
+              "elapsed_ms": 2614.425958000007,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 0,
+              "scanned_files": 1000,
+              "scanned_bytes": 116222000
+            },
+            {
+              "phase": "warm_user_gate",
+              "elapsed_ms": 1532.8054579999298,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116222000
+            },
+            {
+              "phase": "restart_cached_list",
+              "elapsed_ms": 316.4120830000611,
+              "sessions": 1000
+            },
+            {
+              "phase": "restart_sparse",
+              "elapsed_ms": 1464.3614169999491,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116222000
+            },
+            {
+              "phase": "single_file_rebuild",
+              "elapsed_ms": 1649.1978749999544,
+              "indexed_files": 1,
+              "reused_files": 999,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116222000
+            },
+            {
+              "phase": "old_marker_absent",
+              "elapsed_ms": 1356.6899170000106,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 0,
+              "scanned_files": 1000,
+              "scanned_bytes": 116222000
+            }
+          ],
+          "user_and_assistant_search_preview_verified": true,
+          "source_hashes_unchanged_before_edit": true,
+          "source_hashes_unchanged_after_edit": true,
+          "index_files": [
+            {
+              "path": "registry.sqlite3",
+              "bytes": 408465408,
+              "sha256": "f93b2c983c4574bb919e7c8245c2a7a65f1d738bc35b603b83470af6f5be4e18"
+            }
+          ],
+          "index_bytes": 408465408
+        }
+      ],
+      "pass": true,
+      "finished_at": "2026-10-03T15:49:19.101Z",
+      "application_commit": "995b7dcd40d4771a5750e1385b221d3e3e300e36"
+    },
+    "baseline_repeat": {
+      "schema_version": 2,
+      "started_at": "2026-10-04T14:15:59.040Z",
+      "machine": {
+        "platform": "win32",
+        "arch": "arm64",
+        "os_release": "10.0.26200",
+        "cpu": "Apple Silicon",
+        "logical_cpus": 6,
+        "total_memory_bytes": 9657057280,
+        "node": "v24.19.0"
+      },
+      "cli": {
+        "sha256": "e35089e1c431d5d66b8cc63e06165554392c51083271aa478cf21802c0e7a3a9",
+        "build_profile": "release",
+        "version": "0.1.0-alpha.15",
+        "target": "x86_64-pc-windows-gnu"
+      },
+      "sample": {
+        "sessions_per_provider": 1000,
+        "messages_per_session": 100,
+        "expected_conversation_messages_per_session": 100,
+        "expected_user_messages_per_session": 50,
+        "expected_assistant_messages_per_session": 50,
+        "body_characters": 1024
+      },
+      "methodology": "Synthetic repetitive ASCII text, not representative real-world language or compression ratios. Sequential providers; fresh application index, OS filesystem cache not flushed. Timings include HTTP start/poll overhead (25 ms polling). Restart retains the derived index. Sparse query matches one session; absent query matches none. Fixtures and logs are retained, never deleted.",
+      "providers": [
+        {
+          "provider": "qoder",
+          "source_bytes": 124570000,
+          "source_files": 1000,
+          "phases": [
+            {
+              "phase": "scan",
+              "elapsed_ms": 2682.110292000001,
+              "sessions": 1000
+            },
+            {
+              "phase": "first_index_sparse",
+              "elapsed_ms": 121256.82925,
+              "indexed_files": 1000,
+              "reused_files": 0,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 124570000
+            },
+            {
+              "phase": "warm_sparse_1",
+              "elapsed_ms": 1624.1317080000008,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 124570000
+            },
+            {
+              "phase": "warm_sparse_2",
+              "elapsed_ms": 1799.1599999999744,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 124570000
+            },
+            {
+              "phase": "warm_sparse_3",
+              "elapsed_ms": 1482.0324160000018,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 124570000
+            },
+            {
+              "phase": "warm_absent",
+              "elapsed_ms": 1432.1596250000002,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 0,
+              "scanned_files": 1000,
+              "scanned_bytes": 124570000
+            },
+            {
+              "phase": "warm_user_gate",
+              "elapsed_ms": 1508.672666999977,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 124570000
+            },
+            {
+              "phase": "restart_cached_list",
+              "elapsed_ms": 476.06762499999604,
+              "sessions": 1000
+            },
+            {
+              "phase": "restart_sparse",
+              "elapsed_ms": 1678.8423340000154,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 124570000
+            },
+            {
+              "phase": "single_file_rebuild",
+              "elapsed_ms": 2124.9986250000075,
+              "indexed_files": 1,
+              "reused_files": 999,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 124570000
+            },
+            {
+              "phase": "old_marker_absent",
+              "elapsed_ms": 1364.8376249999856,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 0,
+              "scanned_files": 1000,
+              "scanned_bytes": 124570000
+            }
+          ],
+          "user_and_assistant_search_preview_verified": true,
+          "source_hashes_unchanged_before_edit": true,
+          "source_hashes_unchanged_after_edit": true,
+          "index_files": [
+            {
+              "path": "registry.sqlite3",
+              "bytes": 406409216,
+              "sha256": "e3e200f1ffb7d2e3278f5370342c1e743db9420a2c4b877d8e15aa8b21420da6"
+            }
+          ],
+          "index_bytes": 406409216
+        },
+        {
+          "provider": "workbuddy",
+          "source_bytes": 116557000,
+          "source_files": 1000,
+          "phases": [
+            {
+              "phase": "scan",
+              "elapsed_ms": 2060.1793330000073,
+              "sessions": 1000
+            },
+            {
+              "phase": "first_index_sparse",
+              "elapsed_ms": 142296.954959,
+              "indexed_files": 1000,
+              "reused_files": 0,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116557000
+            },
+            {
+              "phase": "warm_sparse_1",
+              "elapsed_ms": 1739.6902080000145,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116557000
+            },
+            {
+              "phase": "warm_sparse_2",
+              "elapsed_ms": 1664.7945829999517,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116557000
+            },
+            {
+              "phase": "warm_sparse_3",
+              "elapsed_ms": 1738.8802499999874,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116557000
+            },
+            {
+              "phase": "warm_absent",
+              "elapsed_ms": 1507.1060840000282,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 0,
+              "scanned_files": 1000,
+              "scanned_bytes": 116557000
+            },
+            {
+              "phase": "warm_user_gate",
+              "elapsed_ms": 1790.4634590000496,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116557000
+            },
+            {
+              "phase": "restart_cached_list",
+              "elapsed_ms": 274.195000000007,
+              "sessions": 1000
+            },
+            {
+              "phase": "restart_sparse",
+              "elapsed_ms": 1773.7032079999917,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116557000
+            },
+            {
+              "phase": "single_file_rebuild",
+              "elapsed_ms": 1946.2662920000148,
+              "indexed_files": 1,
+              "reused_files": 999,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116557000
+            },
+            {
+              "phase": "old_marker_absent",
+              "elapsed_ms": 1215.242790999997,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 0,
+              "scanned_files": 1000,
+              "scanned_bytes": 116557000
+            }
+          ],
+          "user_and_assistant_search_preview_verified": true,
+          "source_hashes_unchanged_before_edit": true,
+          "source_hashes_unchanged_after_edit": true,
+          "index_files": [
+            {
+              "path": "registry.sqlite3",
+              "bytes": 406405120,
+              "sha256": "f51a932f37a1f4a2752892d1de89989fad6877e9912edb7b1b0ddf6f19cd4891"
+            }
+          ],
+          "index_bytes": 406405120
+        },
+        {
+          "provider": "grok",
+          "source_bytes": 121309000,
+          "source_files": 2000,
+          "phases": [
+            {
+              "phase": "scan",
+              "elapsed_ms": 6853.023833999992,
+              "sessions": 1000
+            },
+            {
+              "phase": "first_index_sparse",
+              "elapsed_ms": 136276.09025,
+              "indexed_files": 1000,
+              "reused_files": 0,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 121122000
+            },
+            {
+              "phase": "warm_sparse_1",
+              "elapsed_ms": 3754.698958000052,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 121122000
+            },
+            {
+              "phase": "warm_sparse_2",
+              "elapsed_ms": 4291.423374999955,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 121122000
+            },
+            {
+              "phase": "warm_sparse_3",
+              "elapsed_ms": 3712.194709000003,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 121122000
+            },
+            {
+              "phase": "warm_absent",
+              "elapsed_ms": 3756.8151669999934,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 0,
+              "scanned_files": 1000,
+              "scanned_bytes": 121122000
+            },
+            {
+              "phase": "warm_user_gate",
+              "elapsed_ms": 3965.335832999961,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 121122000
+            },
+            {
+              "phase": "restart_cached_list",
+              "elapsed_ms": 1458.179541999998,
+              "sessions": 1000
+            },
+            {
+              "phase": "restart_sparse",
+              "elapsed_ms": 3555.689958999981,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 121122000
+            },
+            {
+              "phase": "single_file_rebuild",
+              "elapsed_ms": 8733.538041999971,
+              "indexed_files": 1,
+              "reused_files": 999,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 121122000
+            },
+            {
+              "phase": "old_marker_absent",
+              "elapsed_ms": 8159.143749999988,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 0,
+              "scanned_files": 1000,
+              "scanned_bytes": 121122000
+            }
+          ],
+          "user_and_assistant_search_preview_verified": true,
+          "source_hashes_unchanged_before_edit": true,
+          "source_hashes_unchanged_after_edit": true,
+          "index_files": [
+            {
+              "path": "registry.sqlite3",
+              "bytes": 406470656,
+              "sha256": "b80ae22c30e7b81f7f9d37e0b4b15ef523078ef545a0308394981d25f5d55a9a"
+            }
+          ],
+          "index_bytes": 406470656
+        },
+        {
+          "provider": "pi",
+          "source_bytes": 116222000,
+          "source_files": 1000,
+          "phases": [
+            {
+              "phase": "scan",
+              "elapsed_ms": 5605.0014580000425,
+              "sessions": 1000
+            },
+            {
+              "phase": "first_index_sparse",
+              "elapsed_ms": 104517.26225000003,
+              "indexed_files": 1000,
+              "reused_files": 0,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116222000
+            },
+            {
+              "phase": "warm_sparse_1",
+              "elapsed_ms": 1236.6737500000745,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116222000
+            },
+            {
+              "phase": "warm_sparse_2",
+              "elapsed_ms": 1281.938291999977,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116222000
+            },
+            {
+              "phase": "warm_sparse_3",
+              "elapsed_ms": 1222.9660419999855,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116222000
+            },
+            {
+              "phase": "warm_absent",
+              "elapsed_ms": 1148.3511670000153,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 0,
+              "scanned_files": 1000,
+              "scanned_bytes": 116222000
+            },
+            {
+              "phase": "warm_user_gate",
+              "elapsed_ms": 1893.1277919999557,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116222000
+            },
+            {
+              "phase": "restart_cached_list",
+              "elapsed_ms": 363.77324999996927,
+              "sessions": 1000
+            },
+            {
+              "phase": "restart_sparse",
+              "elapsed_ms": 1391.3185420000227,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116222000
+            },
+            {
+              "phase": "single_file_rebuild",
+              "elapsed_ms": 1749.627833000035,
+              "indexed_files": 1,
+              "reused_files": 999,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116222000
+            },
+            {
+              "phase": "old_marker_absent",
+              "elapsed_ms": 1078.7592500000028,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 0,
+              "scanned_files": 1000,
+              "scanned_bytes": 116222000
+            }
+          ],
+          "user_and_assistant_search_preview_verified": true,
+          "source_hashes_unchanged_before_edit": true,
+          "source_hashes_unchanged_after_edit": true,
+          "index_files": [
+            {
+              "path": "registry.sqlite3",
+              "bytes": 408457216,
+              "sha256": "d8f5bfac5cf52d6fda3bfea8cc588c31a92acccf16229b4fdffc399fe4b24b51"
+            }
+          ],
+          "index_bytes": 408457216
+        }
+      ],
+      "pass": true,
+      "finished_at": "2026-10-04T14:27:07.483Z",
+      "application_commit": "995b7dcd40d4771a5750e1385b221d3e3e300e36"
+    },
+    "candidate_before_scan_fix": {
+      "schema_version": 2,
+      "started_at": "2026-10-04T14:02:44.232Z",
+      "machine": {
+        "platform": "win32",
+        "arch": "arm64",
+        "os_release": "10.0.26200",
+        "cpu": "Apple Silicon",
+        "logical_cpus": 6,
+        "total_memory_bytes": 9657057280,
+        "node": "v24.19.0"
+      },
+      "cli": {
+        "sha256": "7dbe33317a9968ae29a9716a2f67a0178e8178a960c6e0de8431a72e3b3ef4fe",
+        "build_profile": "release",
+        "version": "0.1.0-alpha.16",
+        "target": "x86_64-pc-windows-gnu"
+      },
+      "sample": {
+        "sessions_per_provider": 1000,
+        "messages_per_session": 100,
+        "expected_conversation_messages_per_session": 100,
+        "expected_user_messages_per_session": 50,
+        "expected_assistant_messages_per_session": 50,
+        "body_characters": 1024
+      },
+      "methodology": "Synthetic repetitive ASCII text, not representative real-world language or compression ratios. Sequential providers; fresh application index, OS filesystem cache not flushed. Timings include HTTP start/poll overhead (25 ms polling). Restart retains the derived index. Sparse query matches one session; absent query matches none. Fixtures and logs are retained, never deleted.",
+      "providers": [
+        {
+          "provider": "qoder",
+          "source_bytes": 124570000,
+          "source_files": 1000,
+          "phases": [
+            {
+              "phase": "scan",
+              "elapsed_ms": 2140.2347499999996,
+              "sessions": 1000
+            },
+            {
+              "phase": "first_index_sparse",
+              "elapsed_ms": 185147.775583,
+              "indexed_files": 1000,
+              "reused_files": 0,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 124570000
+            },
+            {
+              "phase": "warm_sparse_1",
+              "elapsed_ms": 1109.0171670000127,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 124570000
+            },
+            {
+              "phase": "warm_sparse_2",
+              "elapsed_ms": 1049.8207500000135,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 124570000
+            },
+            {
+              "phase": "warm_sparse_3",
+              "elapsed_ms": 1070.0196250000154,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 124570000
+            },
+            {
+              "phase": "warm_absent",
+              "elapsed_ms": 1199.3391669999983,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 0,
+              "scanned_files": 1000,
+              "scanned_bytes": 124570000
+            },
+            {
+              "phase": "warm_user_gate",
+              "elapsed_ms": 1107.8054159999883,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 124570000
+            },
+            {
+              "phase": "restart_cached_list",
+              "elapsed_ms": 291.02974999998696,
+              "sessions": 1000
+            },
+            {
+              "phase": "restart_sparse",
+              "elapsed_ms": 1193.4548749999958,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 124570000
+            },
+            {
+              "phase": "single_file_rebuild",
+              "elapsed_ms": 1544.3609580000048,
+              "indexed_files": 1,
+              "reused_files": 999,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 124570000
+            },
+            {
+              "phase": "old_marker_absent",
+              "elapsed_ms": 973.0125419999822,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 0,
+              "scanned_files": 1000,
+              "scanned_bytes": 124570000
+            }
+          ],
+          "user_and_assistant_search_preview_verified": true,
+          "source_hashes_unchanged_before_edit": true,
+          "source_hashes_unchanged_after_edit": true,
+          "index_files": [
+            {
+              "path": "registry.sqlite3",
+              "bytes": 406421504,
+              "sha256": "2504707076537151c028de271f9a44999d3312260e8942c36760aa01178065c1"
+            }
+          ],
+          "index_bytes": 406421504
+        },
+        {
+          "provider": "workbuddy",
+          "source_bytes": 116557000,
+          "source_files": 1000,
+          "phases": [
+            {
+              "phase": "scan",
+              "elapsed_ms": 2554.991708000016,
+              "sessions": 1000
+            },
+            {
+              "phase": "first_index_sparse",
+              "elapsed_ms": 166742.40541700003,
+              "indexed_files": 1000,
+              "reused_files": 0,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116557000
+            },
+            {
+              "phase": "warm_sparse_1",
+              "elapsed_ms": 1194.449541000009,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116557000
+            },
+            {
+              "phase": "warm_sparse_2",
+              "elapsed_ms": 1299.7871249999735,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116557000
+            },
+            {
+              "phase": "warm_sparse_3",
+              "elapsed_ms": 1556.9652500000084,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116557000
+            },
+            {
+              "phase": "warm_absent",
+              "elapsed_ms": 1123.3147919999901,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 0,
+              "scanned_files": 1000,
+              "scanned_bytes": 116557000
+            },
+            {
+              "phase": "warm_user_gate",
+              "elapsed_ms": 1207.901291999966,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116557000
+            },
+            {
+              "phase": "restart_cached_list",
+              "elapsed_ms": 255.0765829999582,
+              "sessions": 1000
+            },
+            {
+              "phase": "restart_sparse",
+              "elapsed_ms": 1303.0765410000458,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116557000
+            },
+            {
+              "phase": "single_file_rebuild",
+              "elapsed_ms": 1773.5429579999764,
+              "indexed_files": 1,
+              "reused_files": 999,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116557000
+            },
+            {
+              "phase": "old_marker_absent",
+              "elapsed_ms": 953.5107499999576,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 0,
+              "scanned_files": 1000,
+              "scanned_bytes": 116557000
+            }
+          ],
+          "user_and_assistant_search_preview_verified": true,
+          "source_hashes_unchanged_before_edit": true,
+          "source_hashes_unchanged_after_edit": true,
+          "index_files": [
+            {
+              "path": "registry.sqlite3",
+              "bytes": 406409216,
+              "sha256": "08d109a61156dffb7296f9c3e3dc9b9e0feb8422e9d51a1b2b29a74d5c364d40"
+            }
+          ],
+          "index_bytes": 406409216
+        },
+        {
+          "provider": "grok",
+          "source_bytes": 121309000,
+          "source_files": 2000,
+          "phases": [
+            {
+              "phase": "scan",
+              "elapsed_ms": 6907.35708300001,
+              "sessions": 1000
+            },
+            {
+              "phase": "first_index_sparse",
+              "elapsed_ms": 128832.22941700002,
+              "indexed_files": 1000,
+              "reused_files": 0,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 121122000
+            },
+            {
+              "phase": "warm_sparse_1",
+              "elapsed_ms": 2498.1349169999594,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 121122000
+            },
+            {
+              "phase": "warm_sparse_2",
+              "elapsed_ms": 2427.6547919999575,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 121122000
+            },
+            {
+              "phase": "warm_sparse_3",
+              "elapsed_ms": 2830.894417000003,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 121122000
+            },
+            {
+              "phase": "warm_absent",
+              "elapsed_ms": 2421.672041999991,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 0,
+              "scanned_files": 1000,
+              "scanned_bytes": 121122000
+            },
+            {
+              "phase": "warm_user_gate",
+              "elapsed_ms": 3449.3303340000566,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 121122000
+            },
+            {
+              "phase": "restart_cached_list",
+              "elapsed_ms": 2172.6830000000773,
+              "sessions": 1000
+            },
+            {
+              "phase": "restart_sparse",
+              "elapsed_ms": 2741.4105829999316,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 121122000
+            },
+            {
+              "phase": "single_file_rebuild",
+              "elapsed_ms": 3317.709707999951,
+              "indexed_files": 1,
+              "reused_files": 999,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 121122000
+            },
+            {
+              "phase": "old_marker_absent",
+              "elapsed_ms": 2738.1764170000097,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 0,
+              "scanned_files": 1000,
+              "scanned_bytes": 121122000
+            }
+          ],
+          "user_and_assistant_search_preview_verified": true,
+          "source_hashes_unchanged_before_edit": true,
+          "source_hashes_unchanged_after_edit": true,
+          "index_files": [
+            {
+              "path": "registry.sqlite3",
+              "bytes": 406466560,
+              "sha256": "a4afbcc20db8d86e00a2be40642a9152bf48789aa97b13f09d7787e846ad9a21"
+            }
+          ],
+          "index_bytes": 406466560
+        },
+        {
+          "provider": "pi",
+          "source_bytes": 116222000,
+          "source_files": 1000,
+          "phases": [
+            {
+              "phase": "scan",
+              "elapsed_ms": 3241.0409999999683,
+              "sessions": 1000
+            },
+            {
+              "phase": "first_index_sparse",
+              "elapsed_ms": 129794.00300000003,
+              "indexed_files": 1000,
+              "reused_files": 0,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116222000
+            },
+            {
+              "phase": "warm_sparse_1",
+              "elapsed_ms": 1536.3675410000142,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116222000
+            },
+            {
+              "phase": "warm_sparse_2",
+              "elapsed_ms": 1272.7455000000773,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116222000
+            },
+            {
+              "phase": "warm_sparse_3",
+              "elapsed_ms": 1305.1308329999447,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116222000
+            },
+            {
+              "phase": "warm_absent",
+              "elapsed_ms": 939.7691669999622,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 0,
+              "scanned_files": 1000,
+              "scanned_bytes": 116222000
+            },
+            {
+              "phase": "warm_user_gate",
+              "elapsed_ms": 1025.1202920000069,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116222000
+            },
+            {
+              "phase": "restart_cached_list",
+              "elapsed_ms": 242.41279099998064,
+              "sessions": 1000
+            },
+            {
+              "phase": "restart_sparse",
+              "elapsed_ms": 1213.0530830000062,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116222000
+            },
+            {
+              "phase": "single_file_rebuild",
+              "elapsed_ms": 1406.2708750000456,
+              "indexed_files": 1,
+              "reused_files": 999,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116222000
+            },
+            {
+              "phase": "old_marker_absent",
+              "elapsed_ms": 981.6743750000605,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 0,
+              "scanned_files": 1000,
+              "scanned_bytes": 116222000
+            }
+          ],
+          "user_and_assistant_search_preview_verified": true,
+          "source_hashes_unchanged_before_edit": true,
+          "source_hashes_unchanged_after_edit": true,
+          "index_files": [
+            {
+              "path": "registry.sqlite3",
+              "bytes": 408461312,
+              "sha256": "8fe52d32d1cfdaf858b44d842d292e13245ef8edec48313a36de82db997a0c11"
+            }
+          ],
+          "index_bytes": 408461312
+        }
+      ],
+      "pass": true,
+      "finished_at": "2026-10-04T14:15:20.901Z"
+    },
+    "final": {
+      "schema_version": 2,
+      "started_at": "2026-10-05T05:26:09.503Z",
+      "machine": {
+        "platform": "win32",
+        "arch": "arm64",
+        "os_release": "10.0.26200",
+        "cpu": "Apple Silicon",
+        "logical_cpus": 6,
+        "total_memory_bytes": 9657057280,
+        "node": "v24.19.0"
+      },
+      "cli": {
+        "sha256": "b2d8931e8411710e98ec753f2cd7639a7ccfd0b1dea3459ae2704a9d15a4b9b8",
+        "build_profile": "release",
+        "version": "0.1.0-alpha.16",
+        "target": "x86_64-pc-windows-gnu"
+      },
+      "sample": {
+        "sessions_per_provider": 1000,
+        "messages_per_session": 100,
+        "expected_conversation_messages_per_session": 100,
+        "expected_user_messages_per_session": 50,
+        "expected_assistant_messages_per_session": 50,
+        "body_characters": 1024
+      },
+      "methodology": "Synthetic repetitive ASCII text, not representative real-world language or compression ratios. Sequential providers; fresh application index, OS filesystem cache not flushed. Timings include HTTP start/poll overhead (25 ms polling). Restart retains the derived index. Sparse query matches one session; absent query matches none. Fixtures and logs are retained, never deleted.",
+      "providers": [
+        {
+          "provider": "qoder",
+          "source_bytes": 124570000,
+          "source_files": 1000,
+          "phases": [
+            {
+              "phase": "scan",
+              "elapsed_ms": 3414.431875,
+              "sessions": 1000
+            },
+            {
+              "phase": "first_index_sparse",
+              "elapsed_ms": 47596.47,
+              "indexed_files": 1000,
+              "reused_files": 0,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 124570000
+            },
+            {
+              "phase": "warm_sparse_1",
+              "elapsed_ms": 1666.747500000005,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 124570000
+            },
+            {
+              "phase": "warm_sparse_2",
+              "elapsed_ms": 1526.2298340000052,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 124570000
+            },
+            {
+              "phase": "warm_sparse_3",
+              "elapsed_ms": 1682.0691249999945,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 124570000
+            },
+            {
+              "phase": "warm_absent",
+              "elapsed_ms": 1816.013291999996,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 0,
+              "scanned_files": 1000,
+              "scanned_bytes": 124570000
+            },
+            {
+              "phase": "warm_user_gate",
+              "elapsed_ms": 2159.849166,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 124570000
+            },
+            {
+              "phase": "restart_cached_list",
+              "elapsed_ms": 731.9997920000023,
+              "sessions": 1000
+            },
+            {
+              "phase": "restart_sparse",
+              "elapsed_ms": 2621.7918329999957,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 124570000
+            },
+            {
+              "phase": "single_file_rebuild",
+              "elapsed_ms": 2607.9669999999896,
+              "indexed_files": 1,
+              "reused_files": 999,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 124570000
+            },
+            {
+              "phase": "old_marker_absent",
+              "elapsed_ms": 1401.286917000005,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 0,
+              "scanned_files": 1000,
+              "scanned_bytes": 124570000
+            }
+          ],
+          "user_and_assistant_search_preview_verified": true,
+          "source_hashes_unchanged_before_edit": true,
+          "source_hashes_unchanged_after_edit": true,
+          "index_files": [
+            {
+              "path": "registry.sqlite3",
+              "bytes": 406401024,
+              "sha256": "8b0c7dd96a7cd101a59d96d331f91dbd0bded7ca8e59b6bcf689f7ccbf43aab0"
+            }
+          ],
+          "index_bytes": 406401024
+        },
+        {
+          "provider": "workbuddy",
+          "source_bytes": 116557000,
+          "source_files": 1000,
+          "phases": [
+            {
+              "phase": "scan",
+              "elapsed_ms": 2988.2580420000013,
+              "sessions": 1000
+            },
+            {
+              "phase": "first_index_sparse",
+              "elapsed_ms": 45137.909208,
+              "indexed_files": 1000,
+              "reused_files": 0,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116557000
+            },
+            {
+              "phase": "warm_sparse_1",
+              "elapsed_ms": 1429.1186250000028,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116557000
+            },
+            {
+              "phase": "warm_sparse_2",
+              "elapsed_ms": 1165.8236669999897,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116557000
+            },
+            {
+              "phase": "warm_sparse_3",
+              "elapsed_ms": 1173.2824160000018,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116557000
+            },
+            {
+              "phase": "warm_absent",
+              "elapsed_ms": 1024.0121660000004,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 0,
+              "scanned_files": 1000,
+              "scanned_bytes": 116557000
+            },
+            {
+              "phase": "warm_user_gate",
+              "elapsed_ms": 1158.0026249999937,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116557000
+            },
+            {
+              "phase": "restart_cached_list",
+              "elapsed_ms": 246.51295800000662,
+              "sessions": 1000
+            },
+            {
+              "phase": "restart_sparse",
+              "elapsed_ms": 1109.448457999999,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116557000
+            },
+            {
+              "phase": "single_file_rebuild",
+              "elapsed_ms": 1420.2686669999966,
+              "indexed_files": 1,
+              "reused_files": 999,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116557000
+            },
+            {
+              "phase": "old_marker_absent",
+              "elapsed_ms": 848.4446670000034,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 0,
+              "scanned_files": 1000,
+              "scanned_bytes": 116557000
+            }
+          ],
+          "user_and_assistant_search_preview_verified": true,
+          "source_hashes_unchanged_before_edit": true,
+          "source_hashes_unchanged_after_edit": true,
+          "index_files": [
+            {
+              "path": "registry.sqlite3",
+              "bytes": 406401024,
+              "sha256": "1046b90cb9018a2a941038d32a2d808913842f581d34cbc8ecf79736483acb01"
+            }
+          ],
+          "index_bytes": 406401024
+        },
+        {
+          "provider": "grok",
+          "source_bytes": 121309000,
+          "source_files": 2000,
+          "phases": [
+            {
+              "phase": "scan",
+              "elapsed_ms": 6174.4463749999995,
+              "sessions": 1000
+            },
+            {
+              "phase": "first_index_sparse",
+              "elapsed_ms": 35107.505458,
+              "indexed_files": 1000,
+              "reused_files": 0,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 121122000
+            },
+            {
+              "phase": "warm_sparse_1",
+              "elapsed_ms": 2609.703332999983,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 121122000
+            },
+            {
+              "phase": "warm_sparse_2",
+              "elapsed_ms": 2330.6631669999915,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 121122000
+            },
+            {
+              "phase": "warm_sparse_3",
+              "elapsed_ms": 2476.952250000002,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 121122000
+            },
+            {
+              "phase": "warm_absent",
+              "elapsed_ms": 2404.1900000000023,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 0,
+              "scanned_files": 1000,
+              "scanned_bytes": 121122000
+            },
+            {
+              "phase": "warm_user_gate",
+              "elapsed_ms": 2407.6329590000096,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 121122000
+            },
+            {
+              "phase": "restart_cached_list",
+              "elapsed_ms": 1264.1575420000008,
+              "sessions": 1000
+            },
+            {
+              "phase": "restart_sparse",
+              "elapsed_ms": 2260.19862499999,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 121122000
+            },
+            {
+              "phase": "single_file_rebuild",
+              "elapsed_ms": 2803.465041999996,
+              "indexed_files": 1,
+              "reused_files": 999,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 121122000
+            },
+            {
+              "phase": "old_marker_absent",
+              "elapsed_ms": 2171.3709589999926,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 0,
+              "scanned_files": 1000,
+              "scanned_bytes": 121122000
+            }
+          ],
+          "user_and_assistant_search_preview_verified": true,
+          "source_hashes_unchanged_before_edit": true,
+          "source_hashes_unchanged_after_edit": true,
+          "index_files": [
+            {
+              "path": "registry.sqlite3",
+              "bytes": 406474752,
+              "sha256": "bce42b2ae50769e8d949c49bc2216d2dafd4d205c3f8c46ce1bfe0a40a7aa75e"
+            }
+          ],
+          "index_bytes": 406474752
+        },
+        {
+          "provider": "pi",
+          "source_bytes": 116222000,
+          "source_files": 1000,
+          "phases": [
+            {
+              "phase": "scan",
+              "elapsed_ms": 2987.3734169999952,
+              "sessions": 1000
+            },
+            {
+              "phase": "first_index_sparse",
+              "elapsed_ms": 32987.893625000026,
+              "indexed_files": 1000,
+              "reused_files": 0,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116222000
+            },
+            {
+              "phase": "warm_sparse_1",
+              "elapsed_ms": 1127.6941670000087,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116222000
+            },
+            {
+              "phase": "warm_sparse_2",
+              "elapsed_ms": 1183.4341250000289,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116222000
+            },
+            {
+              "phase": "warm_sparse_3",
+              "elapsed_ms": 1478.9071249999688,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116222000
+            },
+            {
+              "phase": "warm_absent",
+              "elapsed_ms": 1296.2780829999829,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 0,
+              "scanned_files": 1000,
+              "scanned_bytes": 116222000
+            },
+            {
+              "phase": "warm_user_gate",
+              "elapsed_ms": 1142.3352089999826,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116222000
+            },
+            {
+              "phase": "restart_cached_list",
+              "elapsed_ms": 252.92720899998676,
+              "sessions": 1000
+            },
+            {
+              "phase": "restart_sparse",
+              "elapsed_ms": 1111.7546670000302,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116222000
+            },
+            {
+              "phase": "single_file_rebuild",
+              "elapsed_ms": 1443.5999580000062,
+              "indexed_files": 1,
+              "reused_files": 999,
+              "matching_sessions": 1,
+              "scanned_files": 1000,
+              "scanned_bytes": 116222000
+            },
+            {
+              "phase": "old_marker_absent",
+              "elapsed_ms": 1013.3573750000214,
+              "indexed_files": 0,
+              "reused_files": 1000,
+              "matching_sessions": 0,
+              "scanned_files": 1000,
+              "scanned_bytes": 116222000
+            }
+          ],
+          "user_and_assistant_search_preview_verified": true,
+          "source_hashes_unchanged_before_edit": true,
+          "source_hashes_unchanged_after_edit": true,
+          "index_files": [
+            {
+              "path": "registry.sqlite3",
+              "bytes": 408457216,
+              "sha256": "8ae706772d54023a42b2713bd620025652ec1fd2c95e83071f2a0bc82768d146"
+            }
+          ],
+          "index_bytes": 408457216
+        }
+      ],
+      "pass": true,
+      "finished_at": "2026-10-05T05:30:54.775Z"
+    }
+  }
+}

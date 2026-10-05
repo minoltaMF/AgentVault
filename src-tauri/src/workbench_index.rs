@@ -131,42 +131,44 @@ pub fn cached_sessions(dirs: &ProviderDirs) -> AppResult<CachedSessions> {
 }
 
 fn cached_from(db: &Registry, dirs: &ProviderDirs) -> AppResult<CachedSessions> {
+    cached_metadata(db, dirs, true)
+}
+
+// Search validates each selected native file in refresh_and_search. Loading its
+// metadata must not validate/register every configured source a second time.
+pub(crate) fn cached_for_search(db: &Registry, dirs: &ProviderDirs) -> AppResult<CachedSessions> {
+    cached_metadata(db, dirs, false)
+}
+
+fn cached_metadata(
+    db: &Registry,
+    dirs: &ProviderDirs,
+    register: bool,
+) -> AppResult<CachedSessions> {
     let mut out = CachedSessions {
         sessions: vec![],
         index_updated_at_ms: None,
     };
-
     for provider in PROVIDERS {
         let root = root(dirs, provider);
-
         if !root.is_absolute() || !root.is_dir() {
             continue;
         }
-
-        for pk in db
-            .session_ids_for_source(&source_id(provider, &root)?)
+        for (path, metadata, updated_at) in db
+            .cached_session_metadata_for_source(&source_id(provider, &root)?)
             .map_err(err)?
         {
-            if let Some(record) = db.native_session(pk).map_err(err)? {
-                let session: SessionSummary =
-                    serde_json::from_value(record.metadata).map_err(err)?;
-
-                if register_source(provider, &root, Path::new(&session.rollout_path)).is_err() {
-                    continue;
-                }
-                if let Some(cursor) = db.source_cursor(pk, &session.rollout_path).map_err(err)? {
-                    out.index_updated_at_ms = Some(
-                        out.index_updated_at_ms
-                            .unwrap_or(0)
-                            .max(cursor.last_seen_at_ms),
-                    );
-
-                    out.sessions.push(session);
-                }
+            let session: SessionSummary = serde_json::from_value(metadata).map_err(err)?;
+            if session.provider != provider || session.rollout_path != path {
+                continue;
             }
+            if register && register_source(provider, &root, Path::new(&path)).is_err() {
+                continue;
+            }
+            out.index_updated_at_ms = Some(out.index_updated_at_ms.unwrap_or(0).max(updated_at));
+            out.sessions.push(session);
         }
     }
-
     Ok(out)
 }
 
@@ -445,49 +447,40 @@ pub(crate) fn refresh_and_search(
 
         let at = now();
 
-        db.upsert_machine(&MachineRecord {
+        let machine = MachineRecord {
             id: "workbench-local".into(),
             display_name: "Local workbench".into(),
             platform: std::env::consts::OS.into(),
             arch: std::env::consts::ARCH.into(),
             observed_at_ms: at,
-        })
-        .map_err(err)?;
-
-        db.upsert_source_instance(&SourceInstanceRecord {
+        };
+        let source_record = SourceInstanceRecord {
             id: source.clone(),
-            machine_id: "workbench-local".into(),
+            machine_id: machine.id.clone(),
             provider_id: session.provider.clone(),
             config_root: fs::canonicalize(root)?.to_string_lossy().into_owned(),
-            root_fingerprint: source.clone(),
+            root_fingerprint: source,
             observed_at_ms: at,
-        })
-        .map_err(err)?;
-
-        let pk = if let Some(pk) = existing {
-            pk
-        } else {
-            db.upsert_native_session(&NativeSessionRecord {
-                machine_id: "workbench-local".into(),
-                source_instance_id: source,
-                provider_id: session.provider.clone(),
-                native_session_id: session.rollout_path.clone(),
-                project_id: None,
-                root_native_session_id: None,
-                parent_native_session_id: None,
-                title: Some(session.title.clone()),
-                cwd_at_start: Some(session.cwd.clone()),
-                model: session.model.clone(),
-                created_at_ms: Some(session.created_at),
-                updated_at_ms: Some(session.updated_at),
-                source_format_version: None,
-                parser_version: PARSER.into(),
-                health_status: "healthy".into(),
-                resumability: "unknown".into(),
-                capabilities: Default::default(),
-                metadata: serde_json::to_value(session)?,
-            })
-            .map_err(err)?
+        };
+        let native_session = NativeSessionRecord {
+            machine_id: machine.id.clone(),
+            source_instance_id: source_record.id.clone(),
+            provider_id: session.provider.clone(),
+            native_session_id: session.rollout_path.clone(),
+            project_id: None,
+            root_native_session_id: None,
+            parent_native_session_id: None,
+            title: Some(session.title.clone()),
+            cwd_at_start: Some(session.cwd.clone()),
+            model: session.model.clone(),
+            created_at_ms: Some(session.created_at),
+            updated_at_ms: Some(session.updated_at),
+            source_format_version: None,
+            parser_version: PARSER.into(),
+            health_status: "healthy".into(),
+            resumability: "unknown".into(),
+            capabilities: Default::default(),
+            metadata: serde_json::to_value(session)?,
         };
 
         let content = events
@@ -496,30 +489,33 @@ pub(crate) fn refresh_and_search(
             .collect::<Vec<_>>()
             .join("\n");
 
-        db.commit_search_file_projection(
-            &FileProjection {
-                native_session_pk: pk,
-                role: "conversation".into(),
-                absolute_path: session.rollout_path.clone(),
-                mode: ProjectionMode::Rebuild,
-                verified_previous_hash: None,
-                cursor: SourceCursor {
-                    file_identity: Some(before.identity.clone()),
-                    size: before.size,
-                    mtime_ns: before.mtime,
-                    parsed_offset: before.size,
-                    last_complete_line_offset: before.size,
-                    partial_tail: vec![],
-                    parser_version: PARSER.into(),
-                    last_hash: hex::encode(hash.finalize()),
-                    last_seen_at_ms: at,
+        let pk = db
+            .commit_indexed_session(
+                &machine,
+                &source_record,
+                &native_session,
+                FileProjection {
+                    native_session_pk: existing.unwrap_or(0),
+                    role: "conversation".into(),
+                    absolute_path: session.rollout_path.clone(),
+                    mode: ProjectionMode::Rebuild,
+                    verified_previous_hash: None,
+                    cursor: SourceCursor {
+                        file_identity: Some(before.identity.clone()),
+                        size: before.size,
+                        mtime_ns: before.mtime,
+                        parsed_offset: before.size,
+                        last_complete_line_offset: before.size,
+                        partial_tail: vec![],
+                        parser_version: PARSER.into(),
+                        last_hash: hex::encode(hash.finalize()),
+                        last_seen_at_ms: at,
+                    },
+                    events,
                 },
-                events,
-            },
-            Some(&content),
-            Some(&serde_json::to_value(session)?),
-        )
-        .map_err(err)?;
+                &content,
+            )
+            .map_err(err)?;
 
         (pk, at)
     };
@@ -936,6 +932,10 @@ mod grok_cache_visibility_tests {
             ..Default::default()
         };
         assert!(cached_from(&db, &dirs).unwrap().sessions.is_empty());
+        // Bulk search metadata is only a hint; it must never authorize a hidden source.
+        let hints = cached_for_search(&db, &dirs).unwrap().sessions;
+        assert_eq!(hints.len(), 1);
+        assert!(search_with(&mut db, &hints[0], &root, "world", &cancel).is_err());
         fs::write(&summary, original).unwrap();
         assert!(
             !search_with(&mut db, &session, &root, "world", &cancel)

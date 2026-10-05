@@ -6,7 +6,7 @@
 //! 3. Existing preview classifiers decide which JSONL rows are real conversation messages.
 //! 4. The UI polls a bounded status snapshot and may cancel the active job.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -291,16 +291,25 @@ fn execute_search(job: &SearchJob, request: &SearchRequest) -> AppResult<()> {
             .iter()
             .any(|s| crate::workbench_index::supports(&s.provider) && !s.rollout_paths.is_empty())
     });
-    let cached = if use_index {
-        crate::workbench_index::cached_sessions(&request.dirs)?.sessions
-    } else {
-        Vec::new()
-    };
     let mut index = if use_index {
         Some(crate::workbench_index::open()?)
     } else {
         None
     };
+    let cached = if let Some(index) = index.as_ref() {
+        crate::workbench_index::cached_for_search(index, &request.dirs)?.sessions
+    } else {
+        Vec::new()
+    };
+    let cached_by_path: HashMap<(&str, &str), &SessionSummary> = cached
+        .iter()
+        .map(|session| {
+            (
+                (session.provider.as_str(), session.rollout_path.as_str()),
+                session,
+            )
+        })
+        .collect();
     let sessions = if let Some(scopes) = &request.scopes {
         let mut found = Vec::new();
         for scope in scopes {
@@ -351,11 +360,9 @@ fn execute_search(job: &SearchJob, request: &SearchRequest) -> AppResult<()> {
                 // not prevent healthy selected transcripts from being searched.
                 for path in &paths {
                     if crate::workbench_index::supports(&scope.provider) {
-                        if let Some(session) = cached
-                            .iter()
-                            .find(|s| s.provider == scope.provider && s.rollout_path == *path)
+                        if let Some(session) = cached_by_path.get(&(scope.provider.as_str(), *path))
                         {
-                            found.push(session.clone());
+                            found.push((*session).clone());
                             continue;
                         }
                     }
@@ -433,11 +440,8 @@ fn execute_search(job: &SearchJob, request: &SearchRequest) -> AppResult<()> {
             }
             if scope.provider == "claude" {
                 for path in &paths {
-                    if let Some(session) = cached
-                        .iter()
-                        .find(|s| s.provider == "claude" && s.rollout_path == *path)
-                    {
-                        found.push(session.clone());
+                    if let Some(session) = cached_by_path.get(&("claude", *path)) {
+                        found.push((*session).clone());
                         continue;
                     }
                     let result = (|| {
@@ -472,11 +476,9 @@ fn execute_search(job: &SearchJob, request: &SearchRequest) -> AppResult<()> {
                 continue;
             }
             if matches!(scope.provider.as_str(), "codex" | "claude")
-                && paths.iter().all(|path| {
-                    cached
-                        .iter()
-                        .any(|s| s.provider == scope.provider && s.rollout_path == *path)
-                })
+                && paths
+                    .iter()
+                    .all(|path| cached_by_path.contains_key(&(scope.provider.as_str(), *path)))
             {
                 found.extend(
                     cached
