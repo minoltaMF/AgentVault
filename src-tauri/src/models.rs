@@ -293,6 +293,8 @@ pub struct ContentSearchStart {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ContentSearchStatus {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub diagnostics: Option<crate::search_diagnostics::SearchDiagnostics>,
     pub reused_files: usize,
     pub indexed_files: usize,
     pub index_updated_at_ms: Option<i64>,

@@ -580,3 +580,35 @@ fn projection_commit_is_atomic_and_preserves_unknown_events() {
         .expect_err("a stored cursor must include its verification hash");
     assert!(error.to_string().contains("last_hash"));
 }
+
+#[test]
+fn complete_session_identity_requires_every_dimension() {
+    let (registry, pk) = seed_registry();
+    assert_eq!(
+        registry
+            .session_pk_for_identity("machine-a", "source-a", "pi", "native-1")
+            .unwrap(),
+        Some(pk),
+    );
+    for (machine, source, provider, native_id) in [
+        ("other-machine", "source-a", "pi", "native-1"),
+        ("machine-a", "other-source", "pi", "native-1"),
+        ("machine-a", "source-a", "other-provider", "native-1"),
+        ("machine-a", "source-a", "pi", "other-native"),
+    ] {
+        assert_eq!(
+            registry
+                .session_pk_for_identity(machine, source, provider, native_id)
+                .unwrap(),
+            None,
+            "mismatched identity: {machine}/{source}/{provider}/{native_id}",
+        );
+    }
+    // The existing less-specific API remains available to its existing callers.
+    assert_eq!(
+        registry
+            .session_pk_for_source("source-a", "native-1")
+            .unwrap(),
+        Some(pk)
+    );
+}

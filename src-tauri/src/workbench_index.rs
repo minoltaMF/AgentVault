@@ -28,6 +28,7 @@ use crate::{
 };
 
 const PARSER: &str = "workbench-conversation-v1";
+const MACHINE: &str = "workbench-local";
 const PROJECTED_SOURCE_MAX_BYTES: u64 = 128 * 1024 * 1024;
 pub(crate) const PROVIDERS: [&str; 8] = [
     "codex",
@@ -302,6 +303,7 @@ pub(crate) fn refresh_and_search(
     query: Option<&str>,
     cancel: &AtomicBool,
 ) -> AppResult<IndexOutcome> {
+    let source_timer = crate::search_diagnostics::stage("source_validation");
     if !root.is_absolute() {
         return Err(err("索引来源目录必须是已配置的绝对路径"));
     }
@@ -319,9 +321,13 @@ pub(crate) fn refresh_and_search(
 
     let source = source_id(&session.provider, root)?;
 
+    drop(source_timer);
+    let identity_timer = crate::search_diagnostics::stage("identity_cursor_lookup");
     let existing = db
-        .session_pk_for_source(&source, &session.rollout_path)
+        .session_pk_for_identity(MACHINE, &source, &session.provider, &session.rollout_path)
         .map_err(err)?;
+    drop(identity_timer);
+    let source_timer = crate::search_diagnostics::stage("source_validation");
     let file = File::open(&session.rollout_path)?;
 
     let before = source_fingerprint(&file.metadata()?, session)?;
@@ -332,12 +338,15 @@ pub(crate) fn refresh_and_search(
         return Err(err("会话超过 128 MiB 安全读取上限"));
     }
 
+    drop(source_timer);
+    let identity_timer = crate::search_diagnostics::stage("identity_cursor_lookup");
     let cursor = existing
         .map(|pk| db.source_cursor(pk, &session.rollout_path))
         .transpose()
         .map_err(err)?
         .flatten();
 
+    drop(identity_timer);
     let reused = cursor.as_ref().is_some_and(|c| {
         c.size == before.size
             && c.mtime_ns == before.mtime
@@ -348,6 +357,7 @@ pub(crate) fn refresh_and_search(
     let (pk, updated_at_ms) = if reused {
         (existing.unwrap(), cursor.unwrap().last_seen_at_ms)
     } else {
+        let _refresh_timer = crate::search_diagnostics::stage("refresh_write");
         // Bound the actual read as well: the native writer may append after metadata().
         let read_limit = if bounded_projection {
             PROJECTED_SOURCE_MAX_BYTES + 1
@@ -448,7 +458,7 @@ pub(crate) fn refresh_and_search(
         let at = now();
 
         let machine = MachineRecord {
-            id: "workbench-local".into(),
+            id: MACHINE.into(),
             display_name: "Local workbench".into(),
             platform: std::env::consts::OS.into(),
             arch: std::env::consts::ARCH.into(),
@@ -526,7 +536,12 @@ pub(crate) fn refresh_and_search(
         return Err(AppError::Cancelled);
     }
     if let Some(query) = query {
-        if db.body_matches(pk, query).map_err(err)? {
+        let candidate = {
+            let _fts_timer = crate::search_diagnostics::stage("fts_lookup");
+            db.body_matches(pk, query).map_err(err)?
+        };
+        if candidate {
+            let _event_timer = crate::search_diagnostics::stage("event_materialization_match");
             for event in db.events_for_session(pk).map_err(err)? {
                 if cancel.load(Ordering::Acquire) {
                     return Err(AppError::Cancelled);
@@ -551,6 +566,7 @@ pub(crate) fn refresh_and_search(
         }
     }
 
+    let _final_timer = crate::search_diagnostics::stage("final_fingerprint");
     if before != source_fingerprint(&fs::metadata(&session.rollout_path)?, session)? {
         return Err(err("查询期间文件发生变化，请重试"));
     }
@@ -679,6 +695,44 @@ mod tests {
                 .reused
         );
         drop(db);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn warm_cache_cannot_authorize_missing_or_outside_files_even_without_results() {
+        let root = temp();
+        let source = root.join("source");
+        let outside = root.join("outside");
+        fs::create_dir_all(&source).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        let file = source.join("session.jsonl");
+        fs::write(&file, body("codex", "cached needle")).unwrap();
+        let session = session(&file, "codex");
+        let cancel = AtomicBool::new(false);
+        let mut db = Registry::open_in_memory().unwrap();
+        search_with(&mut db, &session, &source, "needle", &cancel).unwrap();
+        assert!(
+            search_with(&mut db, &session, &source, "needle", &cancel)
+                .unwrap()
+                .reused
+        );
+        for query in [Some("needle"), None] {
+            assert!(refresh_and_search(&mut db, &session, &outside, query, &cancel).is_err());
+        }
+        fs::remove_file(&file).unwrap();
+        for query in [Some("needle"), None] {
+            assert!(refresh_and_search(&mut db, &session, &source, query, &cancel).is_err());
+        }
+        let pk = db
+            .session_pk_for_identity(
+                MACHINE,
+                &source_id("codex", &source).unwrap(),
+                "codex",
+                &session.rollout_path,
+            )
+            .unwrap()
+            .unwrap();
+        assert!(db.body_matches(pk, "needle").unwrap());
         fs::remove_dir_all(root).unwrap();
     }
 }

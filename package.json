@@ -1,7 +1,7 @@
 {
   "name": "cc-session-manager",
   "private": true,
-  "version": "0.1.0-alpha.16",
+  "version": "0.1.0-alpha.17",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -9,8 +9,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build --config vite.config.ts",
-    "test": "npm run test:frontend && npm run test:rust",
+    "test": "npm run test:frontend && npm run test:benchmark && npm run test:rust",
     "test:frontend": "tsx --test \"src/lib/*.test.ts\"",
+    "test:benchmark": "node --test scripts/benchmark-statistics.test.mjs",
     "test:rust": "cargo test --workspace --all-targets",
     "test:safety": "node scripts/test-safety-matrix.mjs",
     "release:check": "node scripts/check-release.mjs",

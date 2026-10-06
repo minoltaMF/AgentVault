@@ -50,6 +50,7 @@ mod readonly_source;
 pub(crate) mod release_channel;
 pub mod repair;
 pub mod rollout;
+pub mod search_diagnostics;
 pub mod sessions;
 pub mod settings;
 pub mod state_db;

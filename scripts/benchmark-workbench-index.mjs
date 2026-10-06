@@ -12,11 +12,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { setTimeout as delay } from 'node:timers/promises';
+import { latencyStatistics } from './benchmark-statistics.mjs';
 
 const options = {};
 for (let i = 2; i < process.argv.length; i += 2) {
   const key = process.argv[i];
-  assert(['--cli', '--sessions', '--messages', '--body-length', '--output', '--timeout-ms', '--providers'].includes(key), `Unknown option: ${key}`);
+  assert(['--cli', '--sessions', '--messages', '--body-length', '--output', '--timeout-ms', '--providers', '--warm-samples', '--warmup-samples'].includes(key), `Unknown option: ${key}`);
   assert(process.argv[i + 1], `Missing value for ${key}`);
   options[key.slice(2)] = process.argv[i + 1];
 }
@@ -24,6 +25,10 @@ assert(options.cli && options.output, '--cli and --output are required');
 const cli = path.resolve(options.cli), output = path.resolve(options.output);
 const count = Number(options.sessions ?? 1000), messages = Number(options.messages ?? 100), bodyLength = Number(options['body-length'] ?? 1024);
 const timeout = Number(options['timeout-ms'] ?? 1800000);
+const warmSamples = Number(options['warm-samples'] ?? 3), warmupSamples = Number(options['warmup-samples'] ?? 0);
+const repeatedQueries = options['warm-samples'] !== undefined || options['warmup-samples'] !== undefined;
+assert(Number.isSafeInteger(warmSamples) && warmSamples > 0, '--warm-samples must be a positive integer');
+assert(Number.isSafeInteger(warmupSamples) && warmupSamples >= 0, '--warmup-samples must be a nonnegative integer');
 for (const [key, value] of Object.entries({ count, messages, bodyLength, timeout })) assert(Number.isSafeInteger(value) && value > 0, `${key} must be a positive integer`);
 assert(messages >= 2 && bodyLength >= 64, 'Use at least 2 messages and 64 body characters');
 assert.equal(messages % 2, 0, '--messages must be even to generate complete user/assistant pairs');
@@ -39,6 +44,7 @@ const report = {
   cli: { path: cli, sha256: await hash(cli), build_profile: /[\\/]release[\\/]/.test(cli) ? 'release-path (caller must verify build)' : 'unspecified' },
   sample: { sessions_per_provider: count, messages_per_session: messages, expected_conversation_messages_per_session: messages, expected_user_messages_per_session: Math.ceil(messages / 2), expected_assistant_messages_per_session: Math.floor(messages / 2), body_characters: bodyLength },
   methodology: 'Synthetic repetitive ASCII text, not representative real-world language or compression ratios. Sequential providers; fresh application index, OS filesystem cache not flushed. Timings include HTTP start/poll overhead (25 ms polling). Restart retains the derived index. Sparse query matches one session; absent query matches none. Fixtures and logs are retained, never deleted.',
+  warm_sampling: { mode: repeatedQueries ? 'interleaved' : 'legacy', samples_per_query: repeatedQueries ? warmSamples : { sparse: 3, absent: 1, user: 1 }, warmup_samples_per_query: warmupSamples, poll_interval_ms: 25, percentile_method: 'nearest-rank', limitations: 'Warmups are excluded from percentiles. Use 30–50 or more samples per query to investigate tails; P95 is descriptive, not a production SLA. HTTP polling adds scheduling delay and roughly 25 ms observation granularity; differences below this scale are not reliable evidence of improvement. Interleaved rounds rotate query order.' },
   providers: [], pass: false,
 };
 let child;
@@ -159,12 +165,41 @@ try {
         const preview = await api('preview_session_range', { provider, rolloutPath: paths[0], offset: hit.event_offset, limit: 1 });
         assert.equal(preview.length, 1); assert.equal(preview[0].role, expectedRole); assert(preview[0].text_summary.includes(query));
       }
-      result.phases.push({ phase, elapsed_ms: elapsed, indexed_files: status.indexed_files, reused_files: status.reused_files, matching_sessions: status.results.length, scanned_files: status.scanned_files, scanned_bytes: status.scanned_bytes });
+      const measurement = { phase, elapsed_ms: elapsed, indexed_files: status.indexed_files, reused_files: status.reused_files, matching_sessions: status.results.length, scanned_files: status.scanned_files, scanned_bytes: status.scanned_bytes };
+      // Older binaries have no diagnostics; preserve optional server timing data
+      // without making it a prerequisite for before/after comparisons.
+      for (const key of ['diagnostics', 'diagnostic', 'timings']) {
+        if (status[key] !== undefined) measurement[key] = status[key];
+      }
+      result.phases.push(measurement);
+      return measurement;
     }
     await search('first_index_sparse', marker, count, 0, 1);
-    for (let n = 1; n <= 3; n++) await search(`warm_sparse_${n}`, marker, 0, count, 1);
-    await search('warm_absent', 'AVBENCH_ABSENT_QUERY', 0, count, 0);
-    await search('warm_user_gate', userMarker, 0, count, 1, 'user');
+    if (repeatedQueries) {
+      const queries = [
+        { name: 'sparse', query: marker, hits: 1, role: 'assistant' },
+        { name: 'absent', query: 'AVBENCH_ABSENT_QUERY', hits: 0, role: 'assistant' },
+        { name: 'user', query: userMarker, hits: 1, role: 'user' },
+      ];
+      const measured = Object.fromEntries(queries.map(query => [query.name, []]));
+      for (const [prefix, rounds] of [['warmup', warmupSamples], ['warm', warmSamples]]) {
+        for (let round = 0; round < rounds; round++) {
+          for (let position = 0; position < queries.length; position++) {
+            const query = queries[(round + position) % queries.length];
+            const measurement = await search(`${prefix}_${query.name}_${round + 1}`, query.query, 0, count, query.hits, query.role);
+            measurement.query_class = query.name;
+            measurement.sample = round + 1;
+            measurement.warmup = prefix === 'warmup';
+            if (!measurement.warmup) measured[query.name].push(measurement.elapsed_ms);
+          }
+        }
+      }
+      result.warm_latency = Object.fromEntries(Object.entries(measured).map(([name, samples]) => [name, latencyStatistics(samples)]));
+    } else {
+      for (let n = 1; n <= 3; n++) await search(`warm_sparse_${n}`, marker, 0, count, 1);
+      await search('warm_absent', 'AVBENCH_ABSENT_QUERY', 0, count, 0);
+      await search('warm_user_gate', userMarker, 0, count, 1, 'user');
+    }
     result.user_and_assistant_search_preview_verified = true;
     await stop(); api = await start(directory, settingsFile);
     const cacheStart = performance.now(); const cached = await api('cached_workbench_sessions', dirs); assert.equal(cached.sessions.length, count);

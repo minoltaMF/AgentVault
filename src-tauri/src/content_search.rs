@@ -91,6 +91,7 @@ impl SearchManager {
             id,
             cancel: Arc::new(AtomicBool::new(false)),
             status: Arc::new(Mutex::new(ContentSearchStatus {
+                diagnostics: None,
                 reused_files: 0,
                 indexed_files: 0,
                 index_updated_at_ms: None,
@@ -266,8 +267,11 @@ fn validate_request(request: &SearchRequest) -> AppResult<()> {
 }
 
 fn run_job(job: SearchJob, request: SearchRequest) {
+    crate::search_diagnostics::begin();
     let result = execute_search(&job, &request);
+    let diagnostics = crate::search_diagnostics::finish();
     let mut status = job.status.lock().unwrap_or_else(|error| error.into_inner());
+    status.diagnostics = diagnostics;
     match result {
         Ok(()) if job.cancel.load(Ordering::Acquire) => {
             status.state = "cancelled".to_string();
@@ -286,6 +290,7 @@ fn run_job(job: SearchJob, request: SearchRequest) {
 }
 
 fn execute_search(job: &SearchJob, request: &SearchRequest) -> AppResult<()> {
+    let metadata_timer = crate::search_diagnostics::stage("metadata_load");
     let use_index = request.scopes.as_ref().is_some_and(|scopes| {
         scopes
             .iter()
@@ -310,6 +315,8 @@ fn execute_search(job: &SearchJob, request: &SearchRequest) -> AppResult<()> {
             )
         })
         .collect();
+    drop(metadata_timer);
+    let scope_timer = crate::search_diagnostics::stage("scope_resolution");
     let sessions = if let Some(scopes) = &request.scopes {
         let mut found = Vec::new();
         for scope in scopes {
@@ -549,6 +556,7 @@ fn execute_search(job: &SearchJob, request: &SearchRequest) -> AppResult<()> {
         sessions
     };
 
+    drop(scope_timer);
     if job.cancel.load(Ordering::Acquire) {
         return Ok(());
     }
@@ -571,7 +579,10 @@ fn execute_search(job: &SearchJob, request: &SearchRequest) -> AppResult<()> {
             return Ok(());
         }
         let scan = (|| {
-            if request.scopes.is_some() {
+            // Indexed files are checked by refresh_and_search before opening,
+            // including refresh-only calls after the result limit is reached.
+            if request.scopes.is_some() && !crate::workbench_index::supports(&session.provider) {
+                let _path_timer = crate::search_diagnostics::stage("outer_path_validation");
                 let root = if session.provider == "codex" {
                     request.dirs.codex_dir.as_str()
                 } else if session.provider == "workbuddy" {
@@ -1373,6 +1384,7 @@ mod tests {
             id: 1,
             cancel: Arc::new(AtomicBool::new(false)),
             status: Arc::new(Mutex::new(ContentSearchStatus {
+                diagnostics: None,
                 reused_files: 0,
                 indexed_files: 0,
                 index_updated_at_ms: None,

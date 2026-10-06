@@ -406,6 +406,19 @@ impl Registry {
         Ok(self.connection.prepare_cached("SELECT pk FROM native_sessions WHERE source_instance_id = ?1 AND native_session_id = ?2")?.query_row( params![source,native_id], |row| row.get(0)).optional()?)
     }
 
+    /// Resolve the complete native identity using the existing composite unique index.
+    pub fn session_pk_for_identity(
+        &self,
+        machine: &str,
+        source: &str,
+        provider: &str,
+        native_id: &str,
+    ) -> RegistryResult<Option<i64>> {
+        Ok(self.connection.prepare_cached(
+            "SELECT pk FROM native_sessions WHERE machine_id = ?1 AND source_instance_id = ?2 AND provider_id = ?3 AND native_session_id = ?4",
+        )?.query_row(params![machine, source, provider, native_id], |row| row.get(0)).optional()?)
+    }
+
     /// Load cached metadata and its committed file cursor in one read query.
     pub fn cached_session_metadata_for_source(
         &self,
