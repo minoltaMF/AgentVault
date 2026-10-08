@@ -307,17 +307,28 @@ pub(crate) fn refresh_and_search(
     if !root.is_absolute() {
         return Err(err("索引来源目录必须是已配置的绝对路径"));
     }
-    // Substages are nested in source_validation; do not add them to its total.
-    {
-        let _timer = crate::search_diagnostics::stage("source_validation.path_boundary");
-        crate::path_safety::validate_descendant(
-            root,
-            Path::new(&session.rollout_path),
-            crate::path_safety::EntryKind::File,
-            false,
-            "索引来源文件",
-        )?;
+    if cancel.load(Ordering::Acquire) {
+        return Err(AppError::Cancelled);
     }
+    // Substages are nested in source_validation; do not add them to its total.
+    let pi_validation = {
+        let _timer = crate::search_diagnostics::stage("source_validation.path_boundary");
+        if session.provider == "pi" {
+            Some(crate::pi_sessions::validate_index_source(
+                root,
+                Path::new(&session.rollout_path),
+            )?)
+        } else {
+            crate::path_safety::validate_descendant(
+                root,
+                Path::new(&session.rollout_path),
+                crate::path_safety::EntryKind::File,
+                false,
+                "索引来源文件",
+            )?;
+            None
+        }
+    };
 
     if cancel.load(Ordering::Acquire) {
         return Err(AppError::Cancelled);
@@ -349,7 +360,11 @@ pub(crate) fn refresh_and_search(
     };
     {
         let _timer = crate::search_diagnostics::stage("source_validation.adapter_registration");
-        register_source(&session.provider, root, Path::new(&session.rollout_path))?;
+        if let Some(validated) = pi_validation {
+            validated.register()?;
+        } else {
+            register_source(&session.provider, root, Path::new(&session.rollout_path))?;
+        }
     }
     // Keep the adapters' 128 MiB bound before the hashing pass can allocate a line.
     let bounded_projection = matches!(session.provider.as_str(), "qwen" | "copilot");

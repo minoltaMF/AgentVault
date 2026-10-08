@@ -44,6 +44,60 @@ fn validate(root: &Path, path: &Path) -> AppResult<()> {
     Ok(())
 }
 
+// A single-use proof of the full boundary and Pi layout checks. It is never
+// retained in ROOTS or the index and cannot authorize a later query/preview.
+pub(crate) struct ValidatedIndexSource<'a> {
+    root: &'a Path,
+    path: &'a Path,
+}
+
+pub(crate) fn validate_index_source<'a>(
+    root: &'a Path,
+    path: &'a Path,
+) -> AppResult<ValidatedIndexSource<'a>> {
+    validate(root, path)?;
+    Ok(ValidatedIndexSource { root, path })
+}
+
+impl ValidatedIndexSource<'_> {
+    pub(crate) fn register(self) -> AppResult<()> {
+        {
+            let _timer = crate::search_diagnostics::stage("pi_registration.recheck");
+            // Opening may race with a native writer or a path replacement. Recheck
+            // every entry without repeating canonicalization of the same path.
+            // The private proof already checked lexical containment and layout.
+            let mut current = self.root.to_path_buf();
+            let relative = self
+                .path
+                .strip_prefix(self.root)
+                .map_err(|e| AppError::Path(e.to_string()))?;
+            check_index_entry(&current, false)?;
+            for component in relative.components() {
+                current.push(component);
+                check_index_entry(&current, current == self.path)?;
+            }
+        }
+        remember_root(self.root);
+        Ok(())
+    }
+}
+
+fn check_index_entry(path: &Path, file: bool) -> AppResult<()> {
+    let metadata = std::fs::symlink_metadata(path)?;
+    if crate::path_safety::metadata_is_link_or_reparse(&metadata)
+        || if file {
+            !metadata.is_file()
+        } else {
+            !metadata.is_dir()
+        }
+    {
+        return Err(AppError::Path(
+            "Pi 索引路径在打开期间发生变化或包含链接".into(),
+        ));
+    }
+    Ok(())
+}
+
 fn registered_root(path: &Path) -> AppResult<PathBuf> {
     let roots = ROOTS
         .get_or_init(Default::default)
@@ -191,6 +245,11 @@ pub(crate) fn register_source(root: &Path, path: &Path) -> AppResult<()> {
         let _timer = crate::search_diagnostics::stage("pi_registration.validate");
         validate(root, path)?;
     }
+    remember_root(root);
+    Ok(())
+}
+
+fn remember_root(root: &Path) {
     {
         let roots = ROOTS.get_or_init(Default::default);
         let mut roots = {
@@ -200,7 +259,6 @@ pub(crate) fn register_source(root: &Path, path: &Path) -> AppResult<()> {
         let _timer = crate::search_diagnostics::stage("pi_registration.insert");
         roots.insert(root.to_path_buf());
     }
-    Ok(())
 }
 
 pub(crate) fn parse_session(
@@ -325,10 +383,12 @@ mod tests {
     }
     impl Fixture {
         fn new(data: &str) -> Self {
+            static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
             let root = std::env::temp_dir().join(format!(
-                "agentvault-pi-{}-{}",
+                "agentvault-pi-{}-{}-{}",
                 std::process::id(),
-                chrono::Utc::now().timestamp_nanos_opt().unwrap()
+                chrono::Utc::now().timestamp_nanos_opt().unwrap(),
+                NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
             ));
             let path = root.join("sessions/project/sample.jsonl");
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -341,6 +401,151 @@ mod tests {
             let _ = std::fs::remove_dir_all(&self.root);
         }
     }
+    #[test]
+    fn index_proof_rechecks_removed_or_retyped_entries_before_registration() {
+        for change in [
+            "leaf_missing",
+            "leaf_directory",
+            "parent_file",
+            "root_missing",
+        ] {
+            let f = Fixture::new(SAMPLE);
+            let proof = validate_index_source(&f.root, &f.path).unwrap();
+            let _opened = std::fs::File::open(&f.path).unwrap();
+            match change {
+                "leaf_missing" => std::fs::remove_file(&f.path).unwrap(),
+                "leaf_directory" => {
+                    std::fs::remove_file(&f.path).unwrap();
+                    std::fs::create_dir(&f.path).unwrap();
+                }
+                "parent_file" => {
+                    std::fs::remove_file(&f.path).unwrap();
+                    std::fs::remove_dir(f.path.parent().unwrap()).unwrap();
+                    std::fs::write(f.path.parent().unwrap(), "changed").unwrap();
+                }
+                _ => {
+                    drop(_opened);
+                    std::fs::remove_dir_all(&f.root).unwrap();
+                }
+            }
+            assert!(proof.register().is_err(), "{change}");
+            assert!(!ROOTS
+                .get_or_init(Default::default)
+                .lock()
+                .unwrap()
+                .contains(&f.root));
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn index_proof_rejects_link_replacement_after_open() {
+        for leaf in [true, false] {
+            let f = Fixture::new(SAMPLE);
+            let proof = validate_index_source(&f.root, &f.path).unwrap();
+            let _opened = std::fs::File::open(&f.path).unwrap();
+            let replaced = if leaf {
+                f.path.clone()
+            } else {
+                f.path.parent().unwrap().to_path_buf()
+            };
+            let saved = replaced.with_extension("saved");
+            std::fs::rename(&replaced, &saved).unwrap();
+            std::os::unix::fs::symlink(&saved, &replaced).unwrap();
+            assert!(proof.register().is_err());
+            assert!(!ROOTS
+                .get_or_init(Default::default)
+                .lock()
+                .unwrap()
+                .contains(&f.root));
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn index_proof_rejects_junction_replacement_before_open() {
+        let f = Fixture::new(SAMPLE);
+        let proof = validate_index_source(&f.root, &f.path).unwrap();
+        let parent = f.path.parent().unwrap();
+        let saved = parent.with_extension("saved");
+        std::fs::rename(parent, &saved).unwrap();
+        let result = std::process::Command::new("cmd")
+            .args(["/c", "mklink", "/J"])
+            .arg(parent.to_string_lossy().replace('/', "\\"))
+            .arg(saved.to_string_lossy().replace('/', "\\"))
+            .output()
+            .unwrap();
+        assert!(result.status.success(), "{:?}", result);
+        let _opened = std::fs::File::open(&f.path).unwrap();
+        let rejected = proof.register().is_err();
+        drop(_opened);
+        std::fs::remove_dir(parent).unwrap();
+        assert!(rejected);
+        assert!(!ROOTS
+            .get_or_init(Default::default)
+            .lock()
+            .unwrap()
+            .contains(&f.root));
+    }
+
+    #[test]
+    fn index_queries_revalidate_warm_paths_and_pi_layout() {
+        use crate::workbench_index::refresh_and_search;
+        let f = Fixture::new(SAMPLE);
+        let session = parse_session(&f.root, &f.path, None).unwrap().unwrap();
+        let mut db = registry::Registry::open_in_memory().unwrap();
+        ROOTS
+            .get_or_init(Default::default)
+            .lock()
+            .unwrap()
+            .remove(&f.root);
+        assert!(matches!(
+            refresh_and_search(
+                &mut db,
+                &session,
+                &f.root,
+                Some("current"),
+                &AtomicBool::new(true)
+            ),
+            Err(AppError::Cancelled)
+        ));
+        assert!(!ROOTS
+            .get_or_init(Default::default)
+            .lock()
+            .unwrap()
+            .contains(&f.root));
+        let cancel = AtomicBool::new(false);
+        assert!(
+            !refresh_and_search(&mut db, &session, &f.root, Some("current"), &cancel)
+                .unwrap()
+                .reused
+        );
+        assert!(
+            refresh_and_search(&mut db, &session, &f.root, None, &cancel)
+                .unwrap()
+                .reused
+        );
+        for query in [Some("current"), None] {
+            assert!(refresh_and_search(
+                &mut db,
+                &session,
+                f.path.parent().unwrap(),
+                query,
+                &cancel
+            )
+            .is_err());
+            let mut outside = session.clone();
+            let path = f.root.join("outside.jsonl");
+            std::fs::write(&path, SAMPLE).unwrap();
+            outside.rollout_path = path.to_string_lossy().into_owned();
+            assert!(refresh_and_search(&mut db, &outside, &f.root, query, &cancel).is_err());
+        }
+        std::fs::remove_file(&f.path).unwrap();
+        for query in [Some("current"), None] {
+            assert!(refresh_and_search(&mut db, &session, &f.root, query, &cancel).is_err());
+        }
+    }
+
     #[test]
     fn pi_active_branch_preserves_physical_lines_and_readonly_metadata() {
         let f = Fixture::new(SAMPLE);
