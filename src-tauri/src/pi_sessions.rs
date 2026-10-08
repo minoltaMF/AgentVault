@@ -186,12 +186,20 @@ fn seconds(value: Option<&str>) -> Option<i64> {
 }
 
 pub(crate) fn register_source(root: &Path, path: &Path) -> AppResult<()> {
-    validate(root, path)?;
-    ROOTS
-        .get_or_init(Default::default)
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .insert(root.to_path_buf());
+    // Nested in source_validation.adapter_registration during indexed searches.
+    {
+        let _timer = crate::search_diagnostics::stage("pi_registration.validate");
+        validate(root, path)?;
+    }
+    {
+        let roots = ROOTS.get_or_init(Default::default);
+        let mut roots = {
+            let _timer = crate::search_diagnostics::stage("pi_registration.lock_wait");
+            roots.lock().unwrap_or_else(|e| e.into_inner())
+        };
+        let _timer = crate::search_diagnostics::stage("pi_registration.insert");
+        roots.insert(root.to_path_buf());
+    }
     Ok(())
 }
 

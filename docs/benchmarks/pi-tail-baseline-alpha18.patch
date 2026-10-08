@@ -1,0 +1,22 @@
+--- a/src-tauri/src/content_search.rs
++++ b/src-tauri/src/content_search.rs
+@@ -581,7 +581,7 @@
+         let scan = (|| {
+             // Indexed files are checked by refresh_and_search before opening,
+             // including refresh-only calls after the result limit is reached.
+-            if request.scopes.is_some() && !crate::workbench_index::supports(&session.provider) {
++            if request.scopes.is_some() {
+                 let _path_timer = crate::search_diagnostics::stage("outer_path_validation");
+                 let root = if session.provider == "codex" {
+                     request.dirs.codex_dir.as_str()
+--- a/src-tauri/src/workbench_index.rs
++++ b/src-tauri/src/workbench_index.rs
+@@ -331,7 +331,7 @@
+     drop(source_timer);
+     let identity_timer = crate::search_diagnostics::stage("identity_cursor_lookup");
+     let existing = db
+-        .session_pk_for_identity(MACHINE, &source, &session.provider, &session.rollout_path)
++        .session_pk_for_source(&source, &session.rollout_path)
+         .map_err(err)?;
+     drop(identity_timer);
+     let source_timer = crate::search_diagnostics::stage("source_validation");

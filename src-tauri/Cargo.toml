@@ -1,6 +1,6 @@
 [package]
 name = "cc-session-manager"
-version = "0.1.0-alpha.17"
+version = "0.1.0-alpha.18"
 description = "AgentVault"
 authors = ["zjsmew"]
 edition = "2021"
@@ -69,5 +69,5 @@ registry = { path = "../crates/registry" }
 vault-io = { path = "../crates/vault-io" }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Storage_Packaging_Appx", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Threading"] }
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Storage_Packaging_Appx", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Threading", "Win32_System_WindowsProgramming"] }
 winreg = { version = "0.55", optional = true }

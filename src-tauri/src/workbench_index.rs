@@ -307,19 +307,26 @@ pub(crate) fn refresh_and_search(
     if !root.is_absolute() {
         return Err(err("索引来源目录必须是已配置的绝对路径"));
     }
-    crate::path_safety::validate_descendant(
-        root,
-        Path::new(&session.rollout_path),
-        crate::path_safety::EntryKind::File,
-        false,
-        "索引来源文件",
-    )?;
+    // Substages are nested in source_validation; do not add them to its total.
+    {
+        let _timer = crate::search_diagnostics::stage("source_validation.path_boundary");
+        crate::path_safety::validate_descendant(
+            root,
+            Path::new(&session.rollout_path),
+            crate::path_safety::EntryKind::File,
+            false,
+            "索引来源文件",
+        )?;
+    }
 
     if cancel.load(Ordering::Acquire) {
         return Err(AppError::Cancelled);
     }
 
-    let source = source_id(&session.provider, root)?;
+    let source = {
+        let _timer = crate::search_diagnostics::stage("source_validation.source_id");
+        source_id(&session.provider, root)?
+    };
 
     drop(source_timer);
     let identity_timer = crate::search_diagnostics::stage("identity_cursor_lookup");
@@ -328,10 +335,22 @@ pub(crate) fn refresh_and_search(
         .map_err(err)?;
     drop(identity_timer);
     let source_timer = crate::search_diagnostics::stage("source_validation");
-    let file = File::open(&session.rollout_path)?;
-
-    let before = source_fingerprint(&file.metadata()?, session)?;
-    register_source(&session.provider, root, Path::new(&session.rollout_path))?;
+    let file = {
+        let _timer = crate::search_diagnostics::stage("source_validation.open");
+        File::open(&session.rollout_path)?
+    };
+    let metadata = {
+        let _timer = crate::search_diagnostics::stage("source_validation.file_metadata");
+        file.metadata()?
+    };
+    let before = {
+        let _timer = crate::search_diagnostics::stage("source_validation.fingerprint");
+        source_fingerprint(&metadata, session)?
+    };
+    {
+        let _timer = crate::search_diagnostics::stage("source_validation.adapter_registration");
+        register_source(&session.provider, root, Path::new(&session.rollout_path))?;
+    }
     // Keep the adapters' 128 MiB bound before the hashing pass can allocate a line.
     let bounded_projection = matches!(session.provider.as_str(), "qwen" | "copilot");
     if bounded_projection && before.size > PROJECTED_SOURCE_MAX_BYTES {
