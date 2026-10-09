@@ -207,6 +207,21 @@ fn dispatch_invoke(state: &WebuiState, command: &str, args: Value) -> AppResult<
         "default_zcode_dir" => to_value(settings::default_zcode_dir()),
         "default_pi_dir" => to_value(settings::default_pi_dir()),
         "default_cursor_dir" => to_value(settings::default_cursor_dir()),
+        "start_session_usage" => to_result_value(crate::session_usage::start(
+            serde_json::from_value(
+                args.get("sessions")
+                    .cloned()
+                    .ok_or_else(|| AppError::Other("缺少 sessions".into()))?,
+            )?,
+            string_arg(&args, "codexDir")?,
+            string_arg(&args, "claudeDir")?,
+        )),
+        "session_usage_status" => {
+            to_result_value(crate::session_usage::status(arg::<u64>(&args, "jobId")?))
+        }
+        "cancel_session_usage" => {
+            to_result_value(crate::session_usage::cancel(arg::<u64>(&args, "jobId")?))
+        }
         "start_workbench_scan" => to_result_value(crate::workbench_scan::start_workbench_scan(
             string_arg(&args, "provider")?,
             string_arg(&args, "codexDir")?,

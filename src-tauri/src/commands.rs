@@ -1368,3 +1368,20 @@ pub fn workbench_scan_status(job_id: u64) -> AppResult<crate::workbench_scan::Sc
 pub fn cancel_workbench_scan(job_id: u64) -> AppResult<()> {
     crate::workbench_scan::cancel_workbench_scan(job_id)
 }
+
+#[tauri::command]
+pub fn start_session_usage(
+    sessions: Vec<crate::session_usage::UsageSource>,
+    codex_dir: String,
+    claude_dir: String,
+) -> AppResult<crate::session_usage::UsageStarted> {
+    crate::session_usage::start(sessions, codex_dir, claude_dir)
+}
+#[tauri::command]
+pub fn session_usage_status(job_id: u64) -> AppResult<crate::session_usage::UsageStatus> {
+    crate::session_usage::status(job_id)
+}
+#[tauri::command]
+pub fn cancel_session_usage(job_id: u64) -> AppResult<()> {
+    crate::session_usage::cancel(job_id)
+}

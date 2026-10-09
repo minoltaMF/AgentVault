@@ -1,3 +1,4 @@
+import { SessionUsageDialog } from "@/components/SessionUsageDialog";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
 import { useSettings } from "@/stores/settings";
@@ -73,6 +74,7 @@ function Workbench({ codexRoot, claudeRoot, qoderRoot, workbuddyRoot, grokRoot, 
   const [preview, setPreview] = useState<SessionSummary | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [contentSearchOpen, setContentSearchOpen] = useState(false);
+  const [usageOpen, setUsageOpen] = useState(false);
   const [previewJump, setPreviewJump] = useState<PreviewJump | null>(null);
   const previewButton = useRef<HTMLButtonElement | null>(null);
   const viewport = useRef<HTMLDivElement>(null);
@@ -135,7 +137,7 @@ function Workbench({ codexRoot, claudeRoot, qoderRoot, workbuddyRoot, grokRoot, 
           <label className="min-w-0 space-y-1 text-xs">归档状态<select aria-label="归档状态" className={selectClass} value={archive} onChange={(e) => filter("archive", e.target.value)}><option value="">全部状态</option><option value="active">未归档</option><option value="archived">已归档</option></select></label>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground"><span>按更新时间降序 · 共 {filtered.length} 条 · 每页 {PAGE_SIZE} 条</span>{(query || provider || project || archive) && <Button size="sm" variant="ghost" onClick={() => { setParams({}); setPage(0); }}>清除筛选</Button>}</div>
-        <div className="flex flex-wrap items-center gap-3"><Button variant="outline" disabled={!filtered.length || busy} onClick={() => setContentSearchOpen(true)}>搜索正文</Button><span className="text-xs text-muted-foreground">手动搜索当前筛选范围内全部会话的用户与助手消息，不限于当前页。</span></div>
+        <div className="flex flex-wrap items-center gap-3"><Button variant="outline" disabled={!filtered.length || busy} onClick={() => setContentSearchOpen(true)}>搜索正文</Button><Button variant="outline" disabled={!filtered.length || busy} onClick={() => setUsageOpen(true)}>用量与成本</Button><span className="text-xs text-muted-foreground">手动搜索当前筛选范围内全部会话的用户与助手消息，不限于当前页。</span></div>
         {!filtered.length && <p role="status" className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">{busy ? "正在读取来源，请稍候…" : all.length ? "没有符合筛选条件的会话。" : sources.every((s) => s.data.state === "idle") ? "展开未使用来源选择读取，或使用顶部刷新读取已配置的来源。" : "当前没有可显示的会话，请检查来源状态或重试。"}</p>}
         <section aria-label="统一会话列表" className="space-y-2">
           {filtered.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE).map((session) => <article key={sessionIdentity(session)} className="min-w-0 rounded-lg border p-4">
@@ -149,6 +151,7 @@ function Workbench({ codexRoot, claudeRoot, qoderRoot, workbuddyRoot, grokRoot, 
         {pages > 1 && <nav aria-label="会话分页" className="flex items-center justify-center gap-3"><Button variant="outline" disabled={currentPage === 0} onClick={() => { setPage(currentPage - 1); viewport.current?.scrollTo({ top: 0 }); }}>上一页</Button><span className="text-sm">{currentPage + 1} / {pages}</span><Button variant="outline" disabled={currentPage + 1 >= pages} onClick={() => { setPage(currentPage + 1); viewport.current?.scrollTo({ top: 0 }); }}>下一页</Button></nav>}
       </div>
     </ScrollArea>
+    <SessionUsageDialog key={`usage:${contentScopeKey}`} open={usageOpen} onOpenChange={setUsageOpen} sessions={filtered} codexDir={codexRoot} claudeDir={claudeRoot} />
     <ContentSearchDialog key={contentScopeKey} open={contentSearchOpen} onOpenChange={setContentSearchOpen} provider="codex" codexDir={codexRoot} claudeDir={claudeRoot} qoderDir={qoderRoot} workbuddyDir={workbuddyRoot} grokDir={grokRoot} piDir={piRoot} dshDir={dshRoot} hermesDir={hermesRoot} zcodeDir={zcodeRoot} qwenDir={qwenRoot} clineDir={clineRoot} copilotDir={copilotRoot} antigravityDir={antigravityRoot} opencodeDir={opencodeRoot} cursorDir="" showSubagentSessions={false} showArchivedSessions={archive === "archived"} rolloutPaths={[]} workbenchScopes={contentScopes} retained={retainedContent} onOpenResult={(session, match, text) => { setPreviewJump({ eventIndex: match.event_index, eventOffset: match.event_offset, query: text }); setPreview(session); setPreviewOpen(true); }} />
     {preview && <PreviewDialog key={`${sessionIdentity(preview)}:${previewJump?.eventIndex ?? ""}`} readOnly open={previewOpen} session={preview} initialJump={previewJump} allSessions={all.filter((s) => s.provider === preview.provider)} onOpenChange={(open) => { if (!open) { setPreviewOpen(false); if (previewJump) { setPreviewJump(null); setContentSearchOpen(true); } else requestAnimationFrame(() => previewButton.current?.focus({ preventScroll: true })); } }} />}
   </>;

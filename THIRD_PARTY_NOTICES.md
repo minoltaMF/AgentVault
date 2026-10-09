@@ -78,3 +78,12 @@ AgentVault 当前直接包含下列上游项目的源代码。本文件只记录
 - 许可证：MIT；Copyright (c) 2026 Corey Chiu。完整许可证见 `docs/licenses/Wake-MIT.txt`。
 - 移植范围：`crates/registry/src/lib.rs` 的 `body_matches` 改编自 `crates/wake-core/src/db.rs` 的 `fts_match_expr` / `needs_like_fallback`：复用 FTS5 字面量引号转义及短查询降级规则，改为本项目既有的完整子串语义和指定 session 主键范围。
 - `src-tauri/src/workbench_index.rs` 参考 Wake scanner 的文件大小、修改时间和解析器版本失效设计；复用 AgentVault 既有 Registry schema、消息分类器与原子事务，不复制 Wake Store/schema、GPUI、MCP 或整套扫描器。新增夹具由 AgentVault 合成。
+
+## Magpie：Codex / Claude 会话用量归一化
+
+- 仓库：https://github.com/yetone/magpie
+- 锁定 commit：`d1d4b7ed2a34cd3aac280ce0e69dfce2989264e9`。
+- 许可证：MIT；Copyright (c) 2026 yetone。完整原文见 [Magpie-MIT.txt](docs/licenses/Magpie-MIT.txt)。
+- 改编范围：`src-tauri/src/session_usage/codex.rs`、`claude.rs` 参考并移植 `internal/sessions/codex_usage.go`、`claude_usage.go`、`claude.go` 的响应身份、累计差值、修订去重及缓存 TTL 规则；将部分算法改写为 Rust 按次流式读取，不引入 Go、网关或上游缓存数据库。
+- 回归场景改编自 `codex_usage_test.go`、`claude_usage_test.go`、`claude_cache_ttl_test.go`；`tests/fixtures/usage/codex-compaction-counter-domains.jsonl` 复制自该提交同名 testdata 合成夹具。其他测试仅使用合成数据。
+- 不声称完整移植上游全部分页恢复、跨计数域推断或价格服务；歧义和缺失记录明确标注。配置写入、认证和模型调用未移植。

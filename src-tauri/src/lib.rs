@@ -51,6 +51,7 @@ pub(crate) mod release_channel;
 pub mod repair;
 pub mod rollout;
 pub mod search_diagnostics;
+pub mod session_usage;
 pub mod sessions;
 pub mod settings;
 pub mod state_db;
@@ -124,6 +125,9 @@ pub fn run() {
             fs_ops::open_latest_release_page,
             fs_ops::copy_resume_command,
             commands::list_sessions,
+            commands::start_session_usage,
+            commands::session_usage_status,
+            commands::cancel_session_usage,
             commands::start_workbench_scan,
             commands::workbench_scan_status,
             commands::cancel_workbench_scan,
