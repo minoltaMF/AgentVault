@@ -8,8 +8,33 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  prepare:
+    name: Prepare unique draft
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.draft.outputs.release_id }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - run: node scripts/check-release.mjs --tag "$GITHUB_REF_NAME"
+      - run: node --test scripts/release-draft.test.mjs
+      - id: draft
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/release-draft.mjs prepare
+
   build:
+    needs: prepare
+    env:
+      RELEASE_ID: ${{ needs.prepare.outputs.release_id }}
+      RELEASE_PLATFORM: ${{ matrix.label }}
     name: Build ${{ matrix.label }}
     runs-on: ${{ matrix.platform }}
     strategy:
@@ -61,33 +86,29 @@ jobs:
       - name: Build frontend
         run: npm run build
 
-      - name: Build and upload release assets
+      - name: Build desktop assets
+        id: desktop
         uses: tauri-apps/tauri-action@v0
+        with:
+          # No releaseId/tagName: uploads are exclusively handled by release-draft.mjs.
+          releaseDraft: true
+          includeUpdaterJson: false
+          args: ${{ contains(github.ref_name, '-') && matrix.platform == 'windows-latest' && '--bundles nsis' || '' }}
+
+      - name: Upload desktop assets to prepared draft
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: ${{ github.ref_name }}
-          releaseName: AgentVault ${{ github.ref_name }}
-          generateReleaseNotes: true
-          releaseDraft: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
-          args: ${{ contains(github.ref_name, '-') && matrix.platform == 'windows-latest' && '--bundles nsis' || '' }}
+          TAURI_ARTIFACT_PATHS: ${{ steps.desktop.outputs.artifactPaths }}
+        run: node scripts/release-draft.mjs desktop
 
       - name: Create CLI package
         shell: pwsh
         run: node scripts/package-release.mjs --target cli --build-product
 
       - name: Upload CLI package
-        shell: pwsh
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $version = node -p "require('./package.json').version"
-          $assets = @(Get-ChildItem -Path "release" -Filter "cc-sessions-cli-v$version-*.zip" -File)
-          if ($assets.Count -ne 1) {
-            throw "Expected exactly one CLI package for this job, found $($assets.Count)."
-          }
-          gh release upload "${{ github.ref_name }}" $assets[0].FullName --clobber
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/release-draft.mjs upload cli
 
       - name: Create Windows portable executable
         if: matrix.platform == 'windows-latest'
@@ -96,18 +117,29 @@ jobs:
 
       - name: Upload Windows portable packages
         if: matrix.platform == 'windows-latest'
-        shell: pwsh
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $version = node -p "require('./package.json').version"
-          $assets = @(
-            "release/cc-session-manager-portable-v$version-windows.exe",
-            "release/cc-session-manager-portable-v$version-windows.zip"
-          )
-          foreach ($asset in $assets) {
-            if (!(Test-Path $asset)) {
-              throw "Windows portable package was not found: $asset"
-            }
-          }
-          gh release upload "${{ github.ref_name }}" $assets --clobber
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/release-draft.mjs upload portable
+
+  verify:
+    name: Verify complete draft
+    needs: [prepare, build]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      RELEASE_ID: ${{ needs.prepare.outputs.release_id }}
+      PREPARE_RESULT: ${{ needs.prepare.result }}
+      BUILD_RESULT: ${{ needs.build.result }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Require all platforms to succeed
+        run: node -e "if (process.env.PREPARE_RESULT !== 'success' || process.env.BUILD_RESULT !== 'success') throw new Error('Draft preparation or platform build failed; release is incomplete')"
+      - name: Verify unique draft and download every asset for checksum validation
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/release-draft.mjs verify
