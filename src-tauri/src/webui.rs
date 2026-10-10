@@ -52,6 +52,12 @@ struct WebuiState {
 pub fn run(config: WebuiConfig) -> AppResult<()> {
     let dist_dir = resolve_dist_dir()?;
     let settings_file = resolve_settings_file()?;
+    crate::session_usage::configure_cache_path(
+        std::path::absolute(&settings_file)?
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join("usage-cache-v1.json"),
+    );
     crate::workbench_index::configure_index_path(
         std::path::absolute(&settings_file)?
             .parent()

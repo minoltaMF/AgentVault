@@ -1,5 +1,6 @@
 //! Process-local parsed results only. All filesystem checks happen outside this lock.
 use super::{ParsedUsage, UsageSource};
+use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
@@ -7,7 +8,7 @@ use std::{
     time::SystemTime,
 };
 pub(super) type Fingerprint = (u64, SystemTime, String);
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub(super) struct Key(String, PathBuf, String);
 impl Key {
     pub(super) fn new(source: &UsageSource, root: &Path) -> Self {
@@ -20,6 +21,12 @@ impl Key {
     fn weight(&self) -> usize {
         self.0.len() + self.1.as_os_str().len() * 4 + self.2.len() + 128
     }
+}
+#[derive(Clone, Serialize, Deserialize)]
+pub(super) struct SavedEntry {
+    pub key: Key,
+    pub fingerprint: Fingerprint,
+    pub parsed: ParsedUsage,
 }
 struct Entry {
     fingerprint: Fingerprint,
@@ -40,6 +47,23 @@ pub(super) fn shared() -> &'static Mutex<UsageCache> {
     CACHE.get_or_init(|| Mutex::new(UsageCache::new(10_000, 16 * 1024 * 1024)))
 }
 impl UsageCache {
+    pub(super) fn snapshot(&self) -> Vec<SavedEntry> {
+        self.order
+            .values()
+            .filter_map(|key| {
+                self.entries.get(key).map(|entry| SavedEntry {
+                    key: key.clone(),
+                    fingerprint: entry.fingerprint.clone(),
+                    parsed: entry.parsed.clone(),
+                })
+            })
+            .collect()
+    }
+    pub(super) fn restore(&mut self, entries: Vec<SavedEntry>) {
+        for entry in entries {
+            self.insert(entry.key, entry.fingerprint, entry.parsed);
+        }
+    }
     pub(super) fn new(max_entries: usize, max_bytes: usize) -> Self {
         Self {
             entries: BTreeMap::new(),

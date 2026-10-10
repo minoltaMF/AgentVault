@@ -37,7 +37,7 @@ export function SessionUsageDialog({ open, onOpenChange, sessions, codexDir, cla
         const next = await api.sessionUsageStatus(id!);
         if (disposed) return;
         // Progress-only polls should not recompute thousands of unchanged model totals.
-        setStatus(previous => previous?.processed_files === next.processed_files && previous.state === next.state && previous.error === next.error ? { ...previous, elapsed_ms: next.elapsed_ms } : next);
+        setStatus(previous => previous?.processed_files === next.processed_files && previous.state === next.state && previous.error === next.error && previous.cache_warning === next.cache_warning ? { ...previous, elapsed_ms: next.elapsed_ms } : next);
         if (next.state === "running") timer = setTimeout(() => void poll(), 400);
       } catch (failure) { if (!disposed) setError(String(failure)); }
     }
@@ -66,11 +66,12 @@ export function SessionUsageDialog({ open, onOpenChange, sessions, codexDir, cla
     if (!nextOpen) setRun(previous => previous.forceRefresh ? { ...previous, forceRefresh: false } : previous);
     onOpenChange(nextOpen);
   }
-  return <Dialog open={open} onOpenChange={changeOpen}><DialogContent className="flex max-h-[90vh] max-w-4xl flex-col overflow-hidden"><DialogHeader><DialogTitle>会话用量与成本</DialogTitle><DialogDescription>分析当前筛选的全部 {scope.length} 条 Codex / Claude 会话，不限当前页；跳过其他来源 {sessions.length - scope.length} 条。只读取原生记录。未变化文件复用本次运行的缓存，变化文件重新解析；重启应用后缓存清空。</DialogDescription></DialogHeader>
+  return <Dialog open={open} onOpenChange={changeOpen}><DialogContent className="flex max-h-[90vh] max-w-4xl flex-col overflow-hidden"><DialogHeader><DialogTitle>会话用量与成本</DialogTitle><DialogDescription>分析当前筛选的全部 {scope.length} 条 Codex / Claude 会话，不限当前页；跳过其他来源 {sessions.length - scope.length} 条。只读取原生记录。未变化文件复用本机缓存，重启后仍可使用；变化文件重新解析。缓存只保存用量与校验信息，不保存对话正文。</DialogDescription></DialogHeader>
     <div className="min-h-0 space-y-4 overflow-y-auto pr-2">
       <div role="status" className="flex flex-wrap items-center gap-3 text-sm"><span>{status ? `${status.processed_files} / ${status.total_files} 个文件 · ${status.state === "running" ? "分析中" : status.state === "completed" ? "已完成" : status.state === "cancelled" ? "已取消，以下为部分结果" : "失败，以下为部分结果"}` : scope.length ? "正在启动分析…" : "当前范围没有支持的来源。"}</span>{busy && <Button size="sm" variant="outline" disabled={job === null || cancelRequested} onClick={() => { setCancelRequested(true); void api.cancelSessionUsage(job!).catch(failure => { setError(String(failure)); setCancelRequested(false); }); }}>{cancelRequested ? "正在取消…" : "取消分析"}</Button>}</div>
       {!busy && scope.length > 0 && <div className="flex flex-wrap items-center gap-2"><Button size="sm" variant="outline" onClick={() => setRun(previous => ({ sequence: previous.sequence + 1, forceRefresh: true }))}>强制重新分析</Button><span className="text-xs text-muted-foreground">绕过缓存，重新读取当前筛选范围。</span></div>}
       {status && <p className="text-xs text-muted-foreground">已复用 {status.cache_hits} 个文件 · 已重新解析 {status.parsed_files} 个文件 · 用时 {(status.elapsed_ms / 1000).toFixed(2)} 秒{run.forceRefresh ? " · 本次已绕过缓存" : ""}</p>}
+      {status?.cache_warning && <p role="status" className="text-xs text-amber-700 dark:text-amber-400">{status.cache_warning}</p>}
       {status && <progress className="w-full" aria-label="用量分析进度" value={status.processed_files} max={Math.max(1, status.total_files)} />}
       {(error || status?.error) && <p role="alert" className="break-all text-sm text-destructive">{error || status?.error}</p>}
       {status && <div className="rounded-md border p-3"><p className="mb-2 text-sm font-medium">已成功读取 {results.length} 条会话{busy ? "（分析尚未完成）" : status.failures.length || status.state !== "completed" ? "（部分结果）" : ""}</p><Totals sessions={results} prices={prices} /></div>}

@@ -1,7 +1,10 @@
-//! Read-only native usage analysis. No source writes, persistent cache or billing claims.
+//! Read-only native usage analysis. No source writes or billing claims; disposable usage cache only.
 mod cache;
 mod claude;
 mod codex;
+mod persistence;
+
+pub use persistence::configure_cache_path;
 
 use crate::error::{ensure_not_cancelled, AppError, AppResult};
 use serde::{Deserialize, Serialize};
@@ -16,7 +19,7 @@ use std::{
     },
 };
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Tokens {
     pub input: u64,
     pub output: u64,
@@ -25,12 +28,12 @@ pub struct Tokens {
     pub cache_write_1h: u64,
     pub reasoning: u64,
 }
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelUsage {
     pub model: String,
     pub tokens: Tokens,
 }
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ParsedUsage {
     pub models: Vec<ModelUsage>,
     pub warnings: Vec<String>,
@@ -63,6 +66,7 @@ pub struct UsageStatus {
     pub cache_hits: usize,
     pub parsed_files: usize,
     pub elapsed_ms: u64,
+    pub cache_warning: Option<String>,
     pub results: Vec<SessionUsage>,
     pub failures: Vec<UsageFailure>,
     pub error: Option<String>,
@@ -149,6 +153,7 @@ pub fn start_with_options(
             cache_hits: 0,
             parsed_files: 0,
             elapsed_ms: 0,
+            cache_warning: None,
             results: vec![],
             failures: vec![],
             error: None,
@@ -183,6 +188,11 @@ pub fn start_with_options(
         .name("session-usage".into())
         .spawn(move || {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let warning = persistence::load();
+                task.status
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .cache_warning = warning;
                 for source in sessions {
                     if task.cancel.load(Ordering::Acquire) {
                         break;
@@ -225,7 +235,11 @@ pub fn start_with_options(
                     }
                 }
             }));
+            let warning = persistence::save();
             let mut state = task.status.lock().unwrap_or_else(|e| e.into_inner());
+            if warning.is_some() {
+                state.cache_warning = warning;
+            }
             state.elapsed_ms = elapsed(&task);
             state.state = if result.is_err() {
                 state.error = Some("用量分析线程异常，已保留完成结果".into());

@@ -81,6 +81,9 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .manage(std::sync::Arc::new(family::FamilyLock::default()))
         .setup(|_app| {
+            session_usage::configure_cache_path(
+                _app.path().app_config_dir()?.join("usage-cache-v1.json"),
+            );
             workbench_index::configure_index_path(
                 _app.path()
                     .app_config_dir()?
