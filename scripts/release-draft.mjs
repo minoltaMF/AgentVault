@@ -67,7 +67,7 @@ export function verifyAssets(assets, version) {
 }
 
 // Injection keeps remote publication logic testable without credentials or network writes.
-export function releaseService({ api, repo, tag, sha, version }) {
+export function releaseService({ api, repo, tag, sha, version, wait = ms => new Promise(resolve => setTimeout(resolve, ms)) }) {
   const base = `/repos/${repo}`;
   if (tag !== `v${version}` || !/^[0-9a-f]{40}$/.test(sha) || !/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error('Invalid release context');
   async function list(route) {
@@ -94,7 +94,14 @@ export function releaseService({ api, repo, tag, sha, version }) {
   async function checked(id) {
     if (!/^\d+$/.test(String(id))) throw new Error('Missing or invalid release ID');
     await assertTag();
-    const release = await unique();
+    let release;
+    // The list endpoint may briefly lag behind a successful create response.
+    // Retry reads only; duplicate/foreign releases still fail immediately.
+    for (const delay of [0, 1000, 2000, 4000, 8000, 16000]) {
+      if (delay) await wait(delay);
+      release = await unique();
+      if (release) break;
+    }
     if (!release || String(release.id) !== String(id)) throw new Error('Release ID is not the unique release for this tag');
     assertDraft(release, tag, sha);
     return release;
@@ -156,7 +163,7 @@ async function main() {
   const version = JSON.parse(readFileSync('package.json', 'utf8')).version;
   const api = async (route, { method = 'GET', body, binary, upload = false, download = false } = {}) => {
     const response = await fetch(`https://${upload ? 'uploads' : 'api'}.github.com${route}`, {
-      method, signal: AbortSignal.timeout(120_000),
+      method, cache: 'no-store', signal: AbortSignal.timeout(120_000),
       headers: { Authorization: `Bearer ${token}`, Accept: download ? 'application/octet-stream' : 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28',
         'Content-Type': binary ? 'application/octet-stream' : 'application/json' },
       body: binary ?? (body ? JSON.stringify(body) : undefined),

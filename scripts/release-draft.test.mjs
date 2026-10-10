@@ -120,3 +120,28 @@ test('workflow has one preparation, common release ID, no tag uploads, and manda
   assert.match(workflow, /release-draft\.mjs verify/);
   assert.doesNotMatch(workflow, /gh release|--clobber|^\s+(tagName|releaseId|releaseName):/m);
 });
+
+test('creation list lag retries only reads and never creates a second draft', async () => {
+  let created = false, reads = 0, posts = 0;
+  const service = releaseService({ repo: 'owner/repo', tag, sha, version, wait: async () => {}, api: async (route, input = {}) => {
+    if (route.includes('/git/ref/')) return { object: { type: 'commit', sha } };
+    if (input.method === 'POST') { posts++; created = true; return draft(); }
+    if (route.includes('/releases?')) return created && ++reads >= 3 ? [draft()] : [];
+    throw new Error('Unexpected request');
+  }});
+  assert.equal((await service.prepare('notes')).id, 7);
+  assert.equal(posts, 1);
+  assert.equal(reads, 3);
+});
+test('persistent missing draft stops after bounded read retries', async () => {
+  let lists = 0, posts = 0;
+  const service = releaseService({ repo: 'owner/repo', tag, sha, version, wait: async () => {}, api: async (route, input = {}) => {
+    if (route.includes('/git/ref/')) return { object: { type: 'commit', sha } };
+    if (input.method === 'POST') { posts++; return draft(); }
+    if (route.includes('/releases?')) { lists++; return []; }
+    throw new Error('Unexpected request');
+  }});
+  await assert.rejects(service.prepare('notes'), /unique release/);
+  assert.equal(posts, 1);
+  assert.equal(lists, 7);
+});
