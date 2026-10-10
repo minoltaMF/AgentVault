@@ -207,7 +207,7 @@ fn dispatch_invoke(state: &WebuiState, command: &str, args: Value) -> AppResult<
         "default_zcode_dir" => to_value(settings::default_zcode_dir()),
         "default_pi_dir" => to_value(settings::default_pi_dir()),
         "default_cursor_dir" => to_value(settings::default_cursor_dir()),
-        "start_session_usage" => to_result_value(crate::session_usage::start(
+        "start_session_usage" => to_result_value(crate::session_usage::start_with_options(
             serde_json::from_value(
                 args.get("sessions")
                     .cloned()
@@ -215,6 +215,7 @@ fn dispatch_invoke(state: &WebuiState, command: &str, args: Value) -> AppResult<
             )?,
             string_arg(&args, "codexDir")?,
             string_arg(&args, "claudeDir")?,
+            opt_bool_arg(&args, "forceRefresh")?.unwrap_or(false),
         )),
         "session_usage_status" => {
             to_result_value(crate::session_usage::status(arg::<u64>(&args, "jobId")?))

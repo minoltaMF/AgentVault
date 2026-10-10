@@ -1,4 +1,5 @@
 //! Read-only native usage analysis. No source writes, persistent cache or billing claims.
+mod cache;
 mod claude;
 mod codex;
 
@@ -59,6 +60,9 @@ pub struct UsageStatus {
     pub state: String,
     pub total_files: usize,
     pub processed_files: usize,
+    pub cache_hits: usize,
+    pub parsed_files: usize,
+    pub elapsed_ms: u64,
     pub results: Vec<SessionUsage>,
     pub failures: Vec<UsageFailure>,
     pub error: Option<String>,
@@ -70,6 +74,7 @@ pub struct UsageStarted {
 struct Job {
     cancel: AtomicBool,
     status: Mutex<UsageStatus>,
+    started: std::time::Instant,
 }
 static JOBS: OnceLock<Mutex<BTreeMap<u64, Arc<Job>>>> = OnceLock::new();
 static NEXT: AtomicU64 = AtomicU64::new(1);
@@ -92,21 +97,38 @@ fn job(id: u64) -> AppResult<Arc<Job>> {
         .ok_or_else(|| error("用量分析任务不存在或已过期"))
 }
 pub fn status(id: u64) -> AppResult<UsageStatus> {
-    Ok(job(id)?
+    let task = job(id)?;
+    let mut state = task
         .status
         .lock()
         .unwrap_or_else(|e| e.into_inner())
-        .clone())
+        .clone();
+    if state.state == "running" {
+        state.elapsed_ms = elapsed(&task);
+    }
+    Ok(state)
+}
+fn elapsed(task: &Job) -> u64 {
+    task.started.elapsed().as_millis().min(u64::MAX as u128) as u64
 }
 pub fn cancel(id: u64) -> AppResult<()> {
     job(id)?.cancel.store(true, Ordering::Release);
     Ok(())
 }
 
+#[cfg(test)]
 pub fn start(
     sessions: Vec<UsageSource>,
     codex_dir: String,
     claude_dir: String,
+) -> AppResult<UsageStarted> {
+    start_with_options(sessions, codex_dir, claude_dir, false)
+}
+pub fn start_with_options(
+    sessions: Vec<UsageSource>,
+    codex_dir: String,
+    claude_dir: String,
+    force_refresh: bool,
 ) -> AppResult<UsageStarted> {
     if sessions.len() > 10_000 {
         return Err(error("单次用量分析最多支持 10000 个会话，请缩小筛选范围"));
@@ -119,10 +141,14 @@ pub fn start(
     let id = NEXT.fetch_add(1, Ordering::Relaxed);
     let task = Arc::new(Job {
         cancel: AtomicBool::new(false),
+        started: std::time::Instant::now(),
         status: Mutex::new(UsageStatus {
             state: "running".into(),
             total_files: sessions.len(),
             processed_files: 0,
+            cache_hits: 0,
+            parsed_files: 0,
+            elapsed_ms: 0,
             results: vec![],
             failures: vec![],
             error: None,
@@ -166,18 +192,32 @@ pub fn start(
                         "claude" => &claude_dir,
                         _ => "",
                     };
-                    let result = read_usage(&source, Path::new(root), &task.cancel);
+                    let result = read_usage_cached(
+                        &source,
+                        Path::new(root),
+                        &task.cancel,
+                        force_refresh,
+                        cache::shared(),
+                        || {},
+                    );
                     let mut state = task.status.lock().unwrap_or_else(|e| e.into_inner());
                     if matches!(result, Err(AppError::Cancelled)) {
                         break;
                     }
                     state.processed_files += 1;
                     match result {
-                        Ok(parsed) => state.results.push(SessionUsage {
-                            source,
-                            models: parsed.models,
-                            warnings: parsed.warnings,
-                        }),
+                        Ok((parsed, hit)) => {
+                            if hit {
+                                state.cache_hits += 1;
+                            } else {
+                                state.parsed_files += 1;
+                            }
+                            state.results.push(SessionUsage {
+                                source,
+                                models: parsed.models,
+                                warnings: parsed.warnings,
+                            });
+                        }
                         Err(e) => state.failures.push(UsageFailure {
                             path: source.rollout_path,
                             error: e.to_string(),
@@ -186,6 +226,7 @@ pub fn start(
                 }
             }));
             let mut state = task.status.lock().unwrap_or_else(|e| e.into_inner());
+            state.elapsed_ms = elapsed(&task);
             state.state = if result.is_err() {
                 state.error = Some("用量分析线程异常，已保留完成结果".into());
                 "failed"
@@ -243,7 +284,13 @@ fn fingerprint(metadata: &Metadata) -> AppResult<(u64, std::time::SystemTime, St
     #[cfg(unix)]
     let identity = {
         use std::os::unix::fs::MetadataExt;
-        format!("{}:{}", metadata.dev(), metadata.ino())
+        format!(
+            "{}:{}:{}:{}",
+            metadata.dev(),
+            metadata.ino(),
+            metadata.ctime(),
+            metadata.ctime_nsec()
+        )
     };
     #[cfg(windows)]
     let identity = {
@@ -254,15 +301,28 @@ fn fingerprint(metadata: &Metadata) -> AppResult<(u64, std::time::SystemTime, St
     let identity = format!("{:?}", metadata.created()?);
     Ok((metadata.len(), metadata.modified()?, identity))
 }
+#[cfg(test)]
 fn read_usage(source: &UsageSource, root: &Path, cancel: &AtomicBool) -> AppResult<ParsedUsage> {
     read_usage_checked(source, root, cancel, || {})
 }
+#[cfg(test)]
 fn read_usage_checked(
     source: &UsageSource,
     root: &Path,
     cancel: &AtomicBool,
     after_read: impl FnOnce(),
 ) -> AppResult<ParsedUsage> {
+    read_usage_cached(source, root, cancel, true, cache::shared(), after_read)
+        .map(|(parsed, _)| parsed)
+}
+fn read_usage_cached(
+    source: &UsageSource,
+    root: &Path,
+    cancel: &AtomicBool,
+    force_refresh: bool,
+    cache: &Mutex<cache::UsageCache>,
+    after_read: impl FnOnce(),
+) -> AppResult<(ParsedUsage, bool)> {
     ensure_not_cancelled(Some(cancel))?;
     validate(source, root)?;
     let file = File::open(&source.rollout_path)?;
@@ -271,7 +331,20 @@ fn read_usage_checked(
         return Err(error("会话超过 256 MiB 用量分析上限"));
     }
     validate(source, root)?;
-    let mut reader = BufReader::new(file.take(MAX_FILE + 1));
+    if before != fingerprint(&fs::metadata(&source.rollout_path)?)? {
+        return Err(error("会话在打开期间发生变化，请重新分析"));
+    }
+    let key = cache::Key::new(source, root);
+    let cached = cache
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(&key, &before, force_refresh);
+    if let Some(parsed) = cached {
+        after_read();
+        verify_final(source, root, cancel, &file, &before)?;
+        return Ok((parsed, true));
+    }
+    let mut reader = BufReader::new((&file).take(MAX_FILE + 1));
     let mut line = Vec::new();
     let mut total = 0u64;
     let mut number = 0;
@@ -321,17 +394,33 @@ fn read_usage_checked(
         _ => return Err(error("不支持的用量来源")),
     };
     after_read();
-    ensure_not_cancelled(Some(cancel))?;
-    validate(source, root)?;
-    if before != fingerprint(&fs::metadata(&source.rollout_path)?)? {
-        return Err(error("会话在分析期间发生变化，请重新分析"));
-    }
+    verify_final(source, root, cancel, &file, &before)?;
     if parsed.models.is_empty() && parsed.warnings.is_empty() {
         parsed
             .warnings
             .push("未找到可用的原生用量记录，不能视为零消耗".into());
     }
-    Ok(parsed)
+    cache
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(key, before, parsed.clone());
+    Ok((parsed, false))
+}
+fn verify_final(
+    source: &UsageSource,
+    root: &Path,
+    cancel: &AtomicBool,
+    file: &File,
+    before: &cache::Fingerprint,
+) -> AppResult<()> {
+    ensure_not_cancelled(Some(cancel))?;
+    validate(source, root)?;
+    if *before != fingerprint(&file.metadata()?)?
+        || *before != fingerprint(&fs::metadata(&source.rollout_path)?)?
+    {
+        return Err(error("会话在分析期间发生变化，请重新分析"));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -403,6 +492,67 @@ mod tests {
         assert!(result.unwrap_err().to_string().contains("发生变化"));
     }
     #[test]
+    fn cache_reuses_only_unchanged_files_and_force_refresh_reparses() {
+        let dir = crate::readonly_source::test_support::tempdir().unwrap();
+        let s = fixture(dir.path());
+        let cache = Mutex::new(cache::UsageCache::new(10, 10000));
+        let cancel = AtomicBool::new(false);
+        let read =
+            |force| read_usage_cached(&s, dir.path(), &cancel, force, &cache, || {}).unwrap();
+        assert!(!read(false).1);
+        assert!(read(false).1);
+        assert!(!read(true).1);
+        assert!(read(false).1);
+        fs::write(&s.rollout_path, format!("{}{}", row("m1"), row("m2"))).unwrap();
+        let (parsed, hit) = read(false);
+        assert!(!hit);
+        assert_eq!(parsed.models[0].tokens.input, 20);
+        fs::write(&s.rollout_path, row("m1")).unwrap();
+        let (parsed, hit) = read(false);
+        assert!(!hit);
+        assert_eq!(parsed.models[0].tokens.input, 10);
+        let replacement = dir.path().join("replacement");
+        fs::write(
+            &replacement,
+            format!("{}{}{}", row("x"), row("y"), row("z")),
+        )
+        .unwrap();
+        fs::remove_file(&s.rollout_path).unwrap();
+        fs::rename(replacement, &s.rollout_path).unwrap();
+        let (parsed, hit) = read(false);
+        assert!(!hit);
+        assert_eq!(parsed.models[0].tokens.input, 30);
+    }
+    #[test]
+    fn warm_cache_never_masks_failures_or_final_mutations() {
+        let dir = crate::readonly_source::test_support::tempdir().unwrap();
+        let s = fixture(dir.path());
+        let cache = Mutex::new(cache::UsageCache::new(10, 10000));
+        let cancel = AtomicBool::new(false);
+        read_usage_cached(&s, dir.path(), &cancel, false, &cache, || {}).unwrap();
+        assert!(matches!(
+            read_usage_cached(&s, dir.path(), &AtomicBool::new(true), false, &cache, || {}),
+            Err(AppError::Cancelled)
+        ));
+        assert!(
+            read_usage_cached(&s, &dir.path().join("other"), &cancel, false, &cache, || {})
+                .is_err()
+        );
+        let final_cancel = read_usage_cached(&s, dir.path(), &cancel, false, &cache, || {
+            cancel.store(true, Ordering::Release);
+        });
+        assert!(matches!(final_cancel, Err(AppError::Cancelled)));
+        cancel.store(false, Ordering::Release);
+        let final_changed = read_usage_cached(&s, dir.path(), &cancel, false, &cache, || {
+            fs::write(&s.rollout_path, format!("{}{}", row("m1"), row("m2"))).unwrap();
+        });
+        assert!(final_changed.unwrap_err().to_string().contains("发生变化"));
+        fs::write(&s.rollout_path, "{").unwrap();
+        assert!(read_usage_cached(&s, dir.path(), &cancel, false, &cache, || {}).is_err());
+        fs::remove_file(&s.rollout_path).unwrap();
+        assert!(read_usage_cached(&s, dir.path(), &cancel, false, &cache, || {}).is_err());
+    }
+    #[test]
     fn jobs_deduplicate_scope_and_isolate_file_failures() {
         let dir = crate::readonly_source::test_support::tempdir().unwrap();
         let s = fixture(dir.path());
@@ -422,7 +572,29 @@ mod tests {
                 assert_eq!(state.total_files, 2);
                 assert_eq!(state.processed_files, 2);
                 assert_eq!(state.results.len(), 1);
+                assert_eq!(state.cache_hits + state.parsed_files, 1);
                 assert_eq!(state.failures.len(), 1);
+                let mut renamed = state.results[0].source.clone();
+                renamed.title = "New title".into();
+                renamed.cwd = "/new-project".into();
+                let next = start(
+                    vec![renamed],
+                    String::new(),
+                    dir.path().to_string_lossy().into_owned(),
+                )
+                .unwrap();
+                loop {
+                    let warm = status(next.job_id).unwrap();
+                    if warm.state != "running" {
+                        assert_eq!(warm.cache_hits, 1);
+                        assert_eq!(warm.parsed_files, 0);
+                        assert_eq!(warm.results[0].source.title, "New title");
+                        assert_eq!(warm.results[0].source.cwd, "/new-project");
+                        break;
+                    }
+                    assert!(std::time::Instant::now() < until);
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
                 break;
             }
             assert!(std::time::Instant::now() < until);

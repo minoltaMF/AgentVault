@@ -1374,8 +1374,14 @@ pub fn start_session_usage(
     sessions: Vec<crate::session_usage::UsageSource>,
     codex_dir: String,
     claude_dir: String,
+    force_refresh: Option<bool>,
 ) -> AppResult<crate::session_usage::UsageStarted> {
-    crate::session_usage::start(sessions, codex_dir, claude_dir)
+    crate::session_usage::start_with_options(
+        sessions,
+        codex_dir,
+        claude_dir,
+        force_refresh.unwrap_or(false),
+    )
 }
 #[tauri::command]
 pub fn session_usage_status(job_id: u64) -> AppResult<crate::session_usage::UsageStatus> {
