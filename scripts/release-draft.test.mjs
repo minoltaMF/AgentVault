@@ -145,3 +145,13 @@ test('persistent missing draft stops after bounded read retries', async () => {
   assert.equal(posts, 1);
   assert.equal(lists, 7);
 });
+
+test('verification retains draft visibility permissions and performs no writes', async () => {
+  const workflow = readFileSync('.github/workflows/release.yml', 'utf8');
+  assert.match(workflow, /permissions:\s*\n  contents: write/);
+  const verification = workflow.slice(workflow.indexOf('  verify:'));
+  assert.doesNotMatch(verification, /contents: read/);
+  const { service, calls } = mock({ releases: [draft()], assets: expectedAssets(version).map(asset) });
+  await service.verify(7);
+  assert.ok(calls.every(call => !call.method));
+});

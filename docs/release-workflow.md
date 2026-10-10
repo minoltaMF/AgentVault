@@ -33,3 +33,5 @@ Release 工作流按 tag 串行调度，不取消正在运行的同 tag 发布�
 `npm run test:release` 使用合成附件和模拟 API 覆盖这些拒绝路径，并加入常规 CI 的 `npm test`。摘要记录唯一 release ID、下载校验结果和链接。校验只证明上传内容与 GitHub 提供的摘要一致及清单完整，不代替签名、公证、二进制架构检查或安装运行验收。
 
 历史 alpha.20 的两个 draft 不在本次自动整理范围内，继续保留其原有资产。
+
+最终校验任务继承发布流程已有的 `contents: write` 权限，以便列出未公开 draft；校验程序只发 GET 请求，不修改 Release。仅 `contents: read` 的工作流 token 在本仓库实测看不到 draft。

@@ -126,8 +126,7 @@ jobs:
     needs: [prepare, build]
     if: ${{ always() }}
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
+    # Draft release listings require push-capable credentials. Verification uses GET only.
     env:
       RELEASE_ID: ${{ needs.prepare.outputs.release_id }}
       PREPARE_RESULT: ${{ needs.prepare.result }}
