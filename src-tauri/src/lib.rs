@@ -130,6 +130,8 @@ pub fn run() {
             commands::list_sessions,
             commands::start_session_usage,
             commands::session_usage_status,
+            commands::session_usage_cache_status,
+            commands::rebuild_session_usage_cache,
             commands::cancel_session_usage,
             commands::start_workbench_scan,
             commands::workbench_scan_status,

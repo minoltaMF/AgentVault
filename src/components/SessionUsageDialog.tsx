@@ -3,6 +3,7 @@ import { api } from "@/lib/api";
 import { aggregateUsage, estimateCost, parseRate, priceKey, priceStorageKey, rateFields, readPriceBook, summarizeUsage, type PriceBook, type UsageScope, type UsageSession, type UsageStatus } from "@/lib/session-usage";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { UsageCachePanel } from "./UsageCachePanel";
 import { Input } from "@/components/ui/input";
 const labels = { input: "未缓存输入", output: "输出", cache_read: "缓存读取", cache_write_5m: "缓存写入（5 分钟）", cache_write_1h: "缓存写入（1 小时）" };
 const money = (value: number) => `$${value.toLocaleString("en-US", { maximumFractionDigits: 6 })}`;
@@ -71,7 +72,7 @@ export function SessionUsageDialog({ open, onOpenChange, sessions, codexDir, cla
       <div role="status" className="flex flex-wrap items-center gap-3 text-sm"><span>{status ? `${status.processed_files} / ${status.total_files} 个文件 · ${status.state === "running" ? "分析中" : status.state === "completed" ? "已完成" : status.state === "cancelled" ? "已取消，以下为部分结果" : "失败，以下为部分结果"}` : scope.length ? "正在启动分析…" : "当前范围没有支持的来源。"}</span>{busy && <Button size="sm" variant="outline" disabled={job === null || cancelRequested} onClick={() => { setCancelRequested(true); void api.cancelSessionUsage(job!).catch(failure => { setError(String(failure)); setCancelRequested(false); }); }}>{cancelRequested ? "正在取消…" : "取消分析"}</Button>}</div>
       {!busy && scope.length > 0 && <div className="flex flex-wrap items-center gap-2"><Button size="sm" variant="outline" onClick={() => setRun(previous => ({ sequence: previous.sequence + 1, forceRefresh: true }))}>强制重新分析</Button><span className="text-xs text-muted-foreground">绕过缓存，重新读取当前筛选范围。</span></div>}
       {status && <p className="text-xs text-muted-foreground">已复用 {status.cache_hits} 个文件 · 已重新解析 {status.parsed_files} 个文件 · 用时 {(status.elapsed_ms / 1000).toFixed(2)} 秒{run.forceRefresh ? " · 本次已绕过缓存" : ""}</p>}
-      {status?.cache_warning && <p role="status" className="text-xs text-amber-700 dark:text-amber-400">{status.cache_warning}</p>}
+      <UsageCachePanel analysisWarning={status?.cache_warning ?? null} busy={busy} refreshKey={status?.state ?? "starting"} onRebuilt={() => { setStatus(null); setError(""); setRun(previous => ({ sequence: previous.sequence + 1, forceRefresh: true })); }} />
       {status && <progress className="w-full" aria-label="用量分析进度" value={status.processed_files} max={Math.max(1, status.total_files)} />}
       {(error || status?.error) && <p role="alert" className="break-all text-sm text-destructive">{error || status?.error}</p>}
       {status && <div className="rounded-md border p-3"><p className="mb-2 text-sm font-medium">已成功读取 {results.length} 条会话{busy ? "（分析尚未完成）" : status.failures.length || status.state !== "completed" ? "（部分结果）" : ""}</p><Totals sessions={results} prices={prices} /></div>}

@@ -135,6 +135,17 @@ struct Store {
     writable: bool,
     expected: Option<atomic_file::FileFingerprint>,
     warning: Option<String>,
+    backup_path: Option<PathBuf>,
+}
+#[derive(Debug, Clone, Serialize)]
+pub struct UsageCacheStatus {
+    pub state: String,
+    pub disk_bytes: Option<u64>,
+    pub memory_entries: usize,
+    pub memory_bytes: usize,
+    pub path: Option<String>,
+    pub warning: Option<String>,
+    pub backup_path: Option<String>,
 }
 impl Store {
     fn new(path: PathBuf) -> Self {
@@ -144,7 +155,112 @@ impl Store {
             writable: true,
             expected: None,
             warning: None,
+            backup_path: None,
         }
+    }
+    fn status(&self, cache: &Mutex<UsageCache>) -> UsageCacheStatus {
+        let (memory_entries, memory_bytes) =
+            cache.lock().unwrap_or_else(|e| e.into_inner()).stats();
+        let checked = validate_path(&self.path).and_then(|exists| {
+            if exists {
+                let bytes = fs::symlink_metadata(&self.path)?.len();
+                Ok(Some(bytes))
+            } else {
+                Ok(None)
+            }
+        });
+        let (state, disk_bytes, warning) = match checked {
+            Err(error) => ("degraded", None, Some(error.to_string())),
+            Ok(Some(bytes)) if bytes > MAX_DISK_BYTES => (
+                "degraded",
+                Some(bytes),
+                Some("用量缓存文件超过 64 MiB 上限，无法安全重建".into()),
+            ),
+            Ok(size) if !self.writable => ("degraded", size, self.warning.clone()),
+            Ok(None) => ("missing", None, self.warning.clone()),
+            Ok(size) => (
+                if self.loaded { "ready" } else { "unchecked" },
+                size,
+                self.warning.clone(),
+            ),
+        };
+        UsageCacheStatus {
+            state: state.into(),
+            disk_bytes,
+            memory_entries,
+            memory_bytes,
+            path: Some(self.path.to_string_lossy().into_owned()),
+            warning,
+            backup_path: self
+                .backup_path
+                .as_ref()
+                .map(|p| p.to_string_lossy().into_owned()),
+        }
+    }
+    fn rebuild(
+        &mut self,
+        cache: &Mutex<UsageCache>,
+        after_backup: impl FnOnce(&Path),
+    ) -> AppResult<()> {
+        let result = (|| -> AppResult<()> {
+            let exists = validate_path(&self.path)?;
+            let expected = if exists {
+                let bytes = read_bounded(&self.path)?;
+                let expected = atomic_file::fingerprint_bytes(&bytes);
+                let mut random = [0u8; 16];
+                getrandom::getrandom(&mut random).map_err(|e| failure(e.to_string()))?;
+                let backup = self.path.with_file_name(format!(
+                    "{}.backup-{}",
+                    self.path
+                        .file_name()
+                        .ok_or_else(|| failure("用量缓存缺少文件名"))?
+                        .to_string_lossy(),
+                    hex::encode(random)
+                ));
+                validate_path(&backup)?;
+                // Retain the destination even if the atomic helper reports an ambiguous commit.
+                self.backup_path = Some(backup.clone());
+                atomic_file::create_with_writer_if_absent(&backup, |file| {
+                    file.write_all(&bytes)?;
+                    Ok(())
+                })?;
+                after_backup(&backup);
+                if atomic_file::fingerprint_bytes(&read_bounded(&backup)?) != expected {
+                    return Err(failure("用量缓存备份校验失败，已拒绝重建"));
+                }
+                Some(expected)
+            } else {
+                None
+            };
+            // Recheck ancestors immediately before the existing atomic CAS primitive.
+            validate_path(&self.path)?;
+            let bytes = encode(vec![])?;
+            let next = atomic_file::fingerprint_bytes(&bytes);
+            let writer = |file: &mut File| -> AppResult<()> {
+                file.write_all(&bytes)?;
+                Ok(())
+            };
+            match expected {
+                Some(expected) => {
+                    atomic_file::replace_with_writer_if_unchanged(&self.path, &expected, writer)?
+                }
+                None => atomic_file::create_with_writer_if_absent(&self.path, writer)?,
+            }
+            cache.lock().unwrap_or_else(|e| e.into_inner()).clear();
+            self.loaded = true;
+            self.writable = true;
+            self.expected = Some(next);
+            self.warning = None;
+            Ok(())
+        })();
+        if let Err(error) = result {
+            self.writable = false;
+            let message =
+                format!("安全重建未完成；已生成的备份会保留，请检查缓存状态后重试：{error}");
+            self.warning = Some(message.clone());
+            return Err(failure(message));
+        }
+        Ok(())
     }
     fn warn(&mut self, error: AppError) {
         self.warning = Some(format!(
@@ -214,6 +330,35 @@ impl Store {
     }
 }
 static STORE: OnceLock<Mutex<Store>> = OnceLock::new();
+pub(super) fn cache_status() -> AppResult<UsageCacheStatus> {
+    if let Some(store) = STORE.get() {
+        return Ok(store
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .status(cache::shared()));
+    }
+    let (memory_entries, memory_bytes) = cache::shared()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .stats();
+    Ok(UsageCacheStatus {
+        state: "disabled".into(),
+        disk_bytes: None,
+        memory_entries,
+        memory_bytes,
+        path: None,
+        warning: Some("当前进程未配置持久用量缓存".into()),
+        backup_path: None,
+    })
+}
+pub(super) fn rebuild_cache() -> AppResult<UsageCacheStatus> {
+    let store = STORE
+        .get()
+        .ok_or_else(|| failure("当前进程未配置持久用量缓存"))?;
+    let mut store = store.lock().unwrap_or_else(|e| e.into_inner());
+    store.rebuild(cache::shared(), |_| {})?;
+    Ok(store.status(cache::shared()))
+}
 /// Configure once during startup. Loading and saving happen only in usage worker threads.
 pub fn configure_cache_path(path: PathBuf) {
     let _ = STORE.set(Mutex::new(Store::new(path)));
@@ -253,6 +398,87 @@ mod tests {
     }
     fn row(id: &str) -> String {
         format!("{{\"type\":\"assistant\",\"requestId\":\"{id}\",\"message\":{{\"id\":\"{id}\",\"model\":\"synthetic\",\"usage\":{{\"input_tokens\":10,\"output_tokens\":2}}}}}}\n")
+    }
+    #[test]
+    fn rebuild_preserves_verified_backup_and_clears_memory() {
+        let dir = crate::readonly_source::test_support::tempdir().unwrap();
+        let root = fs::canonicalize(dir.path()).unwrap();
+        let path = root.join("cache.json");
+        let cache = cache();
+        let source = source(&root);
+        read_usage_cached(
+            &source,
+            &root,
+            &AtomicBool::new(false),
+            false,
+            &cache,
+            || {},
+        )
+        .unwrap();
+        let mut store = Store::new(path.clone());
+        assert_eq!(store.status(&cache).state, "missing");
+        fs::write(&path, b"{broken").unwrap();
+        assert_eq!(store.status(&cache).state, "unchecked");
+        store.load(&cache);
+        assert_eq!(store.status(&cache).state, "degraded");
+        store.rebuild(&cache, |_| {}).unwrap();
+        let backup = store.backup_path.clone().unwrap();
+        assert_eq!(fs::read(&backup).unwrap(), b"{broken");
+        assert_eq!(cache.lock().unwrap().stats(), (0, 0));
+        assert!(decode(&fs::read(&path).unwrap()).unwrap().is_empty());
+        assert_eq!(store.status(&cache).state, "ready");
+        let valid = fs::read(&path).unwrap();
+        store.rebuild(&cache, |_| {}).unwrap();
+        assert_ne!(store.backup_path.as_ref(), Some(&backup));
+        assert_eq!(fs::read(&backup).unwrap(), b"{broken");
+        assert_eq!(
+            fs::read(store.backup_path.as_ref().unwrap()).unwrap(),
+            valid
+        );
+        let mut missing = Store::new(root.join("missing.json"));
+        missing.rebuild(&cache, |_| {}).unwrap();
+        assert!(missing.backup_path.is_none());
+        assert_eq!(missing.status(&cache).state, "ready");
+    }
+    #[test]
+    fn rebuild_rejects_changed_source_and_corrupted_backup() {
+        let dir = crate::readonly_source::test_support::tempdir().unwrap();
+        let root = fs::canonicalize(dir.path()).unwrap();
+        let path = root.join("cache.json");
+        fs::write(&path, b"original").unwrap();
+        let mut store = Store::new(path.clone());
+        assert!(store
+            .rebuild(&cache(), |_| fs::write(&path, b"concurrent").unwrap())
+            .is_err());
+        assert_eq!(fs::read(&path).unwrap(), b"concurrent");
+        assert_eq!(
+            fs::read(store.backup_path.as_ref().unwrap()).unwrap(),
+            b"original"
+        );
+        assert!(store
+            .rebuild(&cache(), |backup| fs::write(backup, b"bad backup").unwrap())
+            .is_err());
+        assert_eq!(fs::read(&path).unwrap(), b"concurrent");
+        assert_eq!(store.status(&cache()).state, "degraded");
+    }
+    #[test]
+    fn rebuild_rejects_oversized_and_directory_without_backup() {
+        let dir = crate::readonly_source::test_support::tempdir().unwrap();
+        let root = fs::canonicalize(dir.path()).unwrap();
+        let path = root.join("cache.json");
+        File::create(&path)
+            .unwrap()
+            .set_len(MAX_DISK_BYTES + 1)
+            .unwrap();
+        let mut store = Store::new(path.clone());
+        assert!(store
+            .rebuild(&cache(), |_| panic!("must reject before backup"))
+            .is_err());
+        assert!(store.backup_path.is_none());
+        assert_eq!(fs::metadata(&path).unwrap().len(), MAX_DISK_BYTES + 1);
+        let mut directory = Store::new(root);
+        assert!(directory.rebuild(&cache(), |_| {}).is_err());
+        assert!(directory.backup_path.is_none());
     }
     #[test]
     fn restart_reuses_then_invalidates_and_force_refreshes() {
@@ -374,6 +600,8 @@ mod tests {
         fs::write(root.join("target"), b"original").unwrap();
         symlink(root.join("target"), root.join("cache")).unwrap();
         let mut store = Store::new(root.join("cache"));
+        assert!(store.rebuild(&cache(), |_| {}).is_err());
+        assert!(store.backup_path.is_none());
         store.save(&cache());
         assert!(store.warning.is_some());
         assert_eq!(fs::read(root.join("target")).unwrap(), b"original");

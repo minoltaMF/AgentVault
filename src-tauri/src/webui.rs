@@ -226,6 +226,8 @@ fn dispatch_invoke(state: &WebuiState, command: &str, args: Value) -> AppResult<
         "session_usage_status" => {
             to_result_value(crate::session_usage::status(arg::<u64>(&args, "jobId")?))
         }
+        "session_usage_cache_status" => to_result_value(crate::session_usage::cache_status()),
+        "rebuild_session_usage_cache" => to_result_value(crate::session_usage::rebuild_cache()),
         "cancel_session_usage" => {
             to_result_value(crate::session_usage::cancel(arg::<u64>(&args, "jobId")?))
         }

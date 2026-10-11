@@ -86,3 +86,5 @@ export function summarizeUsage(sessions: UsageSession[], prices: PriceBook) {
   }
   return { tokens, known, unknownModels, missingUsage, warnedSessions, overflow };
 }
+
+export type UsageCacheStatus = { state: "ready" | "missing" | "degraded" | "disabled" | "unchecked"; disk_bytes: number | null; memory_entries: number; memory_bytes: number; path: string | null; warning: string | null; backup_path: string | null };

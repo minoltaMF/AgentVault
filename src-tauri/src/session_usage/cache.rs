@@ -47,6 +47,15 @@ pub(super) fn shared() -> &'static Mutex<UsageCache> {
     CACHE.get_or_init(|| Mutex::new(UsageCache::new(10_000, 16 * 1024 * 1024)))
 }
 impl UsageCache {
+    pub(super) fn stats(&self) -> (usize, usize) {
+        (self.entries.len(), self.bytes)
+    }
+    pub(super) fn clear(&mut self) {
+        self.entries.clear();
+        self.order.clear();
+        self.bytes = 0;
+        self.clock = 0;
+    }
     pub(super) fn snapshot(&self) -> Vec<SavedEntry> {
         self.order
             .values()

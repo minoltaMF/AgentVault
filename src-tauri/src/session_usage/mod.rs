@@ -5,6 +5,7 @@ mod codex;
 mod persistence;
 
 pub use persistence::configure_cache_path;
+pub use persistence::UsageCacheStatus;
 
 use crate::error::{ensure_not_cancelled, AppError, AppResult};
 use serde::{Deserialize, Serialize};
@@ -82,6 +83,25 @@ struct Job {
 }
 static JOBS: OnceLock<Mutex<BTreeMap<u64, Arc<Job>>>> = OnceLock::new();
 static NEXT: AtomicU64 = AtomicU64::new(1);
+// Start registration and rebuilding must be indivisible with respect to each other.
+static MANAGEMENT: Mutex<()> = Mutex::new(());
+pub fn cache_status() -> AppResult<UsageCacheStatus> {
+    persistence::cache_status()
+}
+pub fn rebuild_cache() -> AppResult<UsageCacheStatus> {
+    let _guard = MANAGEMENT.lock().unwrap_or_else(|e| e.into_inner());
+    ensure_rebuild_idle(&jobs().lock().unwrap_or_else(|e| e.into_inner()))?;
+    persistence::rebuild_cache()
+}
+fn ensure_rebuild_idle(all: &BTreeMap<u64, Arc<Job>>) -> AppResult<()> {
+    if all
+        .values()
+        .any(|job| job.status.lock().unwrap_or_else(|e| e.into_inner()).state == "running")
+    {
+        return Err(error("用量分析正在运行，请等待完成或取消完成后再重建缓存"));
+    }
+    Ok(())
+}
 const MAX_FILE: u64 = 256 * 1024 * 1024;
 const MAX_LINE: u64 = 8 * 1024 * 1024;
 const MAX_RECORDS: usize = 250_000;
@@ -134,6 +154,7 @@ pub fn start_with_options(
     claude_dir: String,
     force_refresh: bool,
 ) -> AppResult<UsageStarted> {
+    let _guard = MANAGEMENT.lock().unwrap_or_else(|e| e.into_inner());
     if sessions.len() > 10_000 {
         return Err(error("单次用量分析最多支持 10000 个会话，请缩小筛选范围"));
     }
@@ -440,6 +461,29 @@ fn verify_final(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn rebuild_requires_terminal_jobs_even_after_cancel_requested() {
+        let task = Arc::new(Job {
+            cancel: AtomicBool::new(true),
+            started: std::time::Instant::now(),
+            status: Mutex::new(UsageStatus {
+                state: "running".into(),
+                total_files: 0,
+                processed_files: 0,
+                cache_hits: 0,
+                parsed_files: 0,
+                elapsed_ms: 0,
+                cache_warning: None,
+                results: vec![],
+                failures: vec![],
+                error: None,
+            }),
+        });
+        let all = BTreeMap::from([(1, task.clone())]);
+        assert!(ensure_rebuild_idle(&all).is_err());
+        task.status.lock().unwrap().state = "cancelled".into();
+        assert!(ensure_rebuild_idle(&all).is_ok());
+    }
     fn fixture(root: &Path) -> UsageSource {
         let path = root.join("projects/demo/sample.jsonl");
         fs::create_dir_all(path.parent().unwrap()).unwrap();

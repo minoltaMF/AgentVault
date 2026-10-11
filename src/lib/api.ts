@@ -1,4 +1,4 @@
-import type { UsageScope, UsageStatus } from "./session-usage";
+import type { UsageScope, UsageStatus, UsageCacheStatus } from "./session-usage";
 import { invoke } from "@tauri-apps/api/core";
 import { copyText } from "@/lib/clipboard";
 import { isTauriRuntime, isWebRuntime, webuiApiToken } from "@/lib/runtime";
@@ -982,6 +982,8 @@ export type PreviewImageData = {
 
 export const api = {
   startSessionUsage: (sessions: UsageScope[], codexDir: string, claudeDir: string, forceRefresh = false) => invokeCommand<{ job_id: number }>("start_session_usage", { sessions, codexDir, claudeDir, forceRefresh }),
+  sessionUsageCacheStatus: () => invokeCommand<UsageCacheStatus>("session_usage_cache_status"),
+  rebuildSessionUsageCache: () => invokeCommand<UsageCacheStatus>("rebuild_session_usage_cache"),
   sessionUsageStatus: (jobId: number) => invokeCommand<UsageStatus>("session_usage_status", { jobId }),
   cancelSessionUsage: (jobId: number) => invokeCommand<void>("cancel_session_usage", { jobId }),
   appVersion: () => invokeCommand<string>("app_version"),

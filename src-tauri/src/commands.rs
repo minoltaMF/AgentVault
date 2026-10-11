@@ -1370,18 +1370,21 @@ pub fn cancel_workbench_scan(job_id: u64) -> AppResult<()> {
 }
 
 #[tauri::command]
-pub fn start_session_usage(
+pub async fn start_session_usage(
     sessions: Vec<crate::session_usage::UsageSource>,
     codex_dir: String,
     claude_dir: String,
     force_refresh: Option<bool>,
 ) -> AppResult<crate::session_usage::UsageStarted> {
-    crate::session_usage::start_with_options(
-        sessions,
-        codex_dir,
-        claude_dir,
-        force_refresh.unwrap_or(false),
-    )
+    run_blocking(move || {
+        crate::session_usage::start_with_options(
+            sessions,
+            codex_dir,
+            claude_dir,
+            force_refresh.unwrap_or(false),
+        )
+    })
+    .await
 }
 #[tauri::command]
 pub fn session_usage_status(job_id: u64) -> AppResult<crate::session_usage::UsageStatus> {
@@ -1390,4 +1393,14 @@ pub fn session_usage_status(job_id: u64) -> AppResult<crate::session_usage::Usag
 #[tauri::command]
 pub fn cancel_session_usage(job_id: u64) -> AppResult<()> {
     crate::session_usage::cancel(job_id)
+}
+
+#[tauri::command]
+pub async fn session_usage_cache_status() -> AppResult<crate::session_usage::UsageCacheStatus> {
+    run_blocking(crate::session_usage::cache_status).await
+}
+
+#[tauri::command]
+pub async fn rebuild_session_usage_cache() -> AppResult<crate::session_usage::UsageCacheStatus> {
+    run_blocking(crate::session_usage::rebuild_cache).await
 }
