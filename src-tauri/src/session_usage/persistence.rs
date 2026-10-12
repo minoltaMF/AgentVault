@@ -16,7 +16,7 @@ use std::{
 };
 
 const VERSION: u32 = 1;
-const PARSER_VERSION: u32 = 1;
+const PARSER_VERSION: u32 = 2;
 const MAX_DISK_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_PAYLOAD_BYTES: usize = 32 * 1024 * 1024;
 const MAX_ENTRIES: usize = 10_000;
@@ -92,7 +92,7 @@ fn decode(bytes: &[u8]) -> AppResult<Vec<SavedEntry>> {
         || envelope.version != VERSION
         || envelope.parser_version != PARSER_VERSION
     {
-        return Err(failure("用量缓存格式或解析版本已变化"));
+        return Err(failure("用量缓存格式或解析版本已变化，请使用安全重建缓存"));
     }
     if envelope.payload.len() > MAX_PAYLOAD_BYTES
         || envelope.sha256 != hex::encode(Sha256::digest(envelope.payload.as_bytes()))
@@ -400,6 +400,47 @@ mod tests {
         format!("{{\"type\":\"assistant\",\"requestId\":\"{id}\",\"message\":{{\"id\":\"{id}\",\"model\":\"synthetic\",\"usage\":{{\"input_tokens\":10,\"output_tokens\":2}}}}}}\n")
     }
     #[test]
+    fn dated_and_undated_buckets_survive_snapshot_roundtrip() {
+        let dir = crate::readonly_source::test_support::tempdir().unwrap();
+        let root = fs::canonicalize(dir.path()).unwrap();
+        let source = source(&root);
+        let dated = row("dated").replace(
+            "\"type\":",
+            "\"timestamp\":\"2026-10-12T00:00:00Z\",\"type\":",
+        );
+        fs::write(&source.rollout_path, format!("{dated}{}", row("undated"))).unwrap();
+        let first = cache();
+        let cancel = AtomicBool::new(false);
+        let (original, _) =
+            read_usage_cached(&source, &root, &cancel, false, &first, || {}).unwrap();
+        let bytes = encode(first.lock().unwrap().snapshot()).unwrap();
+        let second = cache();
+        second.lock().unwrap().restore(decode(&bytes).unwrap());
+        let (restored, hit) =
+            read_usage_cached(&source, &root, &cancel, false, &second, || {}).unwrap();
+        assert!(hit);
+        assert_eq!(restored.daily, original.daily);
+        assert_eq!(restored.undated_models, original.undated_models);
+        assert_eq!(restored.daily[0].date, "2026-10-12");
+        assert_eq!(
+            restored.daily[0].models[0].tokens.input + restored.undated_models[0].tokens.input,
+            restored.models[0].tokens.input
+        );
+        assert_eq!(
+            restored.daily[0].models[0].tokens.output + restored.undated_models[0].tokens.output,
+            restored.models[0].tokens.output
+        );
+    }
+
+    #[test]
+    fn pre_daily_parser_snapshot_is_rejected() {
+        let mut envelope: serde_json::Value =
+            serde_json::from_slice(&encode(vec![]).unwrap()).unwrap();
+        envelope["parser_version"] = serde_json::json!(1);
+        assert!(decode(&serde_json::to_vec(&envelope).unwrap()).is_err());
+    }
+
+    #[test]
     fn rebuild_preserves_verified_backup_and_clears_memory() {
         let dir = crate::readonly_source::test_support::tempdir().unwrap();
         let root = fs::canonicalize(dir.path()).unwrap();
@@ -502,11 +543,11 @@ mod tests {
         let mut restarted = Store::new(path);
         restarted.load(&second);
         assert!(restarted.warning.is_none());
-        assert!(
-            read_usage_cached(&source, &root, &cancel, false, &second, || {})
-                .unwrap()
-                .1
-        );
+        let (restored, hit) =
+            read_usage_cached(&source, &root, &cancel, false, &second, || {}).unwrap();
+        assert!(hit);
+        assert!(restored.daily.is_empty());
+        assert_eq!(restored.undated_models, restored.models);
         assert!(
             !read_usage_cached(&source, &root, &cancel, true, &second, || {})
                 .unwrap()

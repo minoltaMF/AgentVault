@@ -133,6 +133,18 @@ impl UsageCache {
                 .iter()
                 .map(|m| m.model.len() + 96)
                 .sum::<usize>()
+            + parsed
+                .undated_models
+                .iter()
+                .map(|m| m.model.len() + 96)
+                .sum::<usize>()
+            + parsed
+                .daily
+                .iter()
+                .map(|d| {
+                    d.date.len() + 48 + d.models.iter().map(|m| m.model.len() + 96).sum::<usize>()
+                })
+                .sum::<usize>()
             + parsed.warnings.iter().map(|w| w.len() + 32).sum::<usize>();
         if self.max_entries == 0 || weight > self.max_bytes {
             return;

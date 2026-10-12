@@ -63,6 +63,7 @@ struct Contribution {
     model: String,
     response: String,
     timestamp: String,
+    date: Option<String>,
     usage: Usage,
     // Legacy checkpoints and thread checkpoints are different domains after compaction.
     legacy_total: Option<Usage>,
@@ -197,6 +198,7 @@ impl State {
             model,
             response: String::new(),
             timestamp: at.to_owned(),
+            date: super::utc_date(at),
             usage,
             legacy_total: Some(total),
             thread_total: None,
@@ -242,6 +244,7 @@ impl State {
                 .zip(chrono::DateTime::parse_from_rfc3339(&old.timestamp).ok())
                 .is_some_and(|(new, previous)| new > previous);
             if newer && (old.turn.is_empty() || turn.is_empty() || old.turn == turn) {
+                old.date = super::utc_date(at);
                 old.usage = usage;
                 old.timestamp = at.to_owned();
                 old.compaction |= compaction;
@@ -283,6 +286,7 @@ impl State {
             old.thread_total = thread_total;
             old.model = model;
             old.timestamp = at.to_owned();
+            old.date = super::utc_date(at);
             index
         } else {
             let index = self.entries.len();
@@ -292,6 +296,7 @@ impl State {
                 model,
                 response: response.to_owned(),
                 timestamp: at.to_owned(),
+                date: super::utc_date(at),
                 usage,
                 legacy_total: None,
                 thread_total,
@@ -382,29 +387,38 @@ pub(super) fn parse(lines: impl Iterator<Item = AppResult<Value>>) -> AppResult<
         state.warn("Codex 存在无法配对的累计与响应用量，结果可能重复，不能视为精确账单。");
     }
     let mut totals: BTreeMap<String, Usage> = BTreeMap::new();
+    let mut days = super::DailyTotals::default();
     for entry in state.entries {
+        days.add(entry.date, &entry.model, &usage_tokens(entry.usage))?;
         let total = totals.entry(entry.model).or_default();
         *total = total
             .plus(entry.usage)
             .ok_or_else(|| AppError::Other("Codex 用量累计溢出".into()))?;
     }
+    let (daily, undated_models) = days.finish();
     Ok(ParsedUsage {
+        daily,
+        undated_models,
         models: totals
             .into_iter()
             .map(|(model, usage)| ModelUsage {
                 model,
-                tokens: Tokens {
-                    input: usage.0[0] - usage.0[2] - usage.0[3],
-                    output: usage.0[1],
-                    cache_read: usage.0[2],
-                    cache_write: usage.0[3],
-                    cache_write_1h: 0,
-                    reasoning: usage.0[4],
-                },
+                tokens: usage_tokens(usage),
             })
             .collect(),
         warnings: state.warnings,
     })
+}
+
+fn usage_tokens(usage: Usage) -> Tokens {
+    Tokens {
+        input: usage.0[0] - usage.0[2] - usage.0[3],
+        output: usage.0[1],
+        cache_read: usage.0[2],
+        cache_write: usage.0[3],
+        cache_write_1h: 0,
+        reasoning: usage.0[4],
+    }
 }
 
 #[cfg(test)]
@@ -431,6 +445,42 @@ mod tests {
             .iter()
             .map(|model| model.tokens.input + model.tokens.cache_read + model.tokens.cache_write)
             .sum()
+    }
+
+    #[test]
+    fn daily_cumulative_baseline_crosses_utc_midnight_and_keeps_undated() {
+        let mut first = count(0, usage(100, 20), usage(100, 20));
+        first["timestamp"] = json!("2026-01-02T01:00:00+02:00");
+        let mut second = count(1, usage(300, 60), usage(200, 40));
+        second["timestamp"] = json!("2026-01-02T00:30:00Z");
+        let mut third = count(2, usage(340, 68), usage(40, 8));
+        third["timestamp"] = json!("not-a-date");
+        let mut fourth = count(3, usage(360, 72), usage(20, 4));
+        fourth.as_object_mut().unwrap().remove("timestamp");
+        let got = run(vec![first.clone(), second, first, third, fourth]);
+        assert_eq!(total(&got), 360);
+        assert_eq!(got.daily.len(), 2);
+        assert_eq!(got.daily[0].date, "2026-01-01");
+        assert_eq!(got.daily[0].models[0].tokens.output, 20);
+        assert_eq!(got.daily[1].date, "2026-01-02");
+        assert_eq!(got.daily[1].models[0].tokens.output, 40);
+        assert_eq!(got.undated_models[0].tokens.output, 12);
+    }
+
+    #[test]
+    fn response_replay_keeps_original_day_revision_uses_its_event_day() {
+        let a = record(1, "a", usage(100, 20), usage(100, 20));
+        let mut replay = a.clone();
+        replay["timestamp"] = json!("2026-01-03T00:00:00Z");
+        let got = run(vec![a.clone(), replay.clone()]);
+        assert_eq!(got.daily.len(), 1);
+        assert_eq!(got.daily[0].date, "2026-01-01");
+        let mut revision = record(3, "a", usage(200, 40), usage(200, 40));
+        revision["timestamp"] = json!("2026-01-04T00:00:00Z");
+        let got = run(vec![a, replay, revision]);
+        assert_eq!(got.daily.len(), 1);
+        assert_eq!(got.daily[0].date, "2026-01-04");
+        assert_eq!(got.daily[0].models[0].tokens.output, 40);
     }
 
     #[test]

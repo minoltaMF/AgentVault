@@ -1,6 +1,7 @@
 export type UsageTokens = { input: number; output: number; cache_read: number; cache_write: number; cache_write_1h: number; reasoning: number };
 export type UsageModel = { model: string; tokens: UsageTokens };
-export type UsageSession = { provider: string; rollout_path: string; id: string; title: string; cwd: string; models: UsageModel[]; warnings: string[] };
+export type UsageDay = { date: string; models: UsageModel[] };
+export type UsageSession = { provider: string; rollout_path: string; id: string; title: string; cwd: string; models: UsageModel[]; warnings: string[]; daily?: UsageDay[]; undated_models?: UsageModel[] };
 export type UsageScope = Pick<UsageSession, "provider" | "rollout_path" | "id" | "title" | "cwd">;
 export type UsageStatus = { state: "running" | "completed" | "cancelled" | "failed"; total_files: number; processed_files: number; cache_hits: number; parsed_files: number; elapsed_ms: number; cache_warning: string | null; results: UsageSession[]; failures: { path: string; error: string }[]; error: string | null };
 export const rateFields = ["input", "output", "cache_read", "cache_write_5m", "cache_write_1h"] as const;
@@ -88,3 +89,77 @@ export function summarizeUsage(sessions: UsageSession[], prices: PriceBook) {
 }
 
 export type UsageCacheStatus = { state: "ready" | "missing" | "degraded" | "disabled" | "unchecked"; disk_bytes: number | null; memory_entries: number; memory_bytes: number; path: string | null; warning: string | null; backup_path: string | null };
+
+export type UsageDateRange = { from: string; to: string };
+const allUsageDates: UsageDateRange = { from: "", to: "" };
+function validUsageDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+export function validateUsageDateRange(range: UsageDateRange): string {
+  if ((range.from && !validUsageDate(range.from)) || (range.to && !validUsageDate(range.to))) return "日期必须是有效的 YYYY-MM-DD 日期";
+  if (range.from && range.to && range.from > range.to) return "开始日期不能晚于结束日期";
+  return "";
+}
+export function recentUsageRange(days: number, now = new Date()): UsageDateRange {
+  if (!Number.isSafeInteger(days) || days < 1 || !Number.isFinite(now.getTime())) throw new Error("天数和当前日期无效");
+  const to = now.toISOString().slice(0, 10);
+  const start = new Date(`${to}T00:00:00.000Z`);
+  start.setUTCDate(start.getUTCDate() - days + 1);
+  const from = Number.isFinite(start.getTime()) ? start.toISOString().slice(0, 10) : "";
+  if (!validUsageDate(from) || !validUsageDate(to)) throw new Error("日期范围超出支持范围");
+  return { from, to };
+}
+function matchesUsageDate(date: string, range: UsageDateRange): boolean {
+  return validUsageDate(date) && (!range.from || date >= range.from) && (!range.to || date <= range.to);
+}
+function mergeUsageModels(models: UsageModel[]): UsageModel[] {
+  const merged = new Map<string, UsageModel>();
+  for (const model of models) {
+    const previous = merged.get(model.model);
+    if (!previous) merged.set(model.model, { model: model.model, tokens: { ...model.tokens } });
+    else for (const key of Object.keys(previous.tokens) as (keyof UsageTokens)[]) previous.tokens[key] += model.tokens[key];
+  }
+  return [...merged.values()];
+}
+export function filterUsageByDate(sessions: UsageSession[], range: UsageDateRange): UsageSession[] {
+  if (validateUsageDateRange(range)) return [];
+  const unique = uniqueUsageSessions(sessions);
+  if (!range.from && !range.to) return unique;
+  return unique.flatMap(session => {
+    const daily = (session.daily ?? []).filter(day => matchesUsageDate(day.date, range));
+    if (!daily.length) return [];
+    return [{ ...session, daily, models: mergeUsageModels(daily.flatMap(day => day.models)), undated_models: [] }];
+  });
+}
+export function undatedUsageSessions(sessions: UsageSession[]): UsageSession[] {
+  return uniqueUsageSessions(sessions).flatMap(session => {
+    const models = session.daily === undefined ? session.models : session.undated_models ?? [];
+    return models.length ? [{ ...session, models, daily: [], undated_models: models }] : [];
+  });
+}
+export type UsageDailyTrend = { date: string; sessions: number; tokens: number; known: number; incomplete: boolean; overflow: boolean; unknownModels: number; warnedSessions: number; missingUsage: number };
+export function dailyUsageTrend(sessions: UsageSession[], prices: PriceBook, range: UsageDateRange = allUsageDates): UsageDailyTrend[] {
+  if (validateUsageDateRange(range)) return [];
+  const dates = new Map<string, UsageSession[]>();
+  for (const session of uniqueUsageSessions(sessions)) {
+    const days = new Map<string, UsageModel[]>();
+    for (const day of session.daily ?? []) {
+      if (matchesUsageDate(day.date, range)) days.set(day.date, [...days.get(day.date) ?? [], ...day.models]);
+    }
+    for (const [date, models] of days) {
+      const group = dates.get(date) ?? [];
+      group.push({ ...session, models: mergeUsageModels(models) });
+      dates.set(date, group);
+    }
+  }
+  return [...dates].sort(([a], [b]) => a.localeCompare(b)).map(([date, rows]) => {
+    const summary = summarizeUsage(rows, prices);
+    const tokens = summary.tokens.input + summary.tokens.output + summary.tokens.cache_read + summary.tokens.cache_write;
+    const overflow = summary.overflow || !Number.isSafeInteger(tokens) || tokens < 0;
+    return { date, sessions: rows.length, tokens, known: summary.known, overflow,
+      incomplete: overflow || summary.unknownModels > 0 || summary.warnedSessions > 0 || summary.missingUsage > 0,
+      unknownModels: summary.unknownModels, warnedSessions: summary.warnedSessions, missingUsage: summary.missingUsage };
+  });
+}

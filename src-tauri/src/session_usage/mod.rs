@@ -34,9 +34,16 @@ pub struct ModelUsage {
     pub model: String,
     pub tokens: Tokens,
 }
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DailyUsage {
+    pub date: String,
+    pub models: Vec<ModelUsage>,
+}
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ParsedUsage {
     pub models: Vec<ModelUsage>,
+    pub daily: Vec<DailyUsage>,
+    pub undated_models: Vec<ModelUsage>,
     pub warnings: Vec<String>,
 }
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -52,6 +59,8 @@ pub struct SessionUsage {
     #[serde(flatten)]
     pub source: UsageSource,
     pub models: Vec<ModelUsage>,
+    pub daily: Vec<DailyUsage>,
+    pub undated_models: Vec<ModelUsage>,
     pub warnings: Vec<String>,
 }
 #[derive(Debug, Clone, Serialize)]
@@ -246,6 +255,8 @@ pub fn start_with_options(
                             state.results.push(SessionUsage {
                                 source,
                                 models: parsed.models,
+                                daily: parsed.daily,
+                                undated_models: parsed.undated_models,
                                 warnings: parsed.warnings,
                             });
                         }
@@ -658,5 +669,77 @@ mod tests {
             assert!(std::time::Instant::now() < until);
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
+    }
+}
+
+// Date attribution is independent of session metadata and replay ordering.
+fn utc_date(timestamp: &str) -> Option<String> {
+    let at = chrono::DateTime::parse_from_rfc3339(timestamp)
+        .ok()?
+        .with_timezone(&chrono::Utc);
+    use chrono::Datelike;
+    (0..=9999)
+        .contains(&at.year())
+        .then(|| at.format("%Y-%m-%d").to_string())
+}
+#[derive(Default)]
+struct DailyTotals(BTreeMap<Option<String>, BTreeMap<String, Tokens>>);
+impl DailyTotals {
+    fn add(&mut self, date: Option<String>, model: &str, tokens: &Tokens) -> AppResult<()> {
+        let total = self
+            .0
+            .entry(date)
+            .or_default()
+            .entry(model.to_owned())
+            .or_default();
+        macro_rules! add {
+            ($field:ident) => {
+                total.$field = total
+                    .$field
+                    .checked_add(tokens.$field)
+                    .ok_or_else(|| error("每日 Token 合计超出可表示范围"))?;
+            };
+        }
+        add!(input);
+        add!(output);
+        add!(cache_read);
+        add!(cache_write);
+        add!(cache_write_1h);
+        add!(reasoning);
+        Ok(())
+    }
+    fn finish(mut self) -> (Vec<DailyUsage>, Vec<ModelUsage>) {
+        fn models(values: BTreeMap<String, Tokens>) -> Vec<ModelUsage> {
+            values
+                .into_iter()
+                .map(|(model, tokens)| ModelUsage { model, tokens })
+                .collect()
+        }
+        let undated = models(self.0.remove(&None).unwrap_or_default());
+        let daily = self
+            .0
+            .into_iter()
+            .filter_map(|(date, values)| {
+                date.map(|date| DailyUsage {
+                    date,
+                    models: models(values),
+                })
+            })
+            .collect();
+        (daily, undated)
+    }
+}
+
+#[cfg(test)]
+mod daily_date_tests {
+    #[test]
+    fn utc_day_limits_reject_dates_outside_four_digit_years() {
+        assert_eq!(
+            super::utc_date("2026-01-02T01:00:00+02:00").as_deref(),
+            Some("2026-01-01")
+        );
+        assert!(super::utc_date("9999-12-31T23:30:00-02:00").is_none());
+        assert!(super::utc_date("0000-01-01T00:30:00+02:00").is_none());
+        assert!(super::utc_date("invalid").is_none());
     }
 }

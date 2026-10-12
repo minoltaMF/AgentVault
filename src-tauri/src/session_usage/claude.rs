@@ -15,6 +15,7 @@ struct Contribution {
     latest: Option<(String, Tokens)>,
     previous: Vec<(String, Tokens)>,
     updated: Time,
+    date: Option<String>,
 }
 
 fn warn(warnings: &mut Vec<String>, message: &str) {
@@ -162,12 +163,18 @@ pub(super) fn parse(lines: impl Iterator<Item = AppResult<Value>>) -> AppResult<
             }
             contribution.previous.push(old.clone());
         }
+        contribution.date = line
+            .get("timestamp")
+            .and_then(Value::as_str)
+            .and_then(super::utc_date);
         contribution.latest = Some(new);
         contribution.updated = at;
     }
     let mut models: BTreeMap<String, Tokens> = BTreeMap::new();
+    let mut days = super::DailyTotals::default();
     for contribution in messages.into_values().flat_map(BTreeMap::into_values) {
         if let Some((model, tokens)) = contribution.latest {
+            days.add(contribution.date, &model, &tokens)?;
             let total = models.entry(model).or_default();
             macro_rules! add { ($field:ident) => { total.$field = total.$field.checked_add(tokens.$field).ok_or_else(|| AppError::Other("Claude Token 合计超出可表示范围".into()))?; }; }
             add!(input);
@@ -184,7 +191,10 @@ pub(super) fn parse(lines: impl Iterator<Item = AppResult<Value>>) -> AppResult<
             "未找到可用的 Claude 用量记录，不能视为零消耗。",
         );
     }
+    let (daily, undated_models) = days.finish();
     Ok(ParsedUsage {
+        daily,
+        undated_models,
         models: models
             .into_iter()
             .map(|(model, tokens)| ModelUsage { model, tokens })
@@ -203,6 +213,29 @@ mod tests {
     fn read(lines: Vec<Value>) -> ParsedUsage {
         parse(lines.into_iter().map(Ok)).unwrap()
     }
+    #[test]
+    fn daily_utc_attribution_preserves_replay_revision_and_undated_totals() {
+        let mut a = line(0, "a", "r", "m", 2);
+        a["timestamp"] = json!("2026-09-21T01:00:00+02:00");
+        let mut replay = a.clone();
+        replay["timestamp"] = json!("2026-09-22T00:00:00Z");
+        let got = read(vec![a.clone(), replay.clone()]);
+        assert_eq!(got.daily[0].date, "2026-09-20");
+        assert_eq!(got.daily[0].models[0].tokens.output, 2);
+        let mut revision = line(0, "a", "r", "m", 8);
+        revision["timestamp"] = json!("2026-09-23T00:00:00Z");
+        let mut missing = line(0, "b", "s", "m", 3);
+        missing.as_object_mut().unwrap().remove("timestamp");
+        let mut invalid = line(0, "c", "t", "m", 4);
+        invalid["timestamp"] = json!("invalid");
+        let got = read(vec![a.clone(), replay, revision, a, missing, invalid]);
+        assert_eq!(got.models[0].tokens.output, 15);
+        assert_eq!(got.daily.len(), 1);
+        assert_eq!(got.daily[0].date, "2026-09-23");
+        assert_eq!(got.daily[0].models[0].tokens.output, 8);
+        assert_eq!(got.undated_models[0].tokens.output, 7);
+    }
+
     #[test]
     fn non_adjacent_replay_revision_correction_and_old_snapshot() {
         // Adapted from Magpie TestClaudeUsageNonAdjacentReplay/RevisionAndTools.
