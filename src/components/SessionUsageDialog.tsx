@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { aggregateUsage, filterUsageByDate, validateUsageDateRange, estimateCost, parseRate, priceKey, priceStorageKey, rateFields, readPriceBook, summarizeUsage, type PriceBook, type UsageDateRange, type UsageScope, type UsageSession, type UsageStatus } from "@/lib/session-usage";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { UsagePeriodComparison } from "./UsagePeriodComparison";
 import { UsageDailyPanel } from "./UsageDailyPanel";
 import { UsageCachePanel } from "./UsageCachePanel";
 import { Input } from "@/components/ui/input";
@@ -23,6 +24,7 @@ export function SessionUsageDialog({ open, onOpenChange, sessions, codexDir, cla
   const [job, setJob] = useState<number | null>(null);
   const [cancelRequested, setCancelRequested] = useState(false);
   const [view, setView] = useState<"session" | "model" | "project">("session");
+  const dailyRef = useRef<HTMLDivElement>(null);
   const [dateRange, setDateRange] = useState<UsageDateRange>({ from: "", to: "" });
   const [page, setPage] = useState(0);
   const [failurePage, setFailurePage] = useState(0);
@@ -79,7 +81,8 @@ export function SessionUsageDialog({ open, onOpenChange, sessions, codexDir, cla
       <UsageCachePanel analysisWarning={status?.cache_warning ?? null} busy={busy} refreshKey={status?.state ?? "starting"} onRebuilt={() => { setStatus(null); setError(""); setRun(previous => ({ sequence: previous.sequence + 1, forceRefresh: true })); }} />
       {status && <progress className="w-full" aria-label="用量分析进度" value={status.processed_files} max={Math.max(1, status.total_files)} />}
       {(error || status?.error) && <p role="alert" className="break-all text-sm text-destructive">{error || status?.error}</p>}
-      <UsageDailyPanel sessions={results} prices={prices} range={dateRange} onChange={next => { setDateRange(next); setPage(0); }} />
+      <UsagePeriodComparison sessions={results} prices={prices} analysisComplete={!error && status?.state === "completed" && !status.error && status.failures.length === 0} onInspect={next => { setDateRange(next); setPage(0); dailyRef.current?.scrollIntoView({ block: "start" }); }} />
+      <div ref={dailyRef}><UsageDailyPanel sessions={results} prices={prices} range={dateRange} onChange={next => { setDateRange(next); setPage(0); }} /></div>
       {status && !dateError && <div className="rounded-md border p-3"><p className="mb-2 text-sm font-medium">已成功读取 {results.length} 条会话 · 当前日期范围 {filteredResults.length} 条{busy ? "（分析尚未完成）" : status.failures.length || status.state !== "completed" ? "（部分结果）" : ""}</p><Totals sessions={filteredResults} prices={prices} /></div>}
       {!!status?.failures.length && <details className="rounded-md border p-3"><summary className="cursor-pointer text-sm text-destructive">{status.failures.length} 个文件分析失败（不计入汇总）</summary>{status.failures.slice(failurePage * 20, (failurePage + 1) * 20).map(failure => <p key={failure.path} className="mt-2 break-all text-xs">{failure.path}：{failure.error}</p>)}<div className="mt-2 flex gap-2"><Button size="sm" variant="outline" disabled={!failurePage} onClick={() => setFailurePage(failurePage - 1)}>上一页失败</Button><Button size="sm" variant="outline" disabled={(failurePage + 1) * 20 >= status.failures.length} onClick={() => setFailurePage(failurePage + 1)}>下一页失败</Button></div></details>}
       {!!models.length && <details className="rounded-md border p-3"><summary className="cursor-pointer text-sm">模型单价（用户录入，USD / 百万 Token）</summary><p className="my-2 text-xs text-muted-foreground">留空表示未知，0 表示免费。仅保存在本机；估算不等于账单，不含套餐、折扣和税费。</p><select aria-label="选择定价模型" className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={editing} onChange={event => edit(event.target.value)}><option value="">选择模型以编辑单价</option>{models.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>{editing && <div className="mt-3 grid gap-3 sm:grid-cols-2">{rateFields.map(field => <label key={field} className="space-y-1 text-xs">{labels[field]}<Input inputMode="decimal" aria-label={`${labels[field]}单价`} value={draft[field] ?? ""} placeholder="未知" onChange={event => setDraft(previous => ({ ...previous, [field]: event.target.value }))} /></label>)}<Button onClick={save}>保存单价</Button></div>}{priceError && <p role="alert" className="mt-2 text-xs text-destructive">{priceError}</p>}</details>}
