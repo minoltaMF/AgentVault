@@ -3,7 +3,7 @@ import { filterUsageByDate, priceKey, recentUsageRange, summarizeUsage, undatedU
 export type UsagePeriodSummary = { range: UsageDateRange; sessionCount: number; recordedDays: number; tokens: number; known: number; unknownModels: number; overflow: boolean; hasUsage: boolean };
 export type UsagePeriodChange = { delta: number | null; percent: number | null; reason: string | null };
 
-function costOverflow(sessions: UsageSession[], prices: PriceBook): boolean {
+export function usageCostOverflow(sessions: UsageSession[], prices: PriceBook): boolean {
   return sessions.some(session => session.models.some(({ model, tokens }) => {
     const rates = prices[priceKey(session.provider, model)] ?? {};
     const billable = { input: tokens.input, output: tokens.output, cache_read: tokens.cache_read, cache_write_5m: Math.max(0, tokens.cache_write - tokens.cache_write_1h), cache_write_1h: tokens.cache_write_1h };
@@ -25,7 +25,7 @@ function period(sessions: UsageSession[], prices: PriceBook, range: UsageDateRan
   const recorded = rows.flatMap(row => (row.daily ?? []).filter(day => day.models.length).map(day => day.date));
   return { range, sessionCount: rows.filter(row => row.models.length).length, recordedDays: new Set(recorded).size,
     tokens, known: summary.known, unknownModels: summary.unknownModels,
-    overflow: summary.overflow || !Number.isSafeInteger(tokens) || tokens < 0 || costOverflow(rows, prices), hasUsage: recorded.length > 0 };
+    overflow: summary.overflow || !Number.isSafeInteger(tokens) || tokens < 0 || usageCostOverflow(rows, prices), hasUsage: recorded.length > 0 };
 }
 
 function change(current: number, previous: number): UsagePeriodChange {
@@ -57,7 +57,7 @@ export function compareUsagePeriods(sessions: UsageSession[], prices: PriceBook,
   if (warnedSessions) reasons.push(`${warnedSessions} 个会话有解析警告`);
   if (missingUsageSessions) reasons.push(`${missingUsageSessions} 个会话缺少用量记录`);
   if (undatedSessions) reasons.push(`${undatedSessions} 个会话包含无法归入日期的用量`);
-  if (current.overflow || previous.overflow || scope.overflow || !Number.isSafeInteger(scopeTokens) || costOverflow(unique, prices)) reasons.push("用量或费用超出安全计算范围");
+  if (current.overflow || previous.overflow || scope.overflow || !Number.isSafeInteger(scopeTokens) || usageCostOverflow(unique, prices)) reasons.push("用量或费用超出安全计算范围");
   if (!current.hasUsage || !previous.hasUsage) reasons.push("有周期没有用量记录，不能视为零消耗");
   const unavailable: UsagePeriodChange = { delta: null, percent: null, reason: reasons.join("；") };
   const tokensChange = reasons.length ? { ...unavailable } : change(current.tokens, previous.tokens);

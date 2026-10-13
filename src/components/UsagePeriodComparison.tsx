@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { compareUsagePeriods } from "@/lib/usage-period-comparison";
 import type { PriceBook, UsageDateRange, UsageSession } from "@/lib/session-usage";
@@ -12,17 +12,17 @@ function Change({ delta, percent, reason, cost = false }: { delta: number | null
   return <span>{cost && reason ? "已知差额 " : ""}{delta > 0 ? "+" : delta < 0 ? "−" : ""}{amount}{percent !== null && <span className="ml-2 text-muted-foreground">（{percent > 0 ? "+" : ""}{percent.toLocaleString(undefined, { maximumFractionDigits: 2 })}%）</span>}</span>;
 }
 
-export function UsagePeriodComparison({ sessions, prices, analysisComplete, onInspect }: {
+export function UsagePeriodComparison({ sessions, prices, analysisComplete, onInspect, selection, onSelectionChange }: {
   sessions: UsageSession[]; prices: PriceBook; analysisComplete: boolean; onInspect: (range: UsageDateRange) => void;
+  selection: { days: 7 | 30; now: Date }; onSelectionChange: (selection: { days: 7 | 30; now: Date }) => void;
 }) {
-  const [selection, setSelection] = useState<{ days: 7 | 30; now: Date }>(() => ({ days: 7, now: new Date() }));
   const comparison = useMemo(() => compareUsagePeriods(sessions, prices, selection.days, selection.now, analysisComplete), [sessions, prices, selection, analysisComplete]);
   const { current, previous, tokensChange, costChange } = comparison;
   const notices = [...new Set([tokensChange.reason, costChange.reason].filter((reason): reason is string => !!reason))];
   return <section aria-label="用量周期对比" className="space-y-3 rounded-md border p-3">
     <div className="flex flex-wrap items-center gap-2">
       <h3 className="mr-auto text-sm font-medium">周期对比</h3>
-      {([7, 30] as const).map(days => <Button key={days} size="sm" variant={selection.days === days ? "default" : "outline"} aria-pressed={selection.days === days} onClick={() => setSelection({ days, now: new Date() })}>对比近 {days} 天</Button>)}
+      {([7, 30] as const).map(days => <Button key={days} size="sm" variant={selection.days === days ? "default" : "outline"} aria-pressed={selection.days === days} onClick={() => onSelectionChange({ days, now: new Date() })}>对比近 {days} 天</Button>)}
     </div>
     <p className="text-xs text-muted-foreground">基于当前工作台筛选的 Codex / Claude 会话，与下方日期筛选独立。两个周期相邻且不重叠，均按 UTC 日统计；本期包含截止日期当天已记录用量，当天可能尚未结束，不外推全天。</p>
     <div className="grid gap-3 sm:grid-cols-2">

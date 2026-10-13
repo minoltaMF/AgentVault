@@ -56,6 +56,7 @@ pub mod sessions;
 pub mod settings;
 pub mod state_db;
 pub mod stats;
+pub mod usage_export;
 pub mod webui;
 pub mod workbench_index;
 pub mod workbench_scan;
@@ -133,6 +134,7 @@ pub fn run() {
             commands::session_usage_cache_status,
             commands::rebuild_session_usage_cache,
             commands::cancel_session_usage,
+            commands::save_usage_csv,
             commands::start_workbench_scan,
             commands::workbench_scan_status,
             commands::cancel_workbench_scan,

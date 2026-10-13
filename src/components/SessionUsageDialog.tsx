@@ -3,6 +3,7 @@ import { api } from "@/lib/api";
 import { aggregateUsage, filterUsageByDate, validateUsageDateRange, estimateCost, parseRate, priceKey, priceStorageKey, rateFields, readPriceBook, summarizeUsage, type PriceBook, type UsageDateRange, type UsageScope, type UsageSession, type UsageStatus } from "@/lib/session-usage";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { UsageCsvExport } from "./UsageCsvExport";
 import { UsagePeriodComparison } from "./UsagePeriodComparison";
 import { UsageDailyPanel } from "./UsageDailyPanel";
 import { UsageCachePanel } from "./UsageCachePanel";
@@ -24,6 +25,10 @@ export function SessionUsageDialog({ open, onOpenChange, sessions, codexDir, cla
   const [job, setJob] = useState<number | null>(null);
   const [cancelRequested, setCancelRequested] = useState(false);
   const [view, setView] = useState<"session" | "model" | "project">("session");
+  const [period, setPeriod] = useState<{ days: 7 | 30; now: Date }>(() => ({ days: 7, now: new Date() }));
+  useEffect(() => {
+    if (open) setPeriod(previous => ({ ...previous, now: new Date() }));
+  }, [open]);
   const dailyRef = useRef<HTMLDivElement>(null);
   const [dateRange, setDateRange] = useState<UsageDateRange>({ from: "", to: "" });
   const [page, setPage] = useState(0);
@@ -81,7 +86,8 @@ export function SessionUsageDialog({ open, onOpenChange, sessions, codexDir, cla
       <UsageCachePanel analysisWarning={status?.cache_warning ?? null} busy={busy} refreshKey={status?.state ?? "starting"} onRebuilt={() => { setStatus(null); setError(""); setRun(previous => ({ sequence: previous.sequence + 1, forceRefresh: true })); }} />
       {status && <progress className="w-full" aria-label="用量分析进度" value={status.processed_files} max={Math.max(1, status.total_files)} />}
       {(error || status?.error) && <p role="alert" className="break-all text-sm text-destructive">{error || status?.error}</p>}
-      <UsagePeriodComparison sessions={results} prices={prices} analysisComplete={!error && status?.state === "completed" && !status.error && status.failures.length === 0} onInspect={next => { setDateRange(next); setPage(0); dailyRef.current?.scrollIntoView({ block: "start" }); }} />
+      <UsageCsvExport status={status} prices={prices} range={dateRange} period={period} error={error} />
+      <UsagePeriodComparison selection={period} onSelectionChange={setPeriod} sessions={results} prices={prices} analysisComplete={!error && status?.state === "completed" && !status.error && status.failures.length === 0} onInspect={next => { setDateRange(next); setPage(0); dailyRef.current?.scrollIntoView({ block: "start" }); }} />
       <div ref={dailyRef}><UsageDailyPanel sessions={results} prices={prices} range={dateRange} onChange={next => { setDateRange(next); setPage(0); }} /></div>
       {status && !dateError && <div className="rounded-md border p-3"><p className="mb-2 text-sm font-medium">已成功读取 {results.length} 条会话 · 当前日期范围 {filteredResults.length} 条{busy ? "（分析尚未完成）" : status.failures.length || status.state !== "completed" ? "（部分结果）" : ""}</p><Totals sessions={filteredResults} prices={prices} /></div>}
       {!!status?.failures.length && <details className="rounded-md border p-3"><summary className="cursor-pointer text-sm text-destructive">{status.failures.length} 个文件分析失败（不计入汇总）</summary>{status.failures.slice(failurePage * 20, (failurePage + 1) * 20).map(failure => <p key={failure.path} className="mt-2 break-all text-xs">{failure.path}：{failure.error}</p>)}<div className="mt-2 flex gap-2"><Button size="sm" variant="outline" disabled={!failurePage} onClick={() => setFailurePage(failurePage - 1)}>上一页失败</Button><Button size="sm" variant="outline" disabled={(failurePage + 1) * 20 >= status.failures.length} onClick={() => setFailurePage(failurePage + 1)}>下一页失败</Button></div></details>}

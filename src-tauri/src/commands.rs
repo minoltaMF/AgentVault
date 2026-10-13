@@ -17,6 +17,12 @@ use crate::models::*;
 
 type SharedLock<'a> = tauri::State<'a, Arc<FamilyLock>>;
 
+#[tauri::command]
+pub async fn save_usage_csv(out_path: String, csv: String) -> AppResult<()> {
+    run_blocking(move || crate::usage_export::save_usage_csv(std::path::Path::new(&out_path), &csv))
+        .await
+}
+
 async fn run_blocking<T, F>(task: F) -> AppResult<T>
 where
     F: FnOnce() -> AppResult<T> + Send + 'static,
