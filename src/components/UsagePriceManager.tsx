@@ -7,8 +7,11 @@ import { isTauriRuntime } from "@/lib/runtime";
 import { rateFields, type PriceBook, type UsageSession } from "@/lib/session-usage";
 import { applyPriceDrafts, maxPriceImportBytes, mergePriceImport, parsePriceImport, previewPriceImport, serializePriceBook, usagePriceCatalog, type PriceDrafts } from "@/lib/usage-prices";
 
+import { UsagePriceHistory } from "./UsagePriceHistory";
+import type { PriceHistoryEntry } from "@/lib/price-history";
+
 const labels = { input: "未缓存输入", output: "输出", cache_read: "缓存读取", cache_write_5m: "缓存写入（5 分钟）", cache_write_1h: "缓存写入（1 小时）" };
-export function UsagePriceManager({ sessions, prices, onSave, onDirtyChange }: { sessions: UsageSession[]; prices: PriceBook; onSave: (next: PriceBook) => void; onDirtyChange: (dirty: boolean) => void }) {
+export function UsagePriceManager({ sessions, prices, history, historyError, onSave, onRestore, onDirtyChange }: { sessions: UsageSession[]; prices: PriceBook; history: PriceHistoryEntry[]; historyError: string; onSave: (next: PriceBook, reason: "edit" | "import") => Promise<void>; onRestore: (id: string) => Promise<void>; onDirtyChange: (dirty: boolean) => void }) {
   const [drafts, setDrafts] = useState<PriceDrafts>({});
   const [missingOnly, setMissingOnly] = useState(true);
   const [search, setSearch] = useState("");
@@ -30,12 +33,14 @@ export function UsagePriceManager({ sessions, prices, onSave, onDirtyChange }: {
     catch (failure) { return { preview: null, error: `无法合并配置：${String(failure)}` }; }
   }, [prices, incoming]);
   const preview = previewResult.preview;
-  const locked = busy || incoming !== null;
+  const locked = busy || incoming !== null || !!historyError;
   function report(text: string, failure = false) { setMessage(text); setFailed(failure); }
-  function saveDrafts() {
+  async function saveDrafts() {
     if (busyRef.current || incoming || !draftCount) return;
-    try { onSave(applyPriceDrafts(prices, drafts)); setDrafts({}); report("全部单价修改已保存，费用已重新计算。"); }
+    busyRef.current = true; setBusy(true);
+    try { await onSave(applyPriceDrafts(prices, drafts), "edit"); setDrafts({}); report("全部单价修改已保存，费用已重新计算。"); }
     catch (failure) { report(`保存失败：${String(failure)}；草稿已保留。`, true); }
+    finally { busyRef.current = false; setBusy(false); }
   }
   async function importPrices(file?: File) {
     if (busyRef.current) return;
@@ -58,10 +63,12 @@ export function UsagePriceManager({ sessions, prices, onSave, onDirtyChange }: {
     } catch (failure) { report(`导入失败：${String(failure)}`, true); }
     finally { busyRef.current = false; setBusy(false); }
   }
-  function merge() {
+  async function merge() {
     if (busyRef.current || !incoming || draftCount) return;
-    try { onSave(mergePriceImport(prices, incoming)); setIncoming(null); report("配置已合并保存，导入中未提供的字段保持不变。"); }
+    busyRef.current = true; setBusy(true);
+    try { await onSave(mergePriceImport(prices, incoming), "import"); setIncoming(null); report("配置已合并保存，导入中未提供的字段保持不变。"); }
     catch (failure) { report(`合并失败：${String(failure)}；预览已保留。`, true); }
+    finally { busyRef.current = false; setBusy(false); }
   }
   async function exportPrices() {
     if (busyRef.current) return;
@@ -105,6 +112,12 @@ export function UsagePriceManager({ sessions, prices, onSave, onDirtyChange }: {
     <p className="text-xs text-muted-foreground">导入前请保存或放弃草稿；导入按来源和模型合并，不删除未提供的字段。导出不含未保存草稿、会话路径或正文。桌面导出请选择新文件。</p>
     {preview && <div className="space-y-2 rounded border p-2 text-xs" aria-label="单价导入预览"><p>新增模型 {preview.addedModels} 个；新增单价字段 {preview.addedFields} 个；覆盖单价字段 {preview.overwrittenFields} 个；保持原值 {preview.unchangedFields} 个。</p><div className="flex flex-wrap gap-2"><Button size="sm" disabled={busy} onClick={merge}>应用合并</Button><Button size="sm" variant="outline" disabled={busy} onClick={() => { setIncoming(null); report("已取消导入预览，配置未修改。"); }}>取消预览</Button></div></div>}
     {!!previewResult.error && <div role="alert" className="text-xs text-destructive">{previewResult.error}<Button size="sm" variant="outline" onClick={() => setIncoming(null)}>取消预览</Button></div>}
+    <UsagePriceHistory history={history} prices={prices} error={historyError} disabled={locked || !!draftCount} onRestore={async id => {
+      if (busyRef.current || incoming || draftCount) throw new Error("请先完成当前编辑");
+      busyRef.current = true; setBusy(true);
+      try { await onRestore(id); report("单价配置已恢复，恢复前配置已记入历史，费用已重新计算。"); }
+      finally { busyRef.current = false; setBusy(false); }
+    }} />
     {busy && <p role="status" className="text-xs">正在处理单价配置…</p>}
     {!!message && <p role={failed ? "alert" : "status"} className="break-all text-xs">{message}</p>}
   </section>;

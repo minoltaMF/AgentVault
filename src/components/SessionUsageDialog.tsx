@@ -8,6 +8,7 @@ import { UsagePeriodComparison } from "./UsagePeriodComparison";
 import { UsageDailyPanel } from "./UsageDailyPanel";
 import { UsageCachePanel } from "./UsageCachePanel";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { readPriceHistory, commitPriceChange, restorePriceChange, type PriceHistoryEntry } from "@/lib/price-history";
 import { UsagePriceManager } from "./UsagePriceManager";
 const labels = { input: "未缓存输入", output: "输出", cache_read: "缓存读取", cache_write_5m: "缓存写入（5 分钟）", cache_write_1h: "缓存写入（1 小时）" };
 const money = (value: number) => `$${value.toLocaleString("en-US", { maximumFractionDigits: 6 })}`;
@@ -68,14 +69,28 @@ export function SessionUsageDialog({ open, onOpenChange, sessions, codexDir, cla
   const pages = Math.max(1, Math.ceil(groups.length / 20));
   const current = Math.min(page, pages - 1);
   const busy = !error && (!status || status.state === "running") && scope.length > 0;
-  function savePrices(next: PriceBook) {
-    if (localStorage.getItem(priceStorageKey) !== priceSnapshot.current) throw new Error("单价配置已在其他窗口修改，请重新载入页面后再编辑");
-    const raw = JSON.stringify({ version: 1, prices: next });
-    localStorage.setItem(priceStorageKey, raw);
-    priceSnapshot.current = raw;
-    setPrices(next);
+  const [priceHistory, setPriceHistory] = useState<PriceHistoryEntry[]>([]);
+  const [historyError, setHistoryError] = useState("");
+  const priceWriting = useRef(false);
+  useEffect(() => {
+    if (!open) return;
+    try { const state = readPriceHistory(localStorage); setPrices(state.prices); priceSnapshot.current = state.raw; setPriceHistory(state.history); setHistoryError(""); }
+    catch (failure) { setHistoryError(`无法读取单价历史，已阻止修改：${String(failure)}`); }
+  }, [open]);
+  async function savePrices(next: PriceBook, reason: "edit" | "import" | "restore", id?: string) {
+    if (!navigator.locks) throw new Error("当前环境不支持安全的跨窗口保存，请使用支持 Web Locks 的桌面或本机浏览器");
+    if (priceSnapshot.current === undefined) throw new Error("无法读取原始单价配置，请重新载入页面");
+    priceWriting.current = true;
+    try {
+      await navigator.locks.request("agentvault-price-config", () => {
+        const state = reason === "restore" ? restorePriceChange(localStorage, priceSnapshot.current!, id!) : commitPriceChange(localStorage, priceSnapshot.current!, next, reason);
+        priceSnapshot.current = state.raw;
+        setPrices(state.prices); setPriceHistory(state.history); setHistoryError("");
+      });
+    } finally { priceWriting.current = false; }
   }
   function changeOpen(nextOpen: boolean) {
+    if (!nextOpen && priceWriting.current) return;
     if (!nextOpen && priceDirty.current) { setConfirmClose(true); return; }
     if (!nextOpen) setRun(previous => previous.forceRefresh ? { ...previous, forceRefresh: false } : previous);
     onOpenChange(nextOpen);
@@ -93,7 +108,7 @@ export function SessionUsageDialog({ open, onOpenChange, sessions, codexDir, cla
       <div ref={dailyRef}><UsageDailyPanel sessions={results} prices={prices} range={dateRange} onChange={next => { setDateRange(next); setPage(0); }} /></div>
       {status && !dateError && <div className="rounded-md border p-3"><p className="mb-2 text-sm font-medium">已成功读取 {results.length} 条会话 · 当前日期范围 {filteredResults.length} 条{busy ? "（分析尚未完成）" : status.failures.length || status.state !== "completed" ? "（部分结果）" : ""}</p><Totals sessions={filteredResults} prices={prices} /></div>}
       {!!status?.failures.length && <details className="rounded-md border p-3"><summary className="cursor-pointer text-sm text-destructive">{status.failures.length} 个文件分析失败（不计入汇总）</summary>{status.failures.slice(failurePage * 20, (failurePage + 1) * 20).map(failure => <p key={failure.path} className="mt-2 break-all text-xs">{failure.path}：{failure.error}</p>)}<div className="mt-2 flex gap-2"><Button size="sm" variant="outline" disabled={!failurePage} onClick={() => setFailurePage(failurePage - 1)}>上一页失败</Button><Button size="sm" variant="outline" disabled={(failurePage + 1) * 20 >= status.failures.length} onClick={() => setFailurePage(failurePage + 1)}>下一页失败</Button></div></details>}
-      <UsagePriceManager sessions={results} prices={prices} onSave={savePrices} onDirtyChange={onPriceDirtyChange} />
+      <UsagePriceManager sessions={results} prices={prices} history={priceHistory} historyError={historyError} onSave={savePrices} onRestore={id => savePrices(prices, "restore", id)} onDirtyChange={onPriceDirtyChange} />
       <div className="flex flex-wrap gap-2" aria-label="用量分组">{(["session", "model", "project"] as const).map(value => <Button key={value} size="sm" variant={view === value ? "default" : "outline"} onClick={() => { setView(value); setPage(0); }}>{value === "session" ? "按会话" : value === "model" ? "按模型" : "按项目"}</Button>)}</div>
       {groups.slice(current * 20, (current + 1) * 20).map((group, index) => <article key={`${view}:${current}:${index}`} className="space-y-2 rounded-md border p-3"><h3 className="break-all text-sm font-medium">{view === "model" ? (JSON.parse(group.label) as string[]).join(" / ") : group.label}</h3><Totals sessions={group.sessions} prices={prices} />{view === "session" && <><p className="break-all text-xs text-muted-foreground">{group.sessions[0].provider} · {group.sessions[0].cwd || "未记录项目路径"}</p><details><summary className="cursor-pointer text-xs">模型明细与读取提示</summary>{group.sessions[0].models.map(model => { const cost = estimateCost(model.tokens, prices[priceKey(group.sessions[0].provider, model.model)]); return <div key={model.model} className="mt-2 text-xs"><p>{model.model || "未知模型"}：{cost.unknown.length ? "已知部分 " : ""}{money(cost.known)}{cost.unknown.length ? `；缺少 ${cost.unknown.map(field => labels[field]).join("、")} 单价` : ""}</p><Totals sessions={[{ ...group.sessions[0], models: [model] }]} prices={prices} /></div>; })}{group.sessions[0].warnings.map((warning, warningIndex) => <p key={warningIndex} className="mt-2 break-all text-xs text-amber-700 dark:text-amber-400">{warning}</p>)}<p className="mt-2 break-all text-xs text-muted-foreground">{group.sessions[0].rollout_path}</p></details></>}</article>)}
       {groups.length > 20 && <nav aria-label="用量分页" className="flex items-center justify-center gap-3"><Button variant="outline" disabled={!current} onClick={() => setPage(current - 1)}>上一页</Button><span className="text-sm">{current + 1} / {pages}</span><Button variant="outline" disabled={current + 1 >= pages} onClick={() => setPage(current + 1)}>下一页</Button></nav>}
