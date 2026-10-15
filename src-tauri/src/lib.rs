@@ -42,6 +42,7 @@ pub mod opencode_transfer;
 pub mod path_safety;
 pub mod paths;
 mod pi_sessions;
+pub mod price_config;
 pub mod provenance;
 pub mod provider_sync;
 mod qoder_sessions;
@@ -135,6 +136,8 @@ pub fn run() {
             commands::rebuild_session_usage_cache,
             commands::cancel_session_usage,
             commands::save_usage_csv,
+            commands::save_usage_prices,
+            commands::read_usage_prices,
             commands::start_workbench_scan,
             commands::workbench_scan_status,
             commands::cancel_workbench_scan,

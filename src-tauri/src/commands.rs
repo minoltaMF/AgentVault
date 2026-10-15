@@ -23,6 +23,19 @@ pub async fn save_usage_csv(out_path: String, csv: String) -> AppResult<()> {
         .await
 }
 
+#[tauri::command]
+pub async fn save_usage_prices(out_path: String, json: String) -> AppResult<()> {
+    run_blocking(move || {
+        crate::price_config::save_usage_prices(std::path::Path::new(&out_path), &json)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn read_usage_prices(path: String) -> AppResult<String> {
+    run_blocking(move || crate::price_config::read_usage_prices(std::path::Path::new(&path))).await
+}
+
 async fn run_blocking<T, F>(task: F) -> AppResult<T>
 where
     F: FnOnce() -> AppResult<T> + Send + 'static,
