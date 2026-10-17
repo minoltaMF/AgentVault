@@ -99,6 +99,8 @@ import { toast } from "sonner";
 
 type Props = {
   readOnly?: boolean;
+  returnLabel?: string;
+  onCloseAutoFocus?: () => void;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   session: SessionSummary | null;
@@ -141,6 +143,8 @@ const PAGE = 200;
 
 export function PreviewDialog({
   readOnly = false,
+  returnLabel,
+  onCloseAutoFocus,
   open,
   onOpenChange,
   session,
@@ -941,8 +945,10 @@ export function PreviewDialog({
       <DialogContent
         className="flex h-[90vh] max-w-[96vw] min-w-0 flex-col gap-0 overflow-hidden p-0 sm:max-w-[1200px]"
         onKeyDown={onPreviewKeyDown}
+        onCloseAutoFocus={onCloseAutoFocus ? event => { event.preventDefault(); onCloseAutoFocus(); } : undefined}
       >
         <DialogHeader className="relative min-w-0 border-b border-border/60 px-6 pb-3.5 pt-4 after:pointer-events-none after:absolute after:inset-x-0 after:-bottom-px after:h-px after:bg-gradient-to-r after:from-transparent after:via-border/50 after:to-transparent">
+          {returnLabel && <Button size="sm" variant="outline" className="mb-3" onClick={() => onOpenChange(false)}>{returnLabel}</Button>}
           <div className="flex items-start gap-3.5">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-gradient-to-br from-muted to-muted/40 shadow-sm">
               <Sparkles className="h-[18px] w-[18px] text-muted-foreground" />

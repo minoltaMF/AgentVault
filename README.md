@@ -18,7 +18,7 @@ Codex、Claude、Qoder CLI、腾讯 WorkBuddy、官方 Grok Build CLI、Pi、DSH
 
 统一工作台的 Codex / Claude 用量分析支持 UTC 日期筛选、近 7 / 30 天、按日 Token / 已知费用趋势和高消耗日期排序；点击日期联动会话、模型与项目汇总。新增最近 7/30 天与上一周期的 Token、已知费用差额对比，可直接查看两期明细；缺少记录、日期或读取不完整时暂停涨跌比较。缺失日期的用量只计入全部日期，旧用量缓存可通过「安全重建缓存」备份后重建。
 
-当前版本为 `0.1.0-alpha.32` internal alpha draft candidate；范围、平台状态和未覆盖能力见 [发布说明](docs/releases/0.1.0-alpha.32.md)。
+当前版本为 `0.1.0-alpha.33` internal alpha draft candidate；范围、平台状态和未覆盖能力见 [发布说明](docs/releases/0.1.0-alpha.33.md)。
 
 [查看功能](#功能模块) · [进阶功能](#进阶功能) · [常见问题](#常见问题) · [开发与打包](#开发与打包)
 
@@ -59,7 +59,7 @@ Cursor 的会话存在一个共享数据库里，改动方式和其他三个工�
 
 ## 安装
 
-AgentVault 目前没有公开稳定包。`0.1.0-alpha.32` 由版本标签触发 CI 生成内部 draft 制品；应从 AgentVault 仓库取得与目标 tag 对应且通过 CI 的制品，不能把 [cc-sessions Releases](https://github.com/ccpopy/cc-sessions/releases/latest) 中的上游程序当作 AgentVault。下列制品名称因兼容性而保留，本轮不迁移包名、binary 名或安装标识。
+AgentVault 目前没有公开稳定包。`0.1.0-alpha.33` 由版本标签触发 CI 生成内部 draft 制品；应从 AgentVault 仓库取得与目标 tag 对应且通过 CI 的制品，不能把 [cc-sessions Releases](https://github.com/ccpopy/cc-sessions/releases/latest) 中的上游程序当作 AgentVault。下列制品名称因兼容性而保留，本轮不迁移包名、binary 名或安装标识。
 
 | 系统与用途 | 推荐下载 | 说明 |
 | --- | --- | --- |
@@ -85,7 +85,7 @@ AgentVault 目前没有公开稳定包。`0.1.0-alpha.32` 由版本标签触发 
 
 Release 最下方的 `Source code (zip)` 和 `Source code (tar.gz)` 是 GitHub 自动生成的源码压缩包，不是桌面版安装包。
 
-本批开发范围、验证及限制见 [alpha.30 发布说明](docs/releases/0.1.0-alpha.32.md)。
+本批开发范围、验证及限制见 [alpha.30 发布说明](docs/releases/0.1.0-alpha.33.md)。
 
 第一次打开后，到设置页确认所需来源的数据路径；DSH 配置 home 目录，Hermes 配置包含 state.db 的目录，ZCode 配置包含 cli/db/db.sqlite 的 home 目录。应用会尝试使用默认位置，没有安装的工具可以留空。
 

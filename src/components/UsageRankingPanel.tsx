@@ -9,7 +9,7 @@ function Cost({ summary }: { summary: ReturnType<typeof summarizeUsage> }) {
   const partial = summary.unknownModels > 0 || summary.missingUsage > 0 || summary.warnedSessions > 0;
   return <span>{partial ? "已知部分 " : ""}{money(summary.known)}{partial && "（不完整）"}</span>;
 }
-export function UsageRankingPanel({ sessions, prices, complete }: { sessions: UsageSession[]; prices: PriceBook; complete: boolean }) {
+export function UsageRankingPanel({ sessions, prices, complete, onOpenSession }: { sessions: UsageSession[]; prices: PriceBook; complete: boolean; onOpenSession: (session: UsageSession, trigger: HTMLButtonElement) => void }) {
   const [by, setBy] = useState<UsageRankingGroup>("model");
   const [sort, setSort] = useState<UsageRankingSort>("tokens");
   const [page, setPage] = useState(0);
@@ -34,10 +34,11 @@ export function UsageRankingPanel({ sessions, prices, complete }: { sessions: Us
     {active ? <div aria-label="排行关联会话" className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2"><h4 className="min-w-0 break-all text-sm">{display(active.label)} · {active.sessions.length} 条关联会话</h4><Button size="sm" variant="outline" onClick={() => setSelected(null)}>返回排行</Button></div>
       <p className="text-xs text-muted-foreground">{by === "model" ? "仅显示该模型在当前日期范围内的用量，不包含同一会话的其他模型。" : "显示该项目在当前日期范围内的会话用量。"}</p>
+      <p className="text-xs text-muted-foreground">查看正文将打开完整会话，不按排行日期或模型过滤；关闭后返回当前位置。</p>
       {active.sessions.slice(detailPage * 10, (detailPage + 1) * 10).map(session => {
         const summary = summarizeUsage([session], prices);
         const total = summary.tokens.input + summary.tokens.output + summary.tokens.cache_read + summary.tokens.cache_write;
-        return <article key={JSON.stringify([session.provider, session.rollout_path])} className="min-w-0 space-y-1 rounded border p-2 text-xs"><h5 className="break-all font-medium">{session.title || session.id}</h5><p className="break-all">{session.provider} · {session.cwd || "未记录项目路径"}</p><p>Token：{summary.overflow || !Number.isSafeInteger(total) || summary.missingUsage ? "无法可靠统计" : total.toLocaleString()} · <Cost summary={summary} /></p><details><summary className="cursor-pointer">会话标识与读取提示</summary><p className="break-all">{session.id}</p><p className="break-all">{session.rollout_path}</p>{session.warnings.map((warning, index) => <p className="break-all" key={index}>{warning}</p>)}</details></article>;
+        return <article key={JSON.stringify([session.provider, session.rollout_path])} className="min-w-0 space-y-1 rounded border p-2 text-xs"><h5 className="break-all font-medium">{session.title || session.id}</h5><p className="break-all">{session.provider} · {session.cwd || "未记录项目路径"}</p><p>Token：{summary.overflow || !Number.isSafeInteger(total) || summary.missingUsage ? "无法可靠统计" : total.toLocaleString()} · <Cost summary={summary} /></p><Button size="sm" variant="outline" aria-label={`查看 ${session.title || session.id} 的正文`} onClick={event => onOpenSession(session, event.currentTarget)}>查看正文</Button><details><summary className="cursor-pointer">会话标识与读取提示</summary><p className="break-all">{session.id}</p><p className="break-all">{session.rollout_path}</p>{session.warnings.map((warning, index) => <p className="break-all" key={index}>{warning}</p>)}</details></article>;
       })}
       <nav aria-label="关联会话分页" className="flex flex-wrap items-center gap-2 text-xs"><Button size="sm" variant="outline" disabled={!detailPage} onClick={() => setSessionPage(detailPage - 1)}>上一页会话</Button><span>{detailPage + 1} / {detailPages}</span><Button size="sm" variant="outline" disabled={detailPage + 1 >= detailPages} onClick={() => setSessionPage(detailPage + 1)}>下一页会话</Button></nav>
     </div> : <>

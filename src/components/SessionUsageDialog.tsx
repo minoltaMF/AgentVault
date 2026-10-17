@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api } from "@/lib/api";
-import { aggregateUsage, filterUsageByDate, validateUsageDateRange, estimateCost, priceKey, priceStorageKey, readPriceBook, summarizeUsage, type PriceBook, type UsageDateRange, type UsageScope, type UsageSession, type UsageStatus } from "@/lib/session-usage";
+import { PreviewDialog } from "./PreviewDialog";
+import { resolveUsageSession } from "@/lib/usage-navigation";
+import { api, type SessionSummary } from "@/lib/api";
+import { aggregateUsage, filterUsageByDate, validateUsageDateRange, estimateCost, priceKey, priceStorageKey, readPriceBook, summarizeUsage, type PriceBook, type UsageDateRange, type UsageSession, type UsageStatus } from "@/lib/session-usage";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { UsageRankingPanel } from "./UsageRankingPanel";
@@ -21,7 +23,24 @@ function Totals({ sessions, prices }: { sessions: UsageSession[]; prices: PriceB
   if (summary.overflow) return <p role="alert" className="text-xs text-destructive">用量超出安全计算范围，无法提供准确汇总或费用。</p>;
   return <div className="space-y-1 text-xs"><p>未缓存输入 {count(summary.tokens.input)} · 输出 {count(summary.tokens.output)} · 缓存读取 {count(summary.tokens.cache_read)} · 缓存写入 {count(summary.tokens.cache_write)}</p><p>其中：1 小时缓存写入 {count(summary.tokens.cache_write_1h)} · 推理 {count(summary.tokens.reasoning)}（已计入输出）</p><p>{summary.unknownModels || summary.missingUsage || summary.warnedSessions ? "已知部分估算" : "估算费用"}：{summary.known === 0 && (summary.unknownModels || summary.missingUsage) ? "费用未知（已知部分为 0）" : `${money(summary.known)} USD`}{summary.unknownModels > 0 && ` · ${summary.unknownModels} 项模型用量缺少单价`}{summary.missingUsage > 0 && ` · ${summary.missingUsage} 条会话未记录用量`}</p>{summary.warnedSessions > 0 && <p className="text-amber-700 dark:text-amber-400">{summary.warnedSessions} 条会话存在读取或统计提示，结果可能不完整，请查看会话明细。</p>}</div>;
 }
-export function SessionUsageDialog({ open, onOpenChange, sessions, codexDir, claudeDir }: { open: boolean; onOpenChange: (open: boolean) => void; sessions: UsageScope[]; codexDir: string; claudeDir: string }) {
+export function SessionUsageDialog({ open, onOpenChange, sessions, codexDir, claudeDir }: { open: boolean; onOpenChange: (open: boolean) => void; sessions: SessionSummary[]; codexDir: string; claudeDir: string }) {
+  const [previewSession, setPreviewSession] = useState<SessionSummary | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewError, setPreviewError] = useState("");
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const returnTarget = useRef<{ trigger: HTMLButtonElement; scrollTop: number } | null>(null);
+  function openSession(session: UsageSession, trigger: HTMLButtonElement) {
+    const target = resolveUsageSession(sessions, session);
+    if (!target) { setPreviewError("当前范围中找不到这条会话，请关闭用量窗口并刷新来源后重试。"); return; }
+    returnTarget.current = { trigger, scrollTop: scrollRef.current?.scrollTop ?? 0 };
+    setPreviewError(""); setPreviewSession(target); setPreviewOpen(true);
+  }
+  function restorePosition() {
+    const target = returnTarget.current;
+    if (!target) return;
+    if (scrollRef.current) scrollRef.current.scrollTop = target.scrollTop;
+    if (target.trigger.isConnected) target.trigger.focus({ preventScroll: true });
+  }
   const scope = useMemo(() => sessions.filter(session => session.provider === "codex" || session.provider === "claude"), [sessions]);
   const [status, setStatus] = useState<UsageStatus | null>(null);
   const [error, setError] = useState("");
@@ -97,7 +116,7 @@ export function SessionUsageDialog({ open, onOpenChange, sessions, codexDir, cla
     onOpenChange(nextOpen);
   }
   return <><Dialog open={open} onOpenChange={changeOpen}><DialogContent className="flex h-[90vh] max-h-[90vh] max-w-4xl flex-col overflow-clip"><DialogHeader className="shrink-0"><DialogTitle>会话用量与成本</DialogTitle><DialogDescription>分析当前筛选的全部 {scope.length} 条 Codex / Claude 会话，不限当前页；跳过其他来源 {sessions.length - scope.length} 条。只读取原生记录。未变化文件复用本机缓存，重启后仍可使用；变化文件重新解析。缓存只保存用量与校验信息，不保存对话正文。</DialogDescription></DialogHeader>
-    <div className="min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto pr-2">
+    <div ref={scrollRef} className="min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto pr-2">
       <div role="status" className="flex flex-wrap items-center gap-3 text-sm"><span>{status ? `${status.processed_files} / ${status.total_files} 个文件 · ${status.state === "running" ? "分析中" : status.state === "completed" ? "已完成" : status.state === "cancelled" ? "已取消，以下为部分结果" : "失败，以下为部分结果"}` : scope.length ? "正在启动分析…" : "当前范围没有支持的来源。"}</span>{busy && <Button size="sm" variant="outline" disabled={job === null || cancelRequested} onClick={() => { setCancelRequested(true); void api.cancelSessionUsage(job!).catch(failure => { setError(String(failure)); setCancelRequested(false); }); }}>{cancelRequested ? "正在取消…" : "取消分析"}</Button>}</div>
       {!busy && scope.length > 0 && <div className="flex flex-wrap items-center gap-2"><Button size="sm" variant="outline" onClick={() => setRun(previous => ({ sequence: previous.sequence + 1, forceRefresh: true }))}>强制重新分析</Button><span className="text-xs text-muted-foreground">绕过缓存，重新读取当前筛选范围。</span></div>}
       {status && <p className="text-xs text-muted-foreground">已复用 {status.cache_hits} 个文件 · 已重新解析 {status.parsed_files} 个文件 · 用时 {(status.elapsed_ms / 1000).toFixed(2)} 秒{run.forceRefresh ? " · 本次已绕过缓存" : ""}</p>}
@@ -109,12 +128,14 @@ export function SessionUsageDialog({ open, onOpenChange, sessions, codexDir, cla
       <div ref={dailyRef}><UsageDailyPanel sessions={results} prices={prices} range={dateRange} onChange={next => { setDateRange(next); setPage(0); }} /></div>
       {status && !dateError && <div className="rounded-md border p-3"><p className="mb-2 text-sm font-medium">已成功读取 {results.length} 条会话 · 当前日期范围 {filteredResults.length} 条{busy ? "（分析尚未完成）" : status.failures.length || status.state !== "completed" ? "（部分结果）" : ""}</p><Totals sessions={filteredResults} prices={prices} /></div>}
       {!!status?.failures.length && <details className="rounded-md border p-3"><summary className="cursor-pointer text-sm text-destructive">{status.failures.length} 个文件分析失败（不计入汇总）</summary>{status.failures.slice(failurePage * 20, (failurePage + 1) * 20).map(failure => <p key={failure.path} className="mt-2 break-all text-xs">{failure.path}：{failure.error}</p>)}<div className="mt-2 flex gap-2"><Button size="sm" variant="outline" disabled={!failurePage} onClick={() => setFailurePage(failurePage - 1)}>上一页失败</Button><Button size="sm" variant="outline" disabled={(failurePage + 1) * 20 >= status.failures.length} onClick={() => setFailurePage(failurePage + 1)}>下一页失败</Button></div></details>}
-      {!dateError && <UsageRankingPanel sessions={filteredResults} prices={prices} complete={!error && status?.state === "completed" && !status.error && status.failures.length === 0} />}
+      {!dateError && <UsageRankingPanel onOpenSession={openSession} sessions={filteredResults} prices={prices} complete={!error && status?.state === "completed" && !status.error && status.failures.length === 0} />}
+      {previewError && <p role="alert" className="text-sm text-destructive">{previewError}</p>}
       <UsagePriceManager sessions={results} prices={prices} history={priceHistory} historyError={historyError} onSave={savePrices} onRestore={id => savePrices(prices, "restore", id)} onDirtyChange={onPriceDirtyChange} />
       <div className="flex flex-wrap gap-2" aria-label="用量分组">{(["session", "model", "project"] as const).map(value => <Button key={value} size="sm" variant={view === value ? "default" : "outline"} onClick={() => { setView(value); setPage(0); }}>{value === "session" ? "按会话" : value === "model" ? "按模型" : "按项目"}</Button>)}</div>
       {groups.slice(current * 20, (current + 1) * 20).map((group, index) => <article key={`${view}:${current}:${index}`} className="space-y-2 rounded-md border p-3"><h3 className="break-all text-sm font-medium">{view === "model" ? (JSON.parse(group.label) as string[]).join(" / ") : group.label}</h3><Totals sessions={group.sessions} prices={prices} />{view === "session" && <><p className="break-all text-xs text-muted-foreground">{group.sessions[0].provider} · {group.sessions[0].cwd || "未记录项目路径"}</p><details><summary className="cursor-pointer text-xs">模型明细与读取提示</summary>{group.sessions[0].models.map(model => { const cost = estimateCost(model.tokens, prices[priceKey(group.sessions[0].provider, model.model)]); return <div key={model.model} className="mt-2 text-xs"><p>{model.model || "未知模型"}：{cost.unknown.length ? "已知部分 " : ""}{money(cost.known)}{cost.unknown.length ? `；缺少 ${cost.unknown.map(field => labels[field]).join("、")} 单价` : ""}</p><Totals sessions={[{ ...group.sessions[0], models: [model] }]} prices={prices} /></div>; })}{group.sessions[0].warnings.map((warning, warningIndex) => <p key={warningIndex} className="mt-2 break-all text-xs text-amber-700 dark:text-amber-400">{warning}</p>)}<p className="mt-2 break-all text-xs text-muted-foreground">{group.sessions[0].rollout_path}</p></details></>}</article>)}
       {groups.length > 20 && <nav aria-label="用量分页" className="flex items-center justify-center gap-3"><Button variant="outline" disabled={!current} onClick={() => setPage(current - 1)}>上一页</Button><span className="text-sm">{current + 1} / {pages}</span><Button variant="outline" disabled={current + 1 >= pages} onClick={() => setPage(current + 1)}>下一页</Button></nav>}
     </div>
+    {previewSession && <PreviewDialog key={`${previewSession.provider}:${previewSession.rollout_path}`} readOnly open={previewOpen} session={previewSession} allSessions={sessions.filter(session => session.provider === previewSession.provider)} onOpenChange={setPreviewOpen} returnLabel="返回用量排行" onCloseAutoFocus={restorePosition} />}
   </DialogContent></Dialog>
   <AlertDialog open={confirmClose} onOpenChange={setConfirmClose}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>放弃未保存的单价修改？</AlertDialogTitle><AlertDialogDescription>单价草稿或导入预览尚未保存。继续编辑可保留内容，放弃并关闭不会改变已保存的单价。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>继续编辑</AlertDialogCancel><AlertDialogAction onClick={() => { priceDirty.current = false; setConfirmClose(false); changeOpen(false); }}>放弃并关闭</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></>;
 }
