@@ -96,6 +96,7 @@ import { cn } from "@/lib/utils";
 import { previewWindowStart, findPreviewRowIndex, boundPreviewProcessRows } from "@/lib/previewWindow";
 import { useSettings } from "@/stores/settings";
 import { toast } from "sonner";
+import { previewReadFailure, previewEmptyMessage, type PreviewReadFailure } from "@/lib/preview-read-state";
 
 type Props = {
   readOnly?: boolean;
@@ -159,6 +160,7 @@ export function PreviewDialog({
   readOnly = readOnly || ["qoder", "workbuddy", "grok", "pi", "dsh", "hermes", "zcode", "qwen", "cline", "copilot", "antigravity"].includes(session?.provider ?? "");
   const rolloutPath = customRolloutPath ?? session?.rollout_path ?? "";
   const provider = session?.provider ?? "codex";
+  const [readFailure, setReadFailure] = useState<PreviewReadFailure | null>(null);
   const [events, setEvents] = useState<PreviewEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
@@ -291,6 +293,7 @@ export function PreviewDialog({
         offsetRef.current = start + next.length;
         setEvents((previous) => [...previous, ...next]);
       }
+      setReadFailure(null);
       const finished = newestFirstRef.current ? startOffsetRef.current === 0 : next.length < count;
       doneRef.current = finished;
       setDone(finished);
@@ -299,7 +302,7 @@ export function PreviewDialog({
       if (generation === generationRef.current) {
         doneRef.current = true;
         setDone(true);
-        toast.error("读取会话失败", { description: String(error) });
+        setReadFailure(previewReadFailure(error));
       }
       return false;
     } finally {
@@ -368,7 +371,7 @@ export function PreviewDialog({
       if (await readWindow(latest ? Math.max(0, count - PAGE) : 0, PAGE, true)
           && generation === generationRef.current) viewportRef.current?.scrollTo({ top: 0 });
     } catch (error) {
-      if (generation === generationRef.current) toast.error("定位会话失败", { description: String(error) });
+      if (generation === generationRef.current) { setReadFailure(previewReadFailure(error)); doneRef.current = true; setDone(true); }
     } finally {
       if (generation === generationRef.current) {
         loadingRef.current = false;
@@ -405,6 +408,7 @@ export function PreviewDialog({
     setLoadingAll(false);
     loadingAllRef.current = false;
     setEvents([]);
+    setReadFailure(null);
     setProcessExpansionOverrides({});
     setDone(false);
     doneRef.current = false;
@@ -419,7 +423,8 @@ export function PreviewDialog({
   }, [loadMore, loadPrompts]);
 
   useEffect(() => {
-    if (!open || !rolloutPath) return;
+    if (!open) return;
+    if (!rolloutPath) { setReadFailure({ kind: "unavailable", detail: "会话缺少原生文件路径，请返回列表刷新来源。" }); return; }
     setFilter("");
     setIsSelecting(false);
     setSelectionFirstIndex(null);
@@ -1004,7 +1009,7 @@ export function PreviewDialog({
                     )}{" "}
                     条
                     <span className="ml-1 text-muted-foreground/70">
-                      {!done ? (newestFirst ? "· 滚动加载更早" : "· 滚动加载更多") : (newestFirst ? "· 已到最早" : "· 已到末尾")}
+                      {readFailure ? "· 读取中断" : !done ? (newestFirst ? "· 滚动加载更早" : "· 滚动加载更多") : (newestFirst ? "· 已到最早" : "· 已到末尾")}
                     </span>
                   </span>
                 </div>
@@ -1155,6 +1160,13 @@ export function PreviewDialog({
           </div>
         </DialogHeader>
 
+        {readFailure && <div role="alert" className="shrink-0 space-y-2 border-b px-6 py-3 text-sm">
+          <p className="font-medium text-destructive">{readFailure.kind === "unavailable" ? "会话文件已失效" : "正文读取失败"}</p>
+          <p className="text-xs text-muted-foreground">{readFailure.kind === "unavailable" ? "文件可能已移动、删除或不再是可读取的会话文件。请检查来源；文件恢复后可重试。" : "可能存在权限、文件内容或连接问题，请查看错误详情后重试。"}{events.length > 0 ? " 下方仅保留此前已读取的部分内容，不代表完整会话。" : " 这不表示会话为空。"}</p>
+          <details className="text-xs"><summary className="cursor-pointer">读取错误详情</summary><p className="max-h-24 overflow-auto whitespace-pre-wrap break-all">{readFailure.detail}</p></details>
+          <Button size="sm" variant="outline" disabled={loading || loadingAll || !rolloutPath} onClick={resetAndReload}>{loading ? "正在重试…" : "重新读取正文"}</Button>
+          <span className="ml-2 text-xs text-muted-foreground">从最早位置重新读取，不修改原文件。</span>
+        </div>}
         <div className="relative min-h-0 flex-1">
           <ScrollArea
             className="h-full bg-muted/30"
@@ -1166,11 +1178,11 @@ export function PreviewDialog({
                 <SubagentOverview key={session?.id} items={relatedSubagents} />
               )}
 
-              {filtered.length === 0 && !loading && (onlyMsg || relatedSubagents.length === 0) && (
+              {!readFailure && filtered.length === 0 && !loading && (onlyMsg || relatedSubagents.length === 0) && (
                 <div className="flex flex-col items-center justify-center gap-2 py-16 text-center text-muted-foreground">
                   <Sparkles className="h-8 w-8 opacity-50" />
                   <div className="text-sm">
-                    {events.length === 0 ? "无事件" : "无匹配事件"}
+                    {previewEmptyMessage(events.length, startOffsetRef.current, !!normalizedFilter)}
                   </div>
                 </div>
               )}
@@ -1318,7 +1330,7 @@ export function PreviewDialog({
                   </Button>
                 </div>
               )}
-              {done && events.length > 0 && (
+              {!readFailure && done && events.length > 0 && (
                 <div className="flex justify-center pt-4 text-xs text-muted-foreground/70">
                   {newestFirst ? "— 已到最早 —" : "— 会话末尾 —"}
                 </div>

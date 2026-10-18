@@ -60,12 +60,22 @@ pub fn preview_range(path: &str, offset: usize, limit: usize) -> AppResult<Vec<P
     let reader = BufReader::new(f);
     let mut out = Vec::with_capacity(preview_capacity_hint(limit));
     let mut event_index = 0usize;
+    let mut parsed_lines = 0usize;
+    let mut first_parse_error = None;
     for (i, line) in reader.lines().enumerate() {
         let line = line?;
         if line.trim().is_empty() {
             continue;
         }
-        if let Ok(raw) = serde_json::from_str::<Value>(&line) {
+        let raw = match serde_json::from_str::<Value>(&line) {
+            Ok(raw) => raw,
+            Err(error) => {
+                first_parse_error.get_or_insert(error);
+                continue;
+            }
+        };
+        parsed_lines += 1;
+        {
             if let Some(event) = classify_preview(i, raw) {
                 if event_index < offset {
                     event_index += 1;
@@ -77,6 +87,13 @@ pub fn preview_range(path: &str, offset: usize, limit: usize) -> AppResult<Vec<P
                     break;
                 }
             }
+        }
+    }
+    // Preserve tolerant mixed-file previews, but do not label wholly malformed
+    // nonempty transcripts as empty sessions (including requests for later pages).
+    if parsed_lines == 0 {
+        if let Some(error) = first_parse_error {
+            return Err(error.into());
         }
     }
     Ok(out)

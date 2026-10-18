@@ -444,7 +444,7 @@ fn preview_range_by_provider(
     offset: usize,
     limit: usize,
 ) -> AppResult<Vec<PreviewEvent>> {
-    match provider.as_deref().unwrap_or("codex") {
+    let result = match provider.as_deref().unwrap_or("codex") {
         "codex" => preview_range_impl(path, offset, limit),
         "qoder" => crate::qoder_sessions::preview_range(path, offset, limit),
         "workbuddy" => crate::workbuddy_sessions::preview_range(path, offset, limit),
@@ -463,7 +463,23 @@ fn preview_range_by_provider(
         other => Err(crate::error::AppError::Other(format!(
             "不支持的 provider: {other}"
         ))),
-    }
+    };
+    result.map_err(classify_preview_read_error)
+}
+
+// Keep the string error transport shared by desktop and WebUI. Only classify
+// typed errors: arbitrary provider messages must not be guessed as missing files.
+fn classify_preview_read_error(error: crate::error::AppError) -> crate::error::AppError {
+    use crate::error::AppError;
+    let unavailable = matches!(&error, AppError::NotFound(_))
+        || matches!(&error, AppError::Io(io) if matches!(io.kind(),
+            std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory));
+    let code = if unavailable {
+        "PREVIEW_FILE_UNAVAILABLE"
+    } else {
+        "PREVIEW_READ_FAILED"
+    };
+    AppError::Other(format!("[{code}] {error}"))
 }
 
 fn preview_range_impl(path: &str, offset: usize, limit: usize) -> AppResult<Vec<PreviewEvent>> {
@@ -471,13 +487,22 @@ fn preview_range_impl(path: &str, offset: usize, limit: usize) -> AppResult<Vec<
     let reader = BufReader::new(f);
     let mut out = Vec::with_capacity(preview_capacity_hint(limit));
     let mut event_index = 0usize;
+    let mut parsed_lines = 0usize;
+    let mut first_parse_error = None;
     for (i, line) in reader.lines().enumerate() {
         let line = line?;
         if line.trim().is_empty() {
             continue;
         }
-        // 预览允许跳过损坏行，完整修复功能会负责诊断这类文件。
-        if let Ok(raw) = serde_json::from_str::<Value>(&line) {
+        let raw = match serde_json::from_str::<Value>(&line) {
+            Ok(raw) => raw,
+            Err(error) => {
+                first_parse_error.get_or_insert(error);
+                continue;
+            }
+        };
+        parsed_lines += 1;
+        {
             if event_index < offset {
                 event_index += 1;
                 continue;
@@ -487,6 +512,13 @@ fn preview_range_impl(path: &str, offset: usize, limit: usize) -> AppResult<Vec<
             if out.len() >= limit {
                 break;
             }
+        }
+    }
+    // Preserve tolerant mixed-file previews, but do not label wholly malformed
+    // nonempty transcripts as empty sessions (including requests for later pages).
+    if parsed_lines == 0 {
+        if let Some(error) = first_parse_error {
+            return Err(error.into());
         }
     }
     Ok(out)
@@ -962,6 +994,77 @@ mod tests {
             std::process::id(),
             chrono::Utc::now().timestamp_nanos_opt().unwrap()
         ))
+    }
+
+    #[test]
+    fn preview_read_distinguishes_empty_missing_malformed_and_retry() -> AppResult<()> {
+        for provider in ["codex", "claude"] {
+            let file = temp_file("preview-read-state");
+            let read = |offset| {
+                preview_session_range(
+                    Some(provider.to_string()),
+                    file.to_string_lossy().into_owned(),
+                    offset,
+                    10,
+                )
+            };
+            fs::write(&file, " \n\t\n")?;
+            assert!(read(0)?.is_empty());
+            fs::remove_file(&file)?;
+            assert!(read(0)
+                .unwrap_err()
+                .to_string()
+                .starts_with("[PREVIEW_FILE_UNAVAILABLE]"));
+            fs::write(&file, "{broken json\n")?;
+            for offset in [0, 10] {
+                assert!(read(offset)
+                    .unwrap_err()
+                    .to_string()
+                    .starts_with("[PREVIEW_READ_FAILED]"));
+            }
+            fs::write(&file, [0xff, 0xfe])?;
+            assert!(read(0)
+                .unwrap_err()
+                .to_string()
+                .starts_with("[PREVIEW_READ_FAILED]"));
+            let event = if provider == "codex" {
+                serde_json::json!({"type":"response_item","payload":{"type":"message","role":"user","content":"restored"}})
+            } else {
+                serde_json::json!({"type":"user","message":{"role":"user","content":"restored"}})
+            };
+            fs::write(&file, format!("broken line\n{event}\n"))?;
+            let events = read(0)?;
+            assert_eq!(events.len(), 1);
+            assert!(events[0].text_summary.contains("restored"));
+            assert!(read(1)?.is_empty());
+            fs::remove_file(file)?;
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn preview_read_error_classification_does_not_guess_from_message() {
+        use crate::error::AppError;
+        for error in [
+            AppError::Io(std::io::Error::from(std::io::ErrorKind::PermissionDenied)),
+            AppError::Path("not found: rejected unsafe path".into()),
+            AppError::Other("not found: ambiguous provider error".into()),
+        ] {
+            assert!(classify_preview_read_error(error)
+                .to_string()
+                .starts_with("[PREVIEW_READ_FAILED]"));
+        }
+        for error in [
+            AppError::NotFound("session removed".into()),
+            AppError::Io(std::io::Error::from(std::io::ErrorKind::NotADirectory)),
+        ] {
+            let error = classify_preview_read_error(error);
+            assert!(error.to_string().starts_with("[PREVIEW_FILE_UNAVAILABLE]"));
+            assert_eq!(
+                serde_json::to_value(&error).unwrap(),
+                serde_json::json!(error.to_string())
+            );
+        }
     }
 
     #[test]
