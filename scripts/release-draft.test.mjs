@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { expectedAssets, desktopAssets, verifyAssets, releaseService } from './release-draft.mjs';
+import { expectedAssets, desktopAssets, verifyAssets, releaseService, retryGitHubRead } from './release-draft.mjs';
 const version = '0.1.0-alpha.21', tag = `v${version}`, sha = 'a'.repeat(40);
 const data = Buffer.from('synthetic artifact');
 const digest = `sha256:${createHash('sha256').update(data).digest('hex')}`;
@@ -154,4 +154,32 @@ test('verification retains draft visibility permissions and performs no writes',
   const { service, calls } = mock({ releases: [draft()], assets: expectedAssets(version).map(asset) });
   await service.verify(7);
   assert.ok(calls.every(call => !call.method));
+});
+
+
+test('GitHub read retries transient connection failures and returns the successful result', async () => {
+  let attempts = 0; const waits = [];
+  const result = await retryGitHubRead(async () => {
+    if (++attempts < 3) throw new TypeError('fetch failed', { cause: { code: 'UND_ERR_CONNECT_TIMEOUT' } });
+    return 'verified';
+  }, 'GET', async ms => waits.push(ms));
+  assert.equal(result, 'verified'); assert.equal(attempts, 3); assert.deepEqual(waits, [1000, 2000]);
+});
+test('GitHub retries are bounded and never repeat mutations or permanent failures', async () => {
+  const timeout = new TypeError('fetch failed', { cause: { code: 'UND_ERR_CONNECT_TIMEOUT' } });
+  for (const method of ['POST', 'PATCH', 'DELETE']) {
+    let attempts = 0;
+    await assert.rejects(retryGitHubRead(async () => { attempts++; throw timeout; }, method, async () => {}), e => e === timeout);
+    assert.equal(attempts, 1);
+  }
+  for (const error of [Object.assign(new Error('forbidden'), { status: 403 }), new SyntaxError('bad response'), new Error('checksum mismatch')]) {
+    let attempts = 0;
+    await assert.rejects(retryGitHubRead(async () => { attempts++; throw error; }, 'GET', async () => {}), e => e === error);
+    assert.equal(attempts, 1);
+  }
+  for (const error of [timeout, Object.assign(new Error('unavailable'), { status: 503 }), Object.assign(new Error('timed out'), { name: 'TimeoutError' })]) {
+    let attempts = 0;
+    await assert.rejects(retryGitHubRead(async () => { attempts++; throw error; }, 'GET', async () => {}), e => e === error);
+    assert.equal(attempts, 3);
+  }
 });

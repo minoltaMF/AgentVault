@@ -35,3 +35,6 @@ Release 工作流按 tag 串行调度，不取消正在运行的同 tag 发布�
 历史 alpha.20 的两个 draft 不在本次自动整理范围内，继续保留其原有资产。
 
 最终校验任务继承发布流程已有的 `contents: write` 权限，以便列出未公开 draft；校验程序只发 GET 请求，不修改 Release。仅 `contents: read` 的工作流 token 在本仓库实测看不到 draft。
+
+
+从 alpha.36 起，GitHub GET 请求针对明确的瞬时连接错误、超时及 HTTP 502/503/504 最多尝试三次，重试间隔 1/2 秒。POST/PATCH/DELETE 不自动重发，权限、响应格式及内容校验错误不重试；上传超时仍只查询并核对已上传摘要。该改动来自 alpha.35 的 macOS Intel CLI 上传前连接 GitHub API 超时。旧草稿保留，不覆盖已有附件或移动标签。

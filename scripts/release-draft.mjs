@@ -157,20 +157,35 @@ export function releaseService({ api, repo, tag, sha, version, wait = ms => new 
   };
 }
 
+// Only idempotent reads may retry. Asset POST recovery remains checksum-checked
+// in releaseService.upload; never turn a network timeout into a blind second write.
+export async function retryGitHubRead(request, method, wait = ms => new Promise(resolve => setTimeout(resolve, ms))) {
+  for (let attempt = 0; ; attempt++) {
+    try { return await request(); }
+    catch (error) {
+      const transient = ['UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_SOCKET', 'ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN'].includes(error?.cause?.code)
+        || ['TimeoutError', 'AbortError'].includes(error?.name)
+        || [502, 503, 504].includes(error?.status);
+      if (method !== 'GET' || !transient || attempt >= 2) throw error;
+      await wait(1000 * (attempt + 1));
+    }
+  }
+}
+
 async function main() {
   const { GITHUB_REPOSITORY: repo, GITHUB_REF_NAME: tag, GITHUB_SHA: sha, GITHUB_TOKEN: token, RELEASE_ID: id } = process.env;
   if (!token) throw new Error('GITHUB_TOKEN is required');
   const version = JSON.parse(readFileSync('package.json', 'utf8')).version;
-  const api = async (route, { method = 'GET', body, binary, upload = false, download = false } = {}) => {
+  const api = async (route, { method = 'GET', body, binary, upload = false, download = false } = {}) => retryGitHubRead(async () => {
     const response = await fetch(`https://${upload ? 'uploads' : 'api'}.github.com${route}`, {
       method, cache: 'no-store', signal: AbortSignal.timeout(120_000),
       headers: { Authorization: `Bearer ${token}`, Accept: download ? 'application/octet-stream' : 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28',
         'Content-Type': binary ? 'application/octet-stream' : 'application/json' },
       body: binary ?? (body ? JSON.stringify(body) : undefined),
     });
-    if (!response.ok) throw new Error(`GitHub ${method} ${route}: HTTP ${response.status}`);
+    if (!response.ok) throw Object.assign(new Error(`GitHub ${method} ${route}: HTTP ${response.status}`), { status: response.status });
     return download ? Buffer.from(await response.arrayBuffer()) : response.json();
-  };
+  }, method);
   const service = releaseService({ api, repo, tag, sha, version });
   switch (process.argv[2]) {
     case 'prepare': {
