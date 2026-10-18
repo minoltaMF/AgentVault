@@ -98,6 +98,8 @@ import { useSettings } from "@/stores/settings";
 import { toast } from "sonner";
 import { previewReadFailure, previewEmptyMessage, type PreviewReadFailure } from "@/lib/preview-read-state";
 
+import { matchesReadingPosition, readingEventSignature, readingPositionKey, readPositions, saveReadingPosition, type ReadingPosition } from "@/lib/preview-reading-position";
+
 type Props = {
   readOnly?: boolean;
   returnLabel?: string;
@@ -160,6 +162,11 @@ export function PreviewDialog({
   readOnly = readOnly || ["qoder", "workbuddy", "grok", "pi", "dsh", "hermes", "zcode", "qwen", "cline", "copilot", "antigravity"].includes(session?.provider ?? "");
   const rolloutPath = customRolloutPath ?? session?.rollout_path ?? "";
   const provider = session?.provider ?? "codex";
+  const positionKey = customRolloutPath ? null : readingPositionKey(provider, rolloutPath);
+  const restoreRef = useRef<ReadingPosition | null>(null);
+  const [readingNotice, setReadingNotice] = useState("");
+  const captureReadingRef = useRef<() => void>(() => {});
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [readFailure, setReadFailure] = useState<PreviewReadFailure | null>(null);
   const [events, setEvents] = useState<PreviewEvent[]>([]);
   const [loading, setLoading] = useState(false);
@@ -198,6 +205,7 @@ export function PreviewDialog({
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const pendingJumpRef = useRef<number | null>(null);
   const scrollSpyRafRef = useRef(0);
+  const jumpSettleRafRef = useRef(0);
   const preferenceSaveRef = useRef<Promise<void>>(Promise.resolve());
   const appSettings = useSettings((state) => state.settings);
   const canForkSession = !readOnly && provider === "codex" && !customRolloutPath && !!session && !!codexDir;
@@ -274,7 +282,23 @@ export function PreviewDialog({
     loadingRef.current = true;
     setLoading(true);
     try {
-      const next = await api.previewRange(provider, rolloutPath, start, count);
+      let next = await api.previewRange(provider, rolloutPath, start, count);
+      if (generation !== generationRef.current) return false;
+      const remembered = restoreRef.current;
+      if (remembered && replace) {
+        restoreRef.current = null;
+        if (matchesReadingPosition(next, start, remembered)) {
+          pendingJumpRef.current = remembered.eventIndex;
+          setReadingNotice("已恢复上次阅读位置");
+        } else {
+          start = 0;
+          newestFirstRef.current = false;
+          setNewestFirst(false);
+          next = await api.previewRange(provider, rolloutPath, 0, count);
+          if (generation !== generationRef.current) return false;
+          setReadingNotice("原阅读位置已变化，已从最早位置打开");
+        }
+      }
       if (generation !== generationRef.current) return false;
       if (!replace && start < startOffsetRef.current && next.length !== count) {
         throw new Error("会话在读取期间发生变化，请重新打开预览");
@@ -300,6 +324,8 @@ export function PreviewDialog({
       return true;
     } catch (error) {
       if (generation === generationRef.current) {
+        restoreRef.current = null;
+        pendingJumpRef.current = null;
         doneRef.current = true;
         setDone(true);
         setReadFailure(previewReadFailure(error));
@@ -402,6 +428,7 @@ export function PreviewDialog({
 
   const resetAndReload = useCallback(() => {
     generationRef.current += 1;
+    setReadingNotice("");
     startOffsetRef.current = 0;
     newestFirstRef.current = false;
     setNewestFirst(false);
@@ -418,9 +445,17 @@ export function PreviewDialog({
     setActiveTimelineIndex(null);
     setPrompts(null);
     setTotalEvents(0);
-    void loadMore();
+    const remembered = restoreRef.current;
+    if (remembered) {
+      newestFirstRef.current = remembered.newestFirst;
+      setNewestFirst(remembered.newestFirst);
+      setOnlyMsg(remembered.onlyMessages);
+      void readWindow(previewWindowStart(remembered.eventOffset, PAGE), PAGE, true);
+    } else {
+      void loadMore();
+    }
     void loadPrompts();
-  }, [loadMore, loadPrompts]);
+  }, [loadMore, loadPrompts, readWindow]);
 
   useEffect(() => {
     if (!open) return;
@@ -431,9 +466,17 @@ export function PreviewDialog({
     setSelectionSecondIndex(null);
     setDeleteSelectedTarget(null);
     setDeletePlan(null);
+    restoreRef.current = null;
+    if (positionKey && !initialJump) {
+      try { restoreRef.current = readPositions(window.localStorage).find((p) => p.key === positionKey) ?? null; } catch { /* Storage may be disabled. */ }
+    }
     resetAndReload();
-    return () => { generationRef.current += 1; };
-  }, [open, rolloutPath, resetAndReload]);
+    return () => {
+      captureReadingRef.current();
+      if (saveTimerRef.current !== null) clearTimeout(saveTimerRef.current);
+      generationRef.current += 1;
+    };
+  }, [open, rolloutPath, positionKey, initialJump, resetAndReload]);
 
   const timelineIndexSet = useMemo(
     () => (prompts === null ? null : new Set(prompts.map((prompt) => prompt.index))),
@@ -530,19 +573,30 @@ export function PreviewDialog({
   /** 把待跳转的目标消息滚动到视口顶部并闪烁高亮 */
   const scrollPendingIntoView = useCallback(() => {
     const target = pendingJumpRef.current;
-    if (target === null) return;
+    if (target === null || jumpSettleRafRef.current) return;
     const viewport = viewportRef.current;
     if (!viewport) return;
-    const el = viewport.querySelector<HTMLElement>(`[data-event-index="${target}"]`);
+    const rowIndex = findPreviewRowIndex(rows, target);
+    const el = viewport.querySelector<HTMLElement>(`[data-event-index="${target}"]`)
+      ?? (rowIndex >= 0 ? viewport.querySelector<HTMLElement>(`[data-index="${rowIndex}"]`) : null);
     if (!el) {
       const rowIndex = findPreviewRowIndex(rows, target);
       if (rowIndex >= 0) virtualizer.scrollToIndex(rowIndex, { align: "start" });
       return;
     }
-    pendingJumpRef.current = null;
-    const viewportRect = viewport.getBoundingClientRect();
-    const elRect = el.getBoundingClientRect();
-    viewport.scrollTo({ top: viewport.scrollTop + (elRect.top - viewportRect.top) - 16 });
+    const generation = generationRef.current;
+    // Virtual rows above the target can acquire their real heights after the first
+    // scroll. Settle across frames before allowing the restored position to save.
+    const align = (remaining: number) => {
+      jumpSettleRafRef.current = 0;
+      if (generation !== generationRef.current || pendingJumpRef.current !== target || !el.isConnected) return;
+      const viewportRect = viewport.getBoundingClientRect();
+      const elRect = el.getBoundingClientRect();
+      viewport.scrollTo({ top: viewport.scrollTop + (elRect.top - viewportRect.top) - 16 });
+      if (remaining > 0) jumpSettleRafRef.current = requestAnimationFrame(() => align(remaining - 1));
+      else pendingJumpRef.current = null;
+    };
+    align(3);
     el.classList.remove("preview-jump-flash");
     // 强制 reflow 以便重复跳转同一条时也能重新触发动画
     void el.offsetWidth;
@@ -596,10 +650,46 @@ export function PreviewDialog({
   useEffect(() => {
     return () => {
       if (scrollSpyRafRef.current) cancelAnimationFrame(scrollSpyRafRef.current);
+      if (jumpSettleRafRef.current) cancelAnimationFrame(jumpSettleRafRef.current);
+      jumpSettleRafRef.current = 0;
     };
   }, []);
 
+  // Read from the current render at flush time; never retain transcript text in storage.
+  // Do not replace a good bookmark with an error, search result, or pending jump.
+  const captureReading = useCallback(() => {
+    if (!positionKey || !rolloutPath || loadingRef.current || readFailure || normalizedFilter
+        || initialJump || restoreRef.current || pendingJumpRef.current !== null) return;
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const bounds = viewport.getBoundingClientRect();
+    const visible = Array.from(viewport.querySelectorAll<HTMLElement>("[data-index]"))
+      .find((node) => { const rect = node.getBoundingClientRect(); return rect.bottom > bounds.top + 16 && rect.top < bounds.bottom; });
+    if (!visible) return;
+    const row = rows[Number(visible.dataset.index)];
+    if (!row) return;
+    const event = row.type === "event" ? row.event : row.events[0];
+    const ordinal = events.findIndex((item) => item.index === event.index);
+    if (ordinal < 0) return;
+    try {
+      saveReadingPosition(window.localStorage, { key: positionKey, eventIndex: event.index,
+        eventOffset: startOffsetRef.current + ordinal, signature: readingEventSignature(events[ordinal]),
+        newestFirst: newestFirstRef.current, onlyMessages: onlyMsg, savedAt: Date.now() });
+    } catch { /* Reading remains available when storage is disabled. */ }
+  }, [events, initialJump, normalizedFilter, onlyMsg, positionKey, readFailure, rolloutPath, rows]);
+  useEffect(() => { captureReadingRef.current = captureReading; }, [captureReading]);
+  useEffect(() => {
+    if (!open) return;
+    const flush = () => captureReadingRef.current();
+    const hide = () => { if (document.visibilityState === "hidden") flush(); };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", hide);
+    return () => { window.removeEventListener("pagehide", flush); document.removeEventListener("visibilitychange", hide); };
+  }, [open]);
+
   const onScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    if (saveTimerRef.current !== null) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => captureReadingRef.current(), 400);
     const el = e.currentTarget;
     if (!loadingAll && !normalizedFilter && pendingJumpRef.current === null && el.scrollHeight - el.scrollTop - el.clientHeight < 200) {
       void loadMore();
@@ -946,14 +1036,14 @@ export function PreviewDialog({
 
   return (
     <>
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(next) => { if (!next) captureReadingRef.current(); onOpenChange(next); }}>
       <DialogContent
         className="flex h-[90vh] max-w-[96vw] min-w-0 flex-col gap-0 overflow-hidden p-0 sm:max-w-[1200px]"
         onKeyDown={onPreviewKeyDown}
         onCloseAutoFocus={onCloseAutoFocus ? event => { event.preventDefault(); onCloseAutoFocus(); } : undefined}
       >
         <DialogHeader className="relative min-w-0 border-b border-border/60 px-6 pb-3.5 pt-4 after:pointer-events-none after:absolute after:inset-x-0 after:-bottom-px after:h-px after:bg-gradient-to-r after:from-transparent after:via-border/50 after:to-transparent">
-          {returnLabel && <Button size="sm" variant="outline" className="mb-3" onClick={() => onOpenChange(false)}>{returnLabel}</Button>}
+          {returnLabel && <Button size="sm" variant="outline" className="mb-3" onClick={() => { captureReadingRef.current(); onOpenChange(false); }}>{returnLabel}</Button>}
           <div className="flex items-start gap-3.5">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-gradient-to-br from-muted to-muted/40 shadow-sm">
               <Sparkles className="h-[18px] w-[18px] text-muted-foreground" />
@@ -1160,6 +1250,10 @@ export function PreviewDialog({
           </div>
         </DialogHeader>
 
+        {readingNotice && !readFailure && <div role="status" className="flex shrink-0 flex-wrap items-center gap-2 border-b px-6 py-2 text-xs text-muted-foreground">
+          <span>{readingNotice}</span>
+          <Button variant="ghost" size="sm" disabled={loading || loadingAll} onClick={() => { setReadingNotice(""); void navigateEdge(false); }}>从最早位置阅读</Button>
+        </div>}
         {readFailure && <div role="alert" className="shrink-0 space-y-2 border-b px-6 py-3 text-sm">
           <p className="font-medium text-destructive">{readFailure.kind === "unavailable" ? "会话文件已失效" : "正文读取失败"}</p>
           <p className="text-xs text-muted-foreground">{readFailure.kind === "unavailable" ? "文件可能已移动、删除或不再是可读取的会话文件。请检查来源；文件恢复后可重试。" : "可能存在权限、文件内容或连接问题，请查看错误详情后重试。"}{events.length > 0 ? " 下方仅保留此前已读取的部分内容，不代表完整会话。" : " 这不表示会话为空。"}</p>
