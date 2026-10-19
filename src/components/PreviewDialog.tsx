@@ -100,6 +100,8 @@ import { previewReadFailure, previewEmptyMessage, type PreviewReadFailure } from
 
 import { matchesReadingPosition, readingEventSignature, readingPositionKey, readPositions, saveReadingPosition, type ReadingPosition } from "@/lib/preview-reading-position";
 
+import { selectPreviewSearchHit, stepPreviewSearchHit, previewSearchScope } from "@/lib/preview-search-navigation";
+
 type Props = {
   readOnly?: boolean;
   returnLabel?: string;
@@ -172,6 +174,7 @@ export function PreviewDialog({
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
   const [filter, setFilter] = useState("");
+  const [searchHit, setSearchHit] = useState<{ query: string; index: number } | null>(null);
   const [onlyMsg, setOnlyMsg] = useState(true);
   const [processDefaultCollapsed, setProcessDefaultCollapsed] = useState(true);
   const [processExpansionOverrides, setProcessExpansionOverrides] = useState<
@@ -429,6 +432,7 @@ export function PreviewDialog({
   const resetAndReload = useCallback(() => {
     generationRef.current += 1;
     setReadingNotice("");
+    setSearchHit(null);
     startOffsetRef.current = 0;
     newestFirstRef.current = false;
     setNewestFirst(false);
@@ -542,6 +546,12 @@ export function PreviewDialog({
   }, [filtered, normalizedFilter, onlyMsg]);
 
   const rows = useMemo(() => newestFirst ? [...chronologicalRows].reverse() : chronologicalRows, [chronologicalRows, newestFirst]);
+  const searchHitIndices = useMemo(() => normalizedFilter
+    ? rows.flatMap(row => row.type === "event" ? [row.event.index] : row.events.map(event => event.index)) : [], [normalizedFilter, rows]);
+  const activeSearchHit = selectPreviewSearchHit(searchHitIndices,
+    searchHit?.query === normalizedFilter ? searchHit.index : null,
+    initialJump?.query.trim().toLowerCase() === normalizedFilter ? initialJump.eventIndex : null);
+  const searchUpdating = filter.trim().toLowerCase() !== normalizedFilter;
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => viewportRef.current,
@@ -610,6 +620,31 @@ export function PreviewDialog({
     pendingJumpRef.current = initialJump.eventIndex;
     void loadUpTo(initialJump.eventOffset);
   }, [initialJump, loadUpTo, open, rolloutPath]);
+
+  const scrollSearchRef = useRef(scrollPendingIntoView);
+  useEffect(() => { scrollSearchRef.current = scrollPendingIntoView; }, [scrollPendingIntoView]);
+  useEffect(() => {
+    if (!open || loading || loadingAll || searchUpdating || !normalizedFilter || activeSearchHit === null) return;
+    if (jumpSettleRafRef.current) cancelAnimationFrame(jumpSettleRafRef.current);
+    jumpSettleRafRef.current = 0;
+    pendingJumpRef.current = activeSearchHit;
+    setSearchHit({ query: normalizedFilter, index: activeSearchHit });
+    scrollSearchRef.current();
+  }, [activeSearchHit, normalizedFilter, open, loading, loadingAll, searchUpdating]);
+
+  const navigateSearchHit = (direction: 1 | -1) => {
+    if (loading || loadingAll || searchUpdating) return;
+    const index = stepPreviewSearchHit(searchHitIndices, activeSearchHit, direction);
+    if (index !== null) setSearchHit({ query: normalizedFilter, index });
+  };
+
+  const changeSearchQuery = (query: string) => {
+    if (jumpSettleRafRef.current) cancelAnimationFrame(jumpSettleRafRef.current);
+    jumpSettleRafRef.current = 0;
+    pendingJumpRef.current = null;
+    setSearchHit(null);
+    setFilter(query);
+  };
 
   /** 滚动跟随：视口上沿 1/3 处上方最近的一条用户提问视为当前时间线位置。 */
   const updateActiveFromScroll = useCallback(() => {
@@ -1111,9 +1146,28 @@ export function PreviewDialog({
             <Input
               placeholder="在事件中过滤…"
               value={filter}
-              onChange={(e) => setFilter(e.target.value)}
+              aria-label="搜索正文消息"
+              onChange={(e) => changeSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  navigateSearchHit(e.shiftKey ? -1 : 1);
+                }
+              }}
               className="h-8 w-64 border-border/70"
             />
+            {filter.trim() && <div className="flex flex-wrap items-center gap-1.5 text-xs" aria-label="正文命中导航">
+              <span role="status" aria-live="polite" className="tabular-nums">
+                {searchUpdating ? "更新命中…" : `${activeSearchHit === null ? 0 : searchHitIndices.indexOf(activeSearchHit) + 1} / ${searchHitIndices.length} 条命中消息`}
+              </span>
+              <Button variant="outline" size="sm" className="h-8 text-xs" aria-label="上一处命中" title="上一处命中（Shift+Enter），首尾循环"
+                disabled={loading || loadingAll || searchUpdating || searchHitIndices.length < 2} onClick={() => navigateSearchHit(-1)}>上一处</Button>
+              <Button variant="outline" size="sm" className="h-8 text-xs" aria-label="下一处命中" title="下一处命中（Enter），首尾循环"
+                disabled={loading || loadingAll || searchUpdating || searchHitIndices.length < 2} onClick={() => navigateSearchHit(1)}>下一处</Button>
+              <span className="text-muted-foreground">{previewSearchScope(startOffsetRef.current, offsetRef.current, totalEvents, newestFirst, done, !!readFailure)} · 每条消息计一次</span>
+              <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => changeSearchQuery("")}>清除搜索</Button>
+            </div>}
             <label
               htmlFor="only-msg"
               className="group flex h-8 cursor-pointer items-center gap-2 rounded-md border border-border/70 bg-muted/30 px-2.5 transition-colors hover:bg-muted/50"
@@ -1291,7 +1345,8 @@ export function PreviewDialog({
               {virtualRows.map((virtualRow) => {
                 const row = rows[virtualRow.index];
                 return <div key={virtualRow.key} ref={virtualizer.measureElement} data-index={virtualRow.index}
-                  className="absolute left-0 top-0 w-full min-w-0"
+                  aria-current={normalizedFilter && row.type === "event" && row.event.index === activeSearchHit ? "true" : undefined}
+                  className={cn("absolute left-0 top-0 w-full min-w-0", normalizedFilter && row.type === "event" && row.event.index === activeSearchHit && "rounded-lg ring-2 ring-primary/60")}
                   style={{ transform: `translateY(${virtualRow.start - virtualizer.options.scrollMargin}px)` }}>
                 {row.type === "process" ? (
                   <ProcessTurnGroup
