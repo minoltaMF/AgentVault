@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { SearchHighlightContext, SearchMarkdown, SearchText, SearchJson } from "@/components/SearchHighlight";
 import "react-json-view-lite/dist/index.css";
+import { SearchDisclosureContext, useSearchDisclosure, type DisclosureMemory } from "@/components/SearchDisclosure";
 
 import {
   Dialog,
@@ -162,6 +163,7 @@ export function PreviewDialog({
   readOnly = readOnly || ["qoder", "workbuddy", "grok", "pi", "dsh", "hermes", "zcode", "qwen", "cline", "copilot", "antigravity"].includes(session?.provider ?? "");
   const rolloutPath = customRolloutPath ?? session?.rollout_path ?? "";
   const provider = session?.provider ?? "codex";
+  const manualDisclosures = useMemo(() => new Map<string, boolean>(), [open, provider, rolloutPath]);
   const positionKey = customRolloutPath ? null : readingPositionKey(provider, rolloutPath);
   const restoreRef = useRef<ReadingPosition | null>(null);
   const [readingNotice, setReadingNotice] = useState("");
@@ -487,6 +489,7 @@ export function PreviewDialog({
 
   const deferredFilter = useDeferredValue(filter);
   const normalizedFilter = deferredFilter.trim().toLowerCase();
+  const disclosureMemory = useMemo<DisclosureMemory>(() => ({ manual: manualDisclosures, search: new Map() }), [manualDisclosures, normalizedFilter]);
   const searchableEvents = useMemo(
     () => events.map((event) => ({ event, searchText: previewEventSearchText(event) })),
     [events],
@@ -599,7 +602,22 @@ export function PreviewDialog({
       jumpSettleRafRef.current = 0;
       if (generation !== generationRef.current || pendingJumpRef.current !== target || !el.isConnected) return;
       const viewportRect = viewport.getBoundingClientRect();
-      const keyword = normalizedFilter ? el.querySelector<HTMLElement>("mark.preview-search-highlight") : null;
+      const keyword = normalizedFilter ? (el.querySelector<HTMLElement>("[data-search-disclosure] mark.preview-search-highlight") ?? el.querySelector<HTMLElement>("mark.preview-search-highlight")) : null;
+      // Embedded transcripts have their own scroll viewport. Reveal the word there
+      // before aligning the outer virtual list, otherwise it can remain clipped.
+      if (keyword) {
+        for (let parent = keyword.parentElement; parent && parent !== viewport; parent = parent.parentElement) {
+          const style = window.getComputedStyle(parent);
+          const rect = parent.getBoundingClientRect();
+          const word = keyword.getBoundingClientRect();
+          if (/auto|scroll/.test(style.overflowY) && parent.scrollHeight > parent.clientHeight) {
+            parent.scrollTop += word.top - rect.top - 8;
+          }
+          if (/auto|scroll/.test(style.overflowX) && parent.scrollWidth > parent.clientWidth) {
+            parent.scrollLeft += word.left - rect.left - 8;
+          }
+        }
+      }
       const elRect = (keyword ?? el).getBoundingClientRect();
       viewport.scrollTo({ top: viewport.scrollTop + (elRect.top - viewportRect.top) - 16 });
       if (remaining > 0) jumpSettleRafRef.current = requestAnimationFrame(() => align(remaining - 1));
@@ -1399,6 +1417,7 @@ export function PreviewDialog({
                         <EventBubble
                           e={event}
                           query={normalizedFilter}
+                          disclosureMemory={disclosureMemory}
                           actions={{
                             fork: {
                               enabled: canForkSession && isStableForkNode(event),
@@ -1449,6 +1468,7 @@ export function PreviewDialog({
                     <EventBubble
                       e={row.event}
                       query={normalizedFilter}
+                      disclosureMemory={disclosureMemory}
                       actions={{
                         fork: {
                           enabled: canForkSession && isStableForkNode(row.event),
@@ -1591,8 +1611,9 @@ function ProcessTurnGroup({
   );
 }
 
-function EventBubble({ e, actions, query }: { e: PreviewEvent; actions: NodeActionSet; query: string }) {
-  return <SearchHighlightContext.Provider value={query}><EventBubbleContent e={e} actions={actions} /></SearchHighlightContext.Provider>;
+function EventBubble({ e, actions, query, disclosureMemory }: { e: PreviewEvent; actions: NodeActionSet; query: string; disclosureMemory: DisclosureMemory }) {
+  const disclosureContext = useMemo(() => ({ ...disclosureMemory, eventIndex: e.index }), [disclosureMemory, e.index]);
+  return <SearchHighlightContext.Provider value={query}><SearchDisclosureContext.Provider value={disclosureContext}><EventBubbleContent e={e} actions={actions} /></SearchDisclosureContext.Provider></SearchHighlightContext.Provider>;
 }
 
 function EventBubbleContent({ e, actions }: { e: PreviewEvent; actions: NodeActionSet }) {
@@ -1693,7 +1714,7 @@ function SubagentEventBubble({
   ts: string;
   actions: NodeActionSet;
 }) {
-  const [open, setOpen] = useState(false);
+  const { open, toggle } = useSearchDisclosure("subagent", e.raw as object);
   const eventTime = subagentEventTime(e, ts);
   return (
     <div className="group flex gap-3">
@@ -1704,7 +1725,7 @@ function SubagentEventBubble({
         <div className="flex w-full items-start gap-2 border-l-2 border-cyan-500/30 bg-background/50 px-3 py-2 text-xs">
           <button
             type="button"
-            onClick={() => setOpen((value) => !value)}
+            onClick={toggle}
             className="flex min-w-0 flex-1 items-start gap-2 text-left"
             aria-expanded={open}
           >
@@ -1727,7 +1748,7 @@ function SubagentEventBubble({
           <NodeActionButtons event={e} actions={actions} />
         </div>
         {open && (
-          <div className="mt-1.5 overflow-auto border-l-2 border-border/70 bg-card p-3 text-xs">
+          <div data-search-disclosure className="mt-1.5 overflow-auto border-l-2 border-border/70 bg-card p-3 text-xs">
             <SearchJson data={e.raw as object} />
           </div>
         )}
@@ -1745,7 +1766,7 @@ function EventMessageBubble({
   ts: string;
   actions: NodeActionSet;
 }) {
-  const [open, setOpen] = useState(false);
+  const { open, toggle } = useSearchDisclosure("event", e.raw as object);
   return (
     <div className="group flex gap-3">
       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sky-500/15 text-sky-600 dark:text-sky-400">
@@ -1754,7 +1775,8 @@ function EventMessageBubble({
       <div className="min-w-0 flex-1">
         <div className="flex w-full items-center gap-2 rounded-md border bg-card px-3 py-2 text-left text-xs shadow-sm hover:bg-accent">
           <button
-            onClick={() => setOpen((x) => !x)}
+            onClick={toggle}
+            aria-expanded={open}
             className="flex min-w-0 flex-1 items-center gap-2 text-left"
           >
             <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 transition-transform", open && "rotate-180")} />
@@ -1768,7 +1790,7 @@ function EventMessageBubble({
           <NodeActionButtons event={e} actions={actions} />
         </div>
         {open && (
-          <div className="mt-1.5 overflow-auto rounded-md border bg-card p-3 text-xs">
+          <div data-search-disclosure className="mt-1.5 overflow-auto rounded-md border bg-card p-3 text-xs">
             <SearchJson data={e.raw as object} />
           </div>
         )}
@@ -1823,7 +1845,7 @@ function EmbeddedTranscriptBubble({
   prompt: EmbeddedTranscriptPrompt;
   actions: NodeActionSet;
 }) {
-  const [open, setOpen] = useState(false);
+  const { open, toggle } = useSearchDisclosure("transcript", prompt.transcript);
   return (
     <div className="group flex justify-end gap-3">
       <div className="flex min-w-0 max-w-[85%] flex-col items-end overflow-hidden">
@@ -1848,7 +1870,8 @@ function EmbeddedTranscriptBubble({
 
           <button
             type="button"
-            onClick={() => setOpen((x) => !x)}
+            onClick={toggle}
+            aria-expanded={open}
             className="inline-flex h-7 max-w-full items-center gap-1.5 rounded-md border bg-card px-2.5 text-left text-xs text-muted-foreground shadow-sm hover:bg-accent"
           >
             <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 transition-transform", open && "rotate-180")} />
@@ -1856,7 +1879,7 @@ function EmbeddedTranscriptBubble({
           </button>
 
           {open && (
-            <pre className="max-h-80 max-w-full overflow-auto rounded-md border bg-card p-3 text-left font-mono text-xs leading-relaxed text-card-foreground">
+            <pre data-search-disclosure className="max-h-80 max-w-full overflow-auto rounded-md border bg-card p-3 text-left font-mono text-xs leading-relaxed text-card-foreground">
               <SearchText>{prompt.transcript}</SearchText>
             </pre>
           )}
@@ -1958,7 +1981,7 @@ function AssistantBubble({
 
 function ReasoningBubble({ e, ts, actions }: { e: PreviewEvent; ts: string; actions: NodeActionSet }) {
   const text = extractText(e);
-  const [open, setOpen] = useState(false);
+  const { open, toggle } = useSearchDisclosure("reasoning", text);
   return (
     <div className="group flex gap-3">
       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
@@ -1967,7 +1990,8 @@ function ReasoningBubble({ e, ts, actions }: { e: PreviewEvent; ts: string; acti
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <button
-            onClick={() => setOpen((x) => !x)}
+            onClick={toggle}
+            aria-expanded={open}
             className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground"
           >
             <ChevronDown className={cn("h-3 w-3 transition-transform", open && "rotate-180")} />
@@ -1977,7 +2001,7 @@ function ReasoningBubble({ e, ts, actions }: { e: PreviewEvent; ts: string; acti
           <NodeActionButtons event={e} actions={actions} />
         </div>
         {open && text && (
-          <pre className="mt-1.5 whitespace-pre-wrap break-words rounded-md border border-dashed bg-muted/40 px-3 py-2 font-mono text-xs text-muted-foreground">
+          <pre data-search-disclosure className="mt-1.5 whitespace-pre-wrap break-words rounded-md border border-dashed bg-muted/40 px-3 py-2 font-mono text-xs text-muted-foreground">
             <SearchText>{text}</SearchText>
           </pre>
         )}
@@ -1987,7 +2011,7 @@ function ReasoningBubble({ e, ts, actions }: { e: PreviewEvent; ts: string; acti
 }
 
 function ToolBubble({ e, ts, actions }: { e: PreviewEvent; ts: string; actions: NodeActionSet }) {
-  const [open, setOpen] = useState(false);
+  const { open, toggle } = useSearchDisclosure("tool", e.raw as object);
   const isCall = e.role === "tool_call";
   return (
     <div className="group flex gap-3">
@@ -2002,7 +2026,8 @@ function ToolBubble({ e, ts, actions }: { e: PreviewEvent; ts: string; actions: 
       <div className="min-w-0 flex-1">
         <div className="flex w-full items-center gap-2 rounded-md border bg-card px-3 py-2 text-left text-xs shadow-sm hover:bg-accent">
           <button
-            onClick={() => setOpen((x) => !x)}
+            onClick={toggle}
+            aria-expanded={open}
             className="flex min-w-0 flex-1 items-center gap-2 text-left"
           >
             <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 transition-transform", open && "rotate-180")} />
@@ -2016,7 +2041,7 @@ function ToolBubble({ e, ts, actions }: { e: PreviewEvent; ts: string; actions: 
           <NodeActionButtons event={e} actions={actions} />
         </div>
         {open && (
-          <div className="mt-1.5 overflow-auto rounded-md border bg-card p-3 text-xs">
+          <div data-search-disclosure className="mt-1.5 overflow-auto rounded-md border bg-card p-3 text-xs">
             <SearchJson data={e.raw as object} />
           </div>
         )}
@@ -2042,7 +2067,7 @@ function MetaLine({ e, ts }: { e: PreviewEvent; ts: string }) {
 }
 
 function DefaultBubble({ e, ts }: { e: PreviewEvent; ts: string }) {
-  const [open, setOpen] = useState(false);
+  const { open, toggle } = useSearchDisclosure("raw", e.raw as object);
   return (
     <div className="flex gap-3">
       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-500/15 text-slate-600 dark:text-slate-400">
@@ -2050,7 +2075,8 @@ function DefaultBubble({ e, ts }: { e: PreviewEvent; ts: string }) {
       </div>
       <div className="min-w-0 flex-1">
         <button
-          onClick={() => setOpen((x) => !x)}
+          onClick={toggle}
+          aria-expanded={open}
           className="flex w-full items-center gap-2 rounded-md border bg-card px-3 py-2 text-left text-xs shadow-sm hover:bg-accent"
         >
           <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 transition-transform", open && "rotate-180")} />
@@ -2061,7 +2087,7 @@ function DefaultBubble({ e, ts }: { e: PreviewEvent; ts: string }) {
           {ts && <span className="ml-auto shrink-0 font-mono text-muted-foreground/70">{ts}</span>}
         </button>
         {open && (
-          <div className="mt-1.5 overflow-auto rounded-md border bg-card p-3 text-xs">
+          <div data-search-disclosure className="mt-1.5 overflow-auto rounded-md border bg-card p-3 text-xs">
             <SearchJson data={e.raw as object} />
           </div>
         )}
