@@ -19,9 +19,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import { JsonView, defaultStyles } from "react-json-view-lite";
+import { SearchHighlightContext, SearchMarkdown, SearchText, SearchJson } from "@/components/SearchHighlight";
 import "react-json-view-lite/dist/index.css";
 
 import {
@@ -601,7 +599,8 @@ export function PreviewDialog({
       jumpSettleRafRef.current = 0;
       if (generation !== generationRef.current || pendingJumpRef.current !== target || !el.isConnected) return;
       const viewportRect = viewport.getBoundingClientRect();
-      const elRect = el.getBoundingClientRect();
+      const keyword = normalizedFilter ? el.querySelector<HTMLElement>("mark.preview-search-highlight") : null;
+      const elRect = (keyword ?? el).getBoundingClientRect();
       viewport.scrollTo({ top: viewport.scrollTop + (elRect.top - viewportRect.top) - 16 });
       if (remaining > 0) jumpSettleRafRef.current = requestAnimationFrame(() => align(remaining - 1));
       else pendingJumpRef.current = null;
@@ -612,7 +611,7 @@ export function PreviewDialog({
     void el.offsetWidth;
     el.classList.add("preview-jump-flash");
     window.setTimeout(() => el.classList.remove("preview-jump-flash"), 1700);
-  }, [rows, virtualizer]);
+  }, [rows, virtualizer, normalizedFilter]);
 
   useEffect(() => {
     if (!open || !rolloutPath || !initialJump) return;
@@ -1399,6 +1398,7 @@ export function PreviewDialog({
                       >
                         <EventBubble
                           e={event}
+                          query={normalizedFilter}
                           actions={{
                             fork: {
                               enabled: canForkSession && isStableForkNode(event),
@@ -1448,6 +1448,7 @@ export function PreviewDialog({
                   >
                     <EventBubble
                       e={row.event}
+                      query={normalizedFilter}
                       actions={{
                         fork: {
                           enabled: canForkSession && isStableForkNode(row.event),
@@ -1590,7 +1591,11 @@ function ProcessTurnGroup({
   );
 }
 
-function EventBubble({ e, actions }: { e: PreviewEvent; actions: NodeActionSet }) {
+function EventBubble({ e, actions, query }: { e: PreviewEvent; actions: NodeActionSet; query: string }) {
+  return <SearchHighlightContext.Provider value={query}><EventBubbleContent e={e} actions={actions} /></SearchHighlightContext.Provider>;
+}
+
+function EventBubbleContent({ e, actions }: { e: PreviewEvent; actions: NodeActionSet }) {
   const ts = formatTimeString(e.timestamp);
 
   if (e.role === "subagent") {
@@ -1712,7 +1717,7 @@ function SubagentEventBubble({
             <span className="shrink-0 font-medium">{subagentEventLabel(e)}</span>
             {e.text_summary && (
               <span className="min-w-0 flex-1 break-words text-muted-foreground">
-                {e.text_summary}
+                <SearchText>{e.text_summary}</SearchText>
               </span>
             )}
             {eventTime && (
@@ -1723,11 +1728,7 @@ function SubagentEventBubble({
         </div>
         {open && (
           <div className="mt-1.5 overflow-auto border-l-2 border-border/70 bg-card p-3 text-xs">
-            <JsonView
-              data={e.raw as object}
-              style={defaultStyles}
-              shouldExpandNode={(level) => level < 2}
-            />
+            <SearchJson data={e.raw as object} />
           </div>
         )}
       </div>
@@ -1760,7 +1761,7 @@ function EventMessageBubble({
             <span className="shrink-0 font-medium">{eventMessageLabel(e)}</span>
             <EventSourceBadge e={e} />
             <span className="min-w-0 flex-1 truncate text-muted-foreground">
-              {e.text_summary || ""}
+              <SearchText>{e.text_summary || ""}</SearchText>
             </span>
             {ts && <span className="shrink-0 font-mono text-muted-foreground/70">{ts}</span>}
           </button>
@@ -1768,11 +1769,7 @@ function EventMessageBubble({
         </div>
         {open && (
           <div className="mt-1.5 overflow-auto rounded-md border bg-card p-3 text-xs">
-            <JsonView
-              data={e.raw as object}
-              style={defaultStyles}
-              shouldExpandNode={(level) => level < 2}
-            />
+            <SearchJson data={e.raw as object} />
           </div>
         )}
       </div>
@@ -1804,7 +1801,7 @@ function UserBubble({ e, ts, actions }: { e: PreviewEvent; ts: string; actions: 
           {ts && <span className="font-mono">· {ts}</span>}
         </div>
         <div className="chat-md max-w-full rounded-2xl rounded-tr-sm bg-primary px-4 py-2.5 text-primary-foreground">
-          {message.markdown ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.markdown}</ReactMarkdown> : message.images.length === 0 ? (
+          {message.markdown ? <SearchMarkdown>{message.markdown}</SearchMarkdown> : message.images.length === 0 ? (
             <span className="italic opacity-70">(空消息)</span>
           ) : null}
           <LocalImageAttachments images={message.images} />
@@ -1845,7 +1842,7 @@ function EmbeddedTranscriptBubble({
 
           {prompt.request && (
             <div className="chat-md max-w-full rounded-2xl rounded-tr-sm bg-primary px-4 py-2.5 text-primary-foreground">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{prompt.request}</ReactMarkdown>
+              <SearchMarkdown>{prompt.request}</SearchMarkdown>
             </div>
           )}
 
@@ -1860,7 +1857,7 @@ function EmbeddedTranscriptBubble({
 
           {open && (
             <pre className="max-h-80 max-w-full overflow-auto rounded-md border bg-card p-3 text-left font-mono text-xs leading-relaxed text-card-foreground">
-              {prompt.transcript}
+              <SearchText>{prompt.transcript}</SearchText>
             </pre>
           )}
         </div>
@@ -1907,18 +1904,18 @@ function DiffCommentBubble({
               >
                 {comment.context && (
                   <p className="mb-2 line-clamp-3 text-xs leading-relaxed text-muted-foreground">
-                    {comment.context}
+                    <SearchText>{comment.context}</SearchText>
                   </p>
                 )}
                 <div className="chat-md font-medium">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{comment.body}</ReactMarkdown>
+                  <SearchMarkdown>{comment.body}</SearchMarkdown>
                 </div>
               </div>
             ))}
 
             {prompt.request && (
               <div className="chat-md max-w-full rounded-2xl rounded-tr-sm bg-primary px-4 py-2.5 text-primary-foreground">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{prompt.request}</ReactMarkdown>
+                <SearchMarkdown>{prompt.request}</SearchMarkdown>
               </div>
             )}
           </div>
@@ -1950,7 +1947,7 @@ function AssistantBubble({
           <NodeActionButtons event={e} actions={actions} />
         </div>
         <div className="chat-md max-w-full rounded-2xl rounded-tl-sm border bg-card px-4 py-3 text-card-foreground shadow-sm">
-          {text ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown> : (
+          {text ? <SearchMarkdown>{text}</SearchMarkdown> : (
             <span className="italic text-muted-foreground">(空消息)</span>
           )}
         </div>
@@ -1981,7 +1978,7 @@ function ReasoningBubble({ e, ts, actions }: { e: PreviewEvent; ts: string; acti
         </div>
         {open && text && (
           <pre className="mt-1.5 whitespace-pre-wrap break-words rounded-md border border-dashed bg-muted/40 px-3 py-2 font-mono text-xs text-muted-foreground">
-            {text}
+            <SearchText>{text}</SearchText>
           </pre>
         )}
       </div>
@@ -2012,7 +2009,7 @@ function ToolBubble({ e, ts, actions }: { e: PreviewEvent; ts: string; actions: 
             <span className="font-medium">{isCall ? "工具调用" : "工具返回"}</span>
             <span className="truncate font-mono text-muted-foreground">{e.kind}</span>
             <span className="ml-auto min-w-0 flex-1 truncate text-muted-foreground">
-              {e.text_summary || ""}
+              <SearchText>{e.text_summary || ""}</SearchText>
             </span>
             {ts && <span className="shrink-0 font-mono text-muted-foreground/70">{ts}</span>}
           </button>
@@ -2020,11 +2017,7 @@ function ToolBubble({ e, ts, actions }: { e: PreviewEvent; ts: string; actions: 
         </div>
         {open && (
           <div className="mt-1.5 overflow-auto rounded-md border bg-card p-3 text-xs">
-            <JsonView
-              data={e.raw as object}
-              style={defaultStyles}
-              shouldExpandNode={(level) => level < 2}
-            />
+            <SearchJson data={e.raw as object} />
           </div>
         )}
       </div>
@@ -2040,7 +2033,7 @@ function MetaLine({ e, ts }: { e: PreviewEvent; ts: string }) {
         <Badge variant="outline" className="h-5 font-normal">
           {e.kind}
         </Badge>
-        {e.text_summary && <span className="truncate">{e.text_summary}</span>}
+        {e.text_summary && <span className="truncate"><SearchText>{e.text_summary}</SearchText></span>}
         {ts && <span className="font-mono">{ts}</span>}
       </div>
       <div className="h-px flex-1 bg-border" />
@@ -2069,11 +2062,7 @@ function DefaultBubble({ e, ts }: { e: PreviewEvent; ts: string }) {
         </button>
         {open && (
           <div className="mt-1.5 overflow-auto rounded-md border bg-card p-3 text-xs">
-            <JsonView
-              data={e.raw as object}
-              style={defaultStyles}
-              shouldExpandNode={(level) => level < 2}
-            />
+            <SearchJson data={e.raw as object} />
           </div>
         )}
       </div>

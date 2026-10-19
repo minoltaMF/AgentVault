@@ -518,3 +518,14 @@ mark {
   animation: preview-jump-flash 1.6s ease-out both;
   border-radius: 0.5rem;
 }
+
+/* Search decoration changes neither text nor line metrics. */
+mark.preview-search-highlight {
+  background-color: #fde047;
+  color: #422006;
+  border-radius: 2px;
+}
+.dark mark.preview-search-highlight {
+  background-color: #facc15;
+  color: #422006;
+}
