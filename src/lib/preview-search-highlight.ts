@@ -50,13 +50,15 @@ const excluded = new Set(["script", "style", "textarea", "mark"]);
 const boundaries = new Set(["br", "img", "input", "hr"]);
 
 /** Rehype attacher: highlight rendered text, retaining Markdown structure and attributes. */
-export function rehypeSearchHighlight(options: { query: string }) {
+export function rehypeSearchHighlight(options: { query: string; scope?: string }) {
   return (tree: HighlightNode): void => {
     if (!options.query.trim()) return;
+    let occurrence = 0;
     let run: {node: HighlightNode; parent: HighlightNode; start: number; end: number}[] = [];
     let value = "";
     const flush = () => {
       const ranges = findPreviewSearchRanges(value, options.query);
+      const occurrenceIds = ranges.map(() => `${options.scope ?? "search"}:${occurrence++}`);
       let rangeIndex = 0;
       for (const entry of run) {
         const source = entry.node.value ?? "";
@@ -67,7 +69,7 @@ export function rehypeSearchHighlight(options: { query: string }) {
           const start = Math.max(0, ranges[i].start - entry.start);
           const end = Math.min(source.length, ranges[i].end - entry.start);
           if (start > cursor) replacements.push({type: "text", value: source.slice(cursor, start)});
-          replacements.push({type: "element", tagName: "mark", properties: {className: ["preview-search-highlight"]}, children: [{type: "text", value: source.slice(start, end)}]});
+          replacements.push({type: "element", tagName: "mark", properties: {className: ["preview-search-highlight"], "data-search-occurrence": occurrenceIds[i]}, children: [{type: "text", value: source.slice(start, end)}]});
           cursor = end;
         }
         if (!replacements.length) continue;

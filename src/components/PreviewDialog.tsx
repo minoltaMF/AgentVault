@@ -21,6 +21,8 @@ import {
 } from "lucide-react";
 import { SearchHighlightContext, SearchMarkdown, SearchText, SearchJson } from "@/components/SearchHighlight";
 import "react-json-view-lite/dist/index.css";
+import { usePreviewOccurrences } from "@/components/usePreviewOccurrences";
+import { collectPreviewOccurrences } from "@/lib/preview-search-occurrences";
 import { SearchDisclosureContext, useSearchDisclosure, type DisclosureMemory } from "@/components/SearchDisclosure";
 
 import {
@@ -553,6 +555,7 @@ export function PreviewDialog({
     searchHit?.query === normalizedFilter ? searchHit.index : null,
     initialJump?.query.trim().toLowerCase() === normalizedFilter ? initialJump.eventIndex : null);
   const searchUpdating = filter.trim().toLowerCase() !== normalizedFilter;
+  const occurrences = usePreviewOccurrences(viewportRef, activeSearchHit, normalizedFilter, open);
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => viewportRef.current,
@@ -602,7 +605,7 @@ export function PreviewDialog({
       jumpSettleRafRef.current = 0;
       if (generation !== generationRef.current || pendingJumpRef.current !== target || !el.isConnected) return;
       const viewportRect = viewport.getBoundingClientRect();
-      const keyword = normalizedFilter ? (el.querySelector<HTMLElement>("[data-search-disclosure] mark.preview-search-highlight") ?? el.querySelector<HTMLElement>("mark.preview-search-highlight")) : null;
+      const keyword = normalizedFilter ? collectPreviewOccurrences(el)[occurrences.index]?.[0] ?? null : null;
       // Embedded transcripts have their own scroll viewport. Reveal the word there
       // before aligning the outer virtual list, otherwise it can remain clipped.
       if (keyword) {
@@ -629,7 +632,7 @@ export function PreviewDialog({
     void el.offsetWidth;
     el.classList.add("preview-jump-flash");
     window.setTimeout(() => el.classList.remove("preview-jump-flash"), 1700);
-  }, [rows, virtualizer, normalizedFilter]);
+  }, [rows, virtualizer, normalizedFilter, occurrences.index]);
 
   useEffect(() => {
     if (!open || !rolloutPath || !initialJump) return;
@@ -647,7 +650,7 @@ export function PreviewDialog({
     pendingJumpRef.current = activeSearchHit;
     setSearchHit({ query: normalizedFilter, index: activeSearchHit });
     scrollSearchRef.current();
-  }, [activeSearchHit, normalizedFilter, open, loading, loadingAll, searchUpdating]);
+  }, [activeSearchHit, normalizedFilter, occurrences.index, open, loading, loadingAll, searchUpdating]);
 
   const navigateSearchHit = (direction: 1 | -1) => {
     if (loading || loadingAll || searchUpdating) return;
@@ -1179,9 +1182,17 @@ export function PreviewDialog({
                 {searchUpdating ? "更新命中…" : `${activeSearchHit === null ? 0 : searchHitIndices.indexOf(activeSearchHit) + 1} / ${searchHitIndices.length} 条命中消息`}
               </span>
               <Button variant="outline" size="sm" className="h-8 text-xs" aria-label="上一处命中" title="上一处命中（Shift+Enter），首尾循环"
-                disabled={loading || loadingAll || searchUpdating || searchHitIndices.length < 2} onClick={() => navigateSearchHit(-1)}>上一处</Button>
+                disabled={loading || loadingAll || searchUpdating || searchHitIndices.length < 2} onClick={() => navigateSearchHit(-1)}>上条</Button>
               <Button variant="outline" size="sm" className="h-8 text-xs" aria-label="下一处命中" title="下一处命中（Enter），首尾循环"
-                disabled={loading || loadingAll || searchUpdating || searchHitIndices.length < 2} onClick={() => navigateSearchHit(1)}>下一处</Button>
+                disabled={loading || loadingAll || searchUpdating || searchHitIndices.length < 2} onClick={() => navigateSearchHit(1)}>下条</Button>
+              <span className="border-l pl-2 tabular-nums" role="status" aria-live="polite" aria-label="本条关键词命中">
+                {searchUpdating ? "更新定位…" : `本条 ${occurrences.total ? occurrences.index + 1 : 0} / ${occurrences.total} 处`}
+              </span>
+              <Button variant="outline" size="sm" className="h-8 text-xs" aria-label="本条上一处" title="当前消息内上一处关键词，首尾循环"
+                disabled={loading || loadingAll || searchUpdating || occurrences.total < 2} onClick={() => occurrences.step(-1)}>上一处</Button>
+              <Button variant="outline" size="sm" className="h-8 text-xs" aria-label="本条下一处" title="当前消息内下一处关键词，首尾循环"
+                disabled={loading || loadingAll || searchUpdating || occurrences.total < 2} onClick={() => occurrences.step(1)}>下一处</Button>
+              <span className="text-muted-foreground" title="本条计数仅包含已展开正文，折叠区域展开后更新；跨格式的同一匹配只计一次">本条按已展开正文定位</span>
               <span className="text-muted-foreground">{previewSearchScope(startOffsetRef.current, offsetRef.current, totalEvents, newestFirst, done, !!readFailure)} · 每条消息计一次</span>
               <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => changeSearchQuery("")}>清除搜索</Button>
             </div>}

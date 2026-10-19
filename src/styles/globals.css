@@ -529,3 +529,10 @@ mark.preview-search-highlight {
   background-color: #facc15;
   color: #422006;
 }
+
+mark.preview-search-highlight.preview-search-current {
+  background-color: #fb923c;
+  color: #431407;
+  outline: 2px solid #9a3412;
+  outline-offset: 1px;
+}

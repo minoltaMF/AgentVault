@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, type ComponentProps } from "react";
+import { createContext, useContext, useId, useMemo, type ComponentProps } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { JsonView, defaultStyles } from "react-json-view-lite";
@@ -9,18 +9,20 @@ const remarkPlugins = [remarkGfm];
 
 export function SearchMarkdown({ children }: { children: string }) {
   const query = useContext(SearchHighlightContext);
-  const plugins = useMemo<ComponentProps<typeof ReactMarkdown>["rehypePlugins"]>(() => query ? [[rehypeSearchHighlight, { query }]] : [], [query]);
+  const scope = useId();
+  const plugins = useMemo<ComponentProps<typeof ReactMarkdown>["rehypePlugins"]>(() => query ? [[rehypeSearchHighlight, { query, scope }]] : [], [query, scope]);
   return <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={plugins}>{children}</ReactMarkdown>;
 }
 
 export function SearchText({ children }: { children: string }) {
   const query = useContext(SearchHighlightContext);
+  const scope = useId();
   const ranges = useMemo(() => findPreviewSearchRanges(children, query), [children, query]);
   let end = 0;
   return <>{ranges.map(range => {
     const before = children.slice(end, range.start);
     end = range.end;
-    return <span key={range.start}>{before}<mark className="preview-search-highlight">{children.slice(range.start, range.end)}</mark></span>;
+    return <span key={range.start}>{before}<mark className="preview-search-highlight" data-search-occurrence={`${scope}:${range.start}`}>{children.slice(range.start, range.end)}</mark></span>;
   })}{children.slice(end)}</>;
 }
 

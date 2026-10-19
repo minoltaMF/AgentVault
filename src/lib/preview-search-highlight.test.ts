@@ -32,6 +32,23 @@ test("rehype never matches across blocks, breaks or non-visible content", () => 
   rehypeSearchHighlight({query:"foobar"})(tree);
   assert.equal(marks(tree).length,0);
 });
+test("occurrence identifiers group inline fragments and remain distinct across paragraphs", () => {
+  const fixture = () => ({type: "root", children: [
+    element("p", [text("he"), element("strong", [text("ll")]), text("o hello")]),
+    element("p", [text("hello")]),
+  ]});
+  const ids = (tree: any) => marks(tree).map(mark => mark.properties["data-search-occurrence"]);
+  const tree = fixture();
+  const transform = rehypeSearchHighlight({query: "hello", scope: "message-a"});
+  transform(tree);
+  assert.deepEqual(ids(tree), ["message-a:0", "message-a:0", "message-a:0", "message-a:1", "message-a:2"]);
+  const rerendered = fixture();
+  transform(rerendered);
+  assert.deepEqual(ids(rerendered), ids(tree));
+  const other = fixture();
+  rehypeSearchHighlight({query: "hello", scope: "message-b"})(other);
+  assert.equal(ids(other).some(id => ids(tree).includes(id)), false);
+});
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ReactMarkdown from "react-markdown";
@@ -42,9 +59,9 @@ test("ReactMarkdown mounts the rehype attacher for formatted text, code and esca
     children: "He**ll**o [hello](https://example.test/hello) `HELLO`\n\n```txt\nhello <script>\n```",
   }));
   assert.equal((html.match(/class="preview-search-highlight"/g) ?? []).length, 6);
-  assert.match(html, /<strong><mark class="preview-search-highlight">ll<\/mark><\/strong>/);
+  assert.match(html, /<strong><mark class="preview-search-highlight" data-search-occurrence="search:0">ll<\/mark><\/strong>/);
   assert.match(html, /href="https:\/\/example.test\/hello"/);
-  assert.match(html, /<code><mark class="preview-search-highlight">HELLO<\/mark><\/code>/);
+  assert.match(html, /<code><mark class="preview-search-highlight" data-search-occurrence="search:2">HELLO<\/mark><\/code>/);
   assert.match(html, /&lt;script&gt;/);
   assert.doesNotMatch(html, /<script>/);
 });
@@ -56,7 +73,22 @@ test("long repeated messages do not overflow function argument limits", () => {
   assert.equal(contents(tree), "a ".repeat(70000));
 });
 
-import { SearchHighlightContext, SearchText, SearchJson } from "../components/SearchHighlight";
+import { SearchHighlightContext, SearchText, SearchJson, SearchMarkdown } from "../components/SearchHighlight";
+
+test("separate text and Markdown components assign independent occurrence scopes", () => {
+  const html = renderToStaticMarkup(createElement(SearchHighlightContext.Provider, {value: "hello"},
+    createElement(SearchText, {children: "hello hello"}),
+    createElement(SearchText, {children: "hello"}),
+    createElement(SearchMarkdown, {children: "he**ll**o hello"})));
+  const ids = [...html.matchAll(/data-search-occurrence="([^"]+)"/g)].map(match => match[1]);
+  assert.equal(ids.length, 7);
+  assert.equal(new Set(ids).size, 5);
+  assert.equal(ids[3], ids[4]);
+  assert.equal(ids[4], ids[5]);
+  assert.notEqual(ids[5], ids[6]);
+  assert.ok(ids[0].endsWith(":0"));
+  assert.ok(ids[1].endsWith(":6"));
+});
 
 test("plain text and expanded JSON escape content and clear decorations with the query", () => {
   const plain = (query: string) => renderToStaticMarkup(createElement(SearchHighlightContext.Provider, {value: query},
@@ -66,7 +98,7 @@ test("plain text and expanded JSON escape content and clear decorations with the
   assert.equal(plain(""), '&lt;script&gt;Needle&lt;/script&gt; NEEDLE');
   const data = {value: '<script>Needle</script>'};
   const json = renderToStaticMarkup(createElement(SearchHighlightContext.Provider, {value: "needle"}, createElement(SearchJson, {data})));
-  assert.match(json, /<mark class="preview-search-highlight">Needle<\/mark>/);
+  assert.match(json, /<mark class="preview-search-highlight" data-search-occurrence="[^"]+">Needle<\/mark>/);
   assert.doesNotMatch(json, /<script>/);
   assert.deepEqual(data, {value: '<script>Needle</script>'});
 });
