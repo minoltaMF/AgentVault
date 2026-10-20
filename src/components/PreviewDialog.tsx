@@ -101,6 +101,7 @@ import { previewReadFailure, previewEmptyMessage, type PreviewReadFailure } from
 
 import { matchesReadingPosition, readingEventSignature, readingPositionKey, readPositions, saveReadingPosition, type ReadingPosition } from "@/lib/preview-reading-position";
 
+import { previewSearchContext } from "@/lib/preview-search-context";
 import { selectPreviewSearchHit, stepPreviewSearchHit, previewSearchScope } from "@/lib/preview-search-navigation";
 
 type Props = {
@@ -177,6 +178,7 @@ export function PreviewDialog({
   const [done, setDone] = useState(false);
   const [filter, setFilter] = useState("");
   const [searchHit, setSearchHit] = useState<{ query: string; index: number } | null>(null);
+  const [contextExpansion, setContextExpansion] = useState({ key: "", before: 0, after: 0 });
   const [onlyMsg, setOnlyMsg] = useState(true);
   const [processDefaultCollapsed, setProcessDefaultCollapsed] = useState(true);
   const [processExpansionOverrides, setProcessExpansionOverrides] = useState<
@@ -435,6 +437,7 @@ export function PreviewDialog({
     generationRef.current += 1;
     setReadingNotice("");
     setSearchHit(null);
+    setContextExpansion({ key: "", before: 0, after: 0 });
     startOffsetRef.current = 0;
     newestFirstRef.current = false;
     setNewestFirst(false);
@@ -497,8 +500,8 @@ export function PreviewDialog({
     [events],
   );
 
-  const filtered = useMemo(() => {
-    return searchableEvents.flatMap(({ event, searchText }) => {
+  const eligibleEvents = useMemo(() => {
+    return searchableEvents.filter(({ event }) => {
       if (
         onlyMsg &&
         (!isConversationMessage(event)
@@ -508,12 +511,31 @@ export function PreviewDialog({
             initialJump?.eventIndex ?? null,
           ))
       ) {
-        return [];
+        return false;
       }
-      if (normalizedFilter && !searchText.includes(normalizedFilter)) return [];
-      return [event];
+      return true;
     });
-  }, [initialJump?.eventIndex, normalizedFilter, onlyMsg, searchableEvents, timelineIndexSet]);
+  }, [initialJump?.eventIndex, onlyMsg, searchableEvents, timelineIndexSet]);
+
+  const matchingEvents = useMemo(() => eligibleEvents.filter(({ searchText }) =>
+    !normalizedFilter || searchText.includes(normalizedFilter)).map(({ event }) => event), [eligibleEvents, normalizedFilter]);
+  const searchHitIndices = useMemo(() => {
+    const indices = normalizedFilter ? matchingEvents.map(event => event.index) : [];
+    return newestFirst ? indices.reverse() : indices;
+  }, [matchingEvents, newestFirst, normalizedFilter]);
+  const activeSearchHit = selectPreviewSearchHit(searchHitIndices,
+    searchHit?.query === normalizedFilter ? searchHit.index : null,
+    initialJump?.query.trim().toLowerCase() === normalizedFilter ? initialJump.eventIndex : null);
+  const contextKey = JSON.stringify([open, rolloutPath, normalizedFilter, activeSearchHit, onlyMsg]);
+  const context = useMemo(() => previewSearchContext(eligibleEvents.map(({ event }) => event.index), activeSearchHit,
+    contextExpansion.key === contextKey ? contextExpansion.before : 0,
+    contextExpansion.key === contextKey ? contextExpansion.after : 0), [eligibleEvents, activeSearchHit, contextExpansion, contextKey]);
+  const hitSet = useMemo(() => new Set(searchHitIndices), [searchHitIndices]);
+  const filtered = useMemo(() => {
+    if (!normalizedFilter) return matchingEvents;
+    const visible = new Set([...searchHitIndices, ...context.indices]);
+    return eligibleEvents.filter(({ event }) => visible.has(event.index)).map(({ event }) => event);
+  }, [eligibleEvents, matchingEvents, normalizedFilter, searchHitIndices, context]);
 
   useEffect(() => {
     if (!open || loading || done || normalizedFilter || pendingJumpRef.current !== null) return;
@@ -549,11 +571,6 @@ export function PreviewDialog({
   }, [filtered, normalizedFilter, onlyMsg]);
 
   const rows = useMemo(() => newestFirst ? [...chronologicalRows].reverse() : chronologicalRows, [chronologicalRows, newestFirst]);
-  const searchHitIndices = useMemo(() => normalizedFilter
-    ? rows.flatMap(row => row.type === "event" ? [row.event.index] : row.events.map(event => event.index)) : [], [normalizedFilter, rows]);
-  const activeSearchHit = selectPreviewSearchHit(searchHitIndices,
-    searchHit?.query === normalizedFilter ? searchHit.index : null,
-    initialJump?.query.trim().toLowerCase() === normalizedFilter ? initialJump.eventIndex : null);
   const searchUpdating = filter.trim().toLowerCase() !== normalizedFilter;
   const occurrences = usePreviewOccurrences(viewportRef, activeSearchHit, normalizedFilter, open);
   const virtualizer = useVirtualizer({
@@ -655,10 +672,33 @@ export function PreviewDialog({
   const navigateSearchHit = (direction: 1 | -1) => {
     if (loading || loadingAll || searchUpdating) return;
     const index = stepPreviewSearchHit(searchHitIndices, activeSearchHit, direction);
-    if (index !== null) setSearchHit({ query: normalizedFilter, index });
+    if (index !== null) {
+      setContextExpansion({ key: "", before: 0, after: 0 });
+      setSearchHit({ query: normalizedFilter, index });
+    }
+  };
+
+  const returnToSearchHit = () => {
+    if (activeSearchHit === null) return;
+    if (jumpSettleRafRef.current) cancelAnimationFrame(jumpSettleRafRef.current);
+    jumpSettleRafRef.current = 0;
+    pendingJumpRef.current = activeSearchHit;
+    scrollPendingIntoView();
+  };
+
+  const changeContext = (direction: "before" | "after" | "collapse") => {
+    if (activeSearchHit === null || loading || loadingAll || searchUpdating) return;
+    if (jumpSettleRafRef.current) cancelAnimationFrame(jumpSettleRafRef.current);
+    jumpSettleRafRef.current = 0;
+    pendingJumpRef.current = activeSearchHit;
+    setContextExpansion({ key: contextKey,
+      before: direction === "collapse" ? 0 : context.before + (direction === "before" ? 3 : 0),
+      after: direction === "collapse" ? 0 : context.after + (direction === "after" ? 3 : 0),
+    });
   };
 
   const changeSearchQuery = (query: string) => {
+    setContextExpansion({ key: "", before: 0, after: 0 });
     if (jumpSettleRafRef.current) cancelAnimationFrame(jumpSettleRafRef.current);
     jumpSettleRafRef.current = 0;
     pendingJumpRef.current = null;
@@ -1192,6 +1232,17 @@ export function PreviewDialog({
                 disabled={loading || loadingAll || searchUpdating || occurrences.total < 2} onClick={() => occurrences.step(-1)}>上一处</Button>
               <Button variant="outline" size="sm" className="h-8 text-xs" aria-label="本条下一处" title="当前消息内下一处关键词，首尾循环"
                 disabled={loading || loadingAll || searchUpdating || occurrences.total < 2} onClick={() => occurrences.step(1)}>下一处</Button>
+              <div className="flex flex-wrap items-center gap-1.5 border-l pl-2" aria-label="命中上下文">
+                <Button variant="outline" size="sm" className="h-8 text-xs" aria-label="展开前 3 条上下文" title="按时间顺序展开更早的消息，仅限已加载范围"
+                  disabled={loading || loadingAll || searchUpdating || !context.remainingBefore} onClick={() => changeContext("before")}>前 3 条</Button>
+                <Button variant="outline" size="sm" className="h-8 text-xs" aria-label="展开后 3 条上下文" title="按时间顺序展开更晚的消息，仅限已加载范围"
+                  disabled={loading || loadingAll || searchUpdating || !context.remainingAfter} onClick={() => changeContext("after")}>后 3 条</Button>
+                <span role="status" aria-label="上下文范围" className="text-muted-foreground">前 {context.before} / 后 {context.after} 条 · 已加载范围</span>
+                <Button variant="ghost" size="sm" className="h-8 text-xs" disabled={loading || loadingAll || searchUpdating || activeSearchHit === null}
+                  onClick={returnToSearchHit}>返回当前命中</Button>
+                {(context.before > 0 || context.after > 0) && <Button variant="ghost" size="sm" className="h-8 text-xs"
+                  disabled={loading || loadingAll || searchUpdating} onClick={() => changeContext("collapse")}>收起上下文</Button>}
+              </div>
               <span className="text-muted-foreground" title="本条计数仅包含已展开正文，折叠区域展开后更新；跨格式的同一匹配只计一次">本条按已展开正文定位</span>
               <span className="text-muted-foreground">{previewSearchScope(startOffsetRef.current, offsetRef.current, totalEvents, newestFirst, done, !!readFailure)} · 每条消息计一次</span>
               <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => changeSearchQuery("")}>清除搜索</Button>
@@ -1476,6 +1527,7 @@ export function PreviewDialog({
                         : undefined
                     }
                   >
+                    {normalizedFilter && !hitSet.has(row.event.index) && <div className="mb-1 px-2 text-xs text-muted-foreground" data-search-context="true">上下文 · 非命中消息</div>}
                     <EventBubble
                       e={row.event}
                       query={normalizedFilter}
