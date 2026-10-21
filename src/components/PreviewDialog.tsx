@@ -42,6 +42,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -1282,7 +1283,7 @@ export function PreviewDialog({
                   navigateSearchHit(e.shiftKey ? -1 : 1);
                 }
               }}
-              className="h-8 w-64 border-border/70"
+              className="h-8 w-64 max-w-full border-border/70"
             />
             {filter.trim() && <div className="flex flex-wrap items-center gap-1.5 text-xs" aria-label="正文命中导航">
               <span role="status" aria-live="polite" className="tabular-nums">
@@ -1299,26 +1300,38 @@ export function PreviewDialog({
                 disabled={loading || loadingAll || searchUpdating || occurrences.total < 2} onClick={() => occurrences.step(-1)}>上一处</Button>
               <Button variant="outline" size="sm" className="h-8 text-xs" aria-label="本条下一处" title="当前消息内下一处关键词，首尾循环"
                 disabled={loading || loadingAll || searchUpdating || occurrences.total < 2} onClick={() => occurrences.step(1)}>下一处</Button>
-              <div className="flex flex-wrap items-center gap-1.5 border-l pl-2" aria-label="命中上下文">
-                <Button variant="outline" size="sm" className="h-8 text-xs" aria-label="展开前 3 条上下文" title="按时间顺序展开更早的消息；不足时最多读取相邻一页"
-                  disabled={loading || loadingAll || searchUpdating || activeSearchHit === null || (!context.remainingBefore && !contextBeforePage)} onClick={() => void changeContext("before")}>{!context.remainingBefore && contextBeforePage ? "加载更早一页" : "前 3 条"}</Button>
-                <Button variant="outline" size="sm" className="h-8 text-xs" aria-label="展开后 3 条上下文" title="按时间顺序展开更晚的消息；不足时最多读取相邻一页"
-                  disabled={loading || loadingAll || searchUpdating || activeSearchHit === null || (!context.remainingAfter && !contextAfterPage)} onClick={() => void changeContext("after")}>{!context.remainingAfter && contextAfterPage ? "加载更晚一页" : "后 3 条"}</Button>
-                <span role="status" aria-label="上下文范围" className="text-muted-foreground">前 {context.before} / 后 {context.after} 条 · 已加载范围</span>
-                <Button variant="ghost" size="sm" className="h-8 text-xs" disabled={loading || loadingAll || searchUpdating || activeSearchHit === null}
-                  onClick={returnToSearchHit}>返回当前命中</Button>
-                {(context.before > 0 || context.after > 0) && <Button variant="ghost" size="sm" className="h-8 text-xs"
-                  disabled={loading || loadingAll || searchUpdating} onClick={() => void changeContext("collapse")}>收起上下文</Button>}
-                {currentContextRead && <span role="status" aria-label="上下文读取状态" className="text-muted-foreground">
-                  {currentContextRead.status === "loading" ? "正在读取相邻页…" : currentContextRead.status === "failed" ? "读取失败，已保留当前命中" : "已读取一页；仅展开符合当前筛选的相邻消息"}
-                </span>}
-                {currentContextRead?.status === "failed" && <Button variant="outline" size="sm" className="h-8 text-xs"
-                  disabled={loading || loadingAll || searchUpdating} onClick={() => void changeContext(currentContextRead.direction)}>重试上下文读取</Button>}
-              </div>
-              <span className="text-muted-foreground" title="本条计数仅包含已展开正文，折叠区域展开后更新；跨格式的同一匹配只计一次">本条按已展开正文定位</span>
-              <span className="text-muted-foreground">{previewSearchScope(startOffsetRef.current, offsetRef.current, totalEvents, newestFirst, done, !!readFailure)} · 每条消息计一次</span>
-              {gapExpansion.key === gapKey && gapExpansion.indices.length > 0 && <Button variant="ghost" size="sm" className="h-8 text-xs"
-                disabled={loading || loadingAll || searchUpdating} onClick={collapseSearchGaps}>收起已展开间隔</Button>}
+              <Popover key={gapKey}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" aria-label="上下文与搜索选项">
+                    上下文与选项<ChevronDown className="h-3 w-3" aria-hidden="true" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="start" aria-label="上下文与搜索选项" className="max-h-[var(--radix-popover-content-available-height)] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto p-3 text-xs">
+                  <p className="mb-2 font-medium">上下文与间隔</p>
+                  <div className="flex flex-wrap items-center gap-1.5" aria-label="命中上下文">
+                    <Button variant="outline" size="sm" className="h-8 text-xs" aria-label="展开前 3 条上下文" title="按时间顺序展开更早的消息；不足时最多读取相邻一页"
+                      disabled={loading || loadingAll || searchUpdating || activeSearchHit === null || (!context.remainingBefore && !contextBeforePage)} onClick={() => void changeContext("before")}>{!context.remainingBefore && contextBeforePage ? "加载更早一页" : "前 3 条"}</Button>
+                    <Button variant="outline" size="sm" className="h-8 text-xs" aria-label="展开后 3 条上下文" title="按时间顺序展开更晚的消息；不足时最多读取相邻一页"
+                      disabled={loading || loadingAll || searchUpdating || activeSearchHit === null || (!context.remainingAfter && !contextAfterPage)} onClick={() => void changeContext("after")}>{!context.remainingAfter && contextAfterPage ? "加载更晚一页" : "后 3 条"}</Button>
+                    <span role="status" aria-label="上下文范围" className="text-muted-foreground">前 {context.before} / 后 {context.after} 条 · 已加载范围</span>
+                    {(context.before > 0 || context.after > 0) && <Button variant="ghost" size="sm" className="h-8 text-xs"
+                      disabled={loading || loadingAll || searchUpdating} onClick={() => void changeContext("collapse")}>收起上下文</Button>}
+                    {currentContextRead && <span role="status" aria-label="上下文读取状态" className="text-muted-foreground">
+                      {currentContextRead.status === "loading" ? "正在读取相邻页…" : currentContextRead.status === "failed" ? "读取失败，已保留当前命中" : "已读取一页；仅展开符合当前筛选的相邻消息"}
+                    </span>}
+                    {currentContextRead?.status === "failed" && <Button variant="outline" size="sm" className="h-8 text-xs"
+                      disabled={loading || loadingAll || searchUpdating} onClick={() => void changeContext(currentContextRead.direction)}>重试上下文读取</Button>}
+                  </div>
+                  <span className="mt-3 block text-muted-foreground" title="本条计数仅包含已展开正文，折叠区域展开后更新；跨格式的同一匹配只计一次">本条按已展开正文定位</span>
+                  <span className="mt-1 block text-muted-foreground">{previewSearchScope(startOffsetRef.current, offsetRef.current, totalEvents, newestFirst, done, !!readFailure)} · 每条消息计一次</span>
+                  {gapExpansion.key === gapKey && gapExpansion.indices.length > 0 && <Button variant="ghost" size="sm" className="h-8 text-xs"
+                    disabled={loading || loadingAll || searchUpdating} onClick={collapseSearchGaps}>收起已展开间隔</Button>}
+                </PopoverContent>
+              </Popover>
+              <Button variant="ghost" size="sm" className="h-8 text-xs" aria-label="返回当前命中"
+                  disabled={loading || loadingAll || searchUpdating || activeSearchHit === null} onClick={returnToSearchHit}>返回命中</Button>
+              {currentContextRead?.status === "loading" && <span role="status">正在读取上下文…</span>}
+              {currentContextRead?.status === "failed" && <span role="status" className="text-destructive">上下文读取失败，可在选项中重试</span>}
               <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => changeSearchQuery("")}>清除搜索</Button>
             </div>}
             <label
