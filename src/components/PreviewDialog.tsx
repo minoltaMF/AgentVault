@@ -102,6 +102,7 @@ import { previewReadFailure, previewEmptyMessage, type PreviewReadFailure } from
 import { matchesReadingPosition, readingEventSignature, readingPositionKey, readPositions, saveReadingPosition, type ReadingPosition } from "@/lib/preview-reading-position";
 
 import { contextPageRequest, previewTailReached } from "@/lib/preview-context-page";
+import { previewSearchGaps, gapExpansionIndices } from "@/lib/preview-search-gaps";
 import { previewSearchContext } from "@/lib/preview-search-context";
 import { selectPreviewSearchHit, stepPreviewSearchHit, previewSearchScope } from "@/lib/preview-search-navigation";
 
@@ -180,6 +181,7 @@ export function PreviewDialog({
   const [filter, setFilter] = useState("");
   const [searchHit, setSearchHit] = useState<{ query: string; index: number } | null>(null);
   const [contextExpansion, setContextExpansion] = useState({ key: "", before: 0, after: 0 });
+  const [gapExpansion, setGapExpansion] = useState<{ key: string; indices: number[] }>({ key: "", indices: [] });
   const [contextRead, setContextRead] = useState<{ key: string; direction: "before" | "after"; status: "loading" | "failed" | "loaded" } | null>(null);
   const contextRequestRef = useRef(0);
   const [onlyMsg, setOnlyMsg] = useState(true);
@@ -259,6 +261,7 @@ export function PreviewDialog({
     (checked: boolean) => {
       contextRequestRef.current += 1;
       setContextRead(null);
+      setGapExpansion({ key: "", indices: [] });
       setOnlyMsg(checked);
       persistPreviewPreference({ preview_only_messages: checked });
     },
@@ -447,6 +450,7 @@ export function PreviewDialog({
     contextRequestRef.current += 1;
     setContextRead(null);
     tailReachedRef.current = false;
+    setGapExpansion({ key: "", indices: [] });
     setReadingNotice("");
     setSearchHit(null);
     setContextExpansion({ key: "", before: 0, after: 0 });
@@ -543,11 +547,15 @@ export function PreviewDialog({
     contextExpansion.key === contextKey ? contextExpansion.before : 0,
     contextExpansion.key === contextKey ? contextExpansion.after : 0), [eligibleEvents, activeSearchHit, contextExpansion, contextKey]);
   const hitSet = useMemo(() => new Set(searchHitIndices), [searchHitIndices]);
+  const gapKey = JSON.stringify([open, provider, rolloutPath, normalizedFilter, onlyMsg]);
   const filtered = useMemo(() => {
     if (!normalizedFilter) return matchingEvents;
-    const visible = new Set([...searchHitIndices, ...context.indices]);
+    const visible = new Set([...searchHitIndices, ...context.indices, ...(gapExpansion.key === gapKey ? gapExpansion.indices : [])]);
     return eligibleEvents.filter(({ event }) => visible.has(event.index)).map(({ event }) => event);
-  }, [eligibleEvents, matchingEvents, normalizedFilter, searchHitIndices, context]);
+  }, [eligibleEvents, matchingEvents, normalizedFilter, searchHitIndices, context, gapExpansion, gapKey]);
+  const searchGaps = useMemo(() => normalizedFilter
+    ? previewSearchGaps(eligibleEvents.map(({ event }) => event.index), filtered.map(event => event.index), newestFirst)
+    : new Map(), [eligibleEvents, filtered, newestFirst, normalizedFilter]);
 
   useEffect(() => {
     if (!open || loading || done || normalizedFilter || pendingJumpRef.current !== null) return;
@@ -728,7 +736,30 @@ export function PreviewDialog({
     });
   };
 
+  const expandSearchGap = (beforeIndex: number) => {
+    if (loadingRef.current || loadingAllRef.current || searchUpdating) return;
+    const gap = searchGaps.get(beforeIndex);
+    if (!gap) return;
+    const added = gapExpansionIndices(gap);
+    if (!added.length) return;
+    if (jumpSettleRafRef.current) cancelAnimationFrame(jumpSettleRafRef.current);
+    jumpSettleRafRef.current = 0;
+    // Reveal the inserted context in place without changing the active search hit.
+    pendingJumpRef.current = added[0];
+    setGapExpansion(previous => ({ key: gapKey, indices: [...new Set([
+      ...(previous.key === gapKey ? previous.indices : []), ...added,
+    ])] }));
+  };
+
+  const collapseSearchGaps = () => {
+    if (jumpSettleRafRef.current) cancelAnimationFrame(jumpSettleRafRef.current);
+    jumpSettleRafRef.current = 0;
+    pendingJumpRef.current = activeSearchHit;
+    setGapExpansion({ key: "", indices: [] });
+  };
+
   const changeSearchQuery = (query: string) => {
+    setGapExpansion({ key: "", indices: [] });
     contextRequestRef.current += 1;
     setContextRead(null);
     setContextExpansion({ key: "", before: 0, after: 0 });
@@ -1286,6 +1317,8 @@ export function PreviewDialog({
               </div>
               <span className="text-muted-foreground" title="本条计数仅包含已展开正文，折叠区域展开后更新；跨格式的同一匹配只计一次">本条按已展开正文定位</span>
               <span className="text-muted-foreground">{previewSearchScope(startOffsetRef.current, offsetRef.current, totalEvents, newestFirst, done, !!readFailure)} · 每条消息计一次</span>
+              {gapExpansion.key === gapKey && gapExpansion.indices.length > 0 && <Button variant="ghost" size="sm" className="h-8 text-xs"
+                disabled={loading || loadingAll || searchUpdating} onClick={collapseSearchGaps}>收起已展开间隔</Button>}
               <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => changeSearchQuery("")}>清除搜索</Button>
             </div>}
             <label
@@ -1464,10 +1497,19 @@ export function PreviewDialog({
               <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
               {virtualRows.map((virtualRow) => {
                 const row = rows[virtualRow.index];
+                const gap = row.type === "event" ? searchGaps.get(row.event.index) : undefined;
                 return <div key={virtualRow.key} ref={virtualizer.measureElement} data-index={virtualRow.index}
                   aria-current={normalizedFilter && row.type === "event" && row.event.index === activeSearchHit ? "true" : undefined}
                   className={cn("absolute left-0 top-0 w-full min-w-0", normalizedFilter && row.type === "event" && row.event.index === activeSearchHit && "rounded-lg ring-2 ring-primary/60")}
                   style={{ transform: `translateY(${virtualRow.start - virtualizer.options.scrollMargin}px)` }}>
+                {gap && row.type === "event" && <div data-search-gap-before={row.event.index}
+                  className="mb-3 flex flex-wrap items-center justify-center gap-2 rounded-md border border-dashed border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                  <span>此处省略 {gap.indices.length} 条消息</span>
+                  <span className="text-[11px]">已加载 · 符合当前筛选</span>
+                  <Button variant="outline" size="sm" className="h-7 text-xs"
+                    aria-label={`展开间隔中的 ${Math.min(20, gap.indices.length)} 条消息`}
+                    disabled={loading || loadingAll || searchUpdating} onClick={() => expandSearchGap(row.event.index)}>展开 {Math.min(20, gap.indices.length)} 条</Button>
+                </div>}
                 {row.type === "process" ? (
                   <ProcessTurnGroup
                     key={`process-${row.key}`}
