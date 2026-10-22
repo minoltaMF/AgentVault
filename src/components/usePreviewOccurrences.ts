@@ -3,6 +3,7 @@ import { clampOccurrenceIndex, collectPreviewOccurrences, stepOccurrenceIndex } 
 
 export function usePreviewOccurrences(viewport: RefObject<HTMLDivElement>, eventIndex: number | null, query: string, open: boolean) {
   const key = JSON.stringify([query, eventIndex]);
+  const [measuredKey, setMeasuredKey] = useState("");
   const [selection, setSelection] = useState({key: "", index: 0, total: 0});
   const index = selection.key === key ? selection.index : 0;
   const total = selection.key === key ? selection.total : 0;
@@ -10,6 +11,7 @@ export function usePreviewOccurrences(viewport: RefObject<HTMLDivElement>, event
   useEffect(() => {
     const root = viewport.current;
     if (!open || !query || eventIndex === null) {
+      setMeasuredKey("");
       setSelection(previous => previous.key === key && previous.index === 0 && previous.total === 0
         ? previous : {key, index: 0, total: 0});
       return;
@@ -23,6 +25,7 @@ export function usePreviewOccurrences(viewport: RefObject<HTMLDivElement>, event
       // remounts it through the existing message jump path.
       if (!event) return;
       const groups = collectPreviewOccurrences(event);
+      setMeasuredKey(key);
       const selected = clampOccurrenceIndex(index, groups.length);
       root.querySelectorAll("mark.preview-search-current").forEach(mark => mark.classList.remove("preview-search-current"));
       groups[selected]?.forEach(mark => mark.classList.add("preview-search-current"));
@@ -41,7 +44,9 @@ export function usePreviewOccurrences(viewport: RefObject<HTMLDivElement>, event
     };
   }, [eventIndex, index, key, open, query, viewport]);
 
-  return {index, total, step: (direction: 1 | -1) => {
+  return {index, total, ready: measuredKey === key, restore: (next: number) => {
+    setSelection({key, total, index: clampOccurrenceIndex(next, total)});
+  }, step: (direction: 1 | -1) => {
     setSelection({key, total, index: stepOccurrenceIndex(index, total, direction)});
   }};
 }

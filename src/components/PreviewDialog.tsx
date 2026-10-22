@@ -100,6 +100,7 @@ import { useSettings } from "@/stores/settings";
 import { toast } from "sonner";
 import { previewReadFailure, previewEmptyMessage, type PreviewReadFailure } from "@/lib/preview-read-state";
 
+import { readSearchStates, saveSearchState, removeSearchState, type SearchState } from "@/lib/preview-search-state";
 import { matchesReadingPosition, readingEventSignature, readingPositionKey, readPositions, saveReadingPosition, type ReadingPosition } from "@/lib/preview-reading-position";
 
 import { contextPageRequest, previewTailReached } from "@/lib/preview-context-page";
@@ -172,7 +173,14 @@ export function PreviewDialog({
   const manualDisclosures = useMemo(() => new Map<string, boolean>(), [open, provider, rolloutPath]);
   const positionKey = customRolloutPath ? null : readingPositionKey(provider, rolloutPath);
   const restoreRef = useRef<ReadingPosition | null>(null);
+  const restoreSearchRef = useRef<SearchState | null>(null);
+  const captureSearchRef = useRef<() => void>(() => {});
+  const [restoreOccurrence, setRestoreOccurrence] = useState<{ query: string; eventIndex: number; index: number } | null>(null);
   const [readingNotice, setReadingNotice] = useState("");
+  const forgetSearch = useCallback(() => {
+    if (!positionKey || initialJump) return;
+    try { removeSearchState(window.localStorage, positionKey); } catch { /* Optional storage. */ }
+  }, [positionKey, initialJump]);
   const captureReadingRef = useRef<() => void>(() => {});
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [readFailure, setReadFailure] = useState<PreviewReadFailure | null>(null);
@@ -260,6 +268,10 @@ export function PreviewDialog({
 
   const changeOnlyMsg = useCallback(
     (checked: boolean) => {
+      restoreRef.current = null;
+      restoreSearchRef.current = null;
+      setRestoreOccurrence(null);
+      pendingJumpRef.current = null;
       contextRequestRef.current += 1;
       setContextRead(null);
       setGapExpansion({ key: "", indices: [] });
@@ -306,16 +318,24 @@ export function PreviewDialog({
         restoreRef.current = null;
         if (matchesReadingPosition(next, start, remembered)) {
           pendingJumpRef.current = remembered.eventIndex;
-          setReadingNotice("已恢复上次阅读位置");
+          const search = restoreSearchRef.current;
+          if (search) {
+            const query = search.query.trim().toLowerCase();
+            setSearchHit({ query, index: remembered.eventIndex });
+            setRestoreOccurrence({ query, eventIndex: remembered.eventIndex, index: search.occurrenceIndex });
+          }
+          setReadingNotice(search ? "已恢复上次搜索与命中位置（当前已加载范围）" : "已恢复上次阅读位置");
         } else {
           start = 0;
           newestFirstRef.current = false;
           setNewestFirst(false);
           next = await api.previewRange(provider, rolloutPath, 0, count);
           if (generation !== generationRef.current) return false;
-          setReadingNotice("原阅读位置已变化，已从最早位置打开");
+          setRestoreOccurrence(null);
+          setReadingNotice(restoreSearchRef.current ? "原搜索命中已变化，保留搜索词并从最早一页重新搜索" : "原阅读位置已变化，已从最早位置打开");
         }
       }
+      restoreSearchRef.current = null;
       if (generation !== generationRef.current) return false;
       if (!replace && start < startOffsetRef.current && next.length !== count) {
         throw new Error("会话在读取期间发生变化，请重新打开预览");
@@ -343,6 +363,8 @@ export function PreviewDialog({
     } catch (error) {
       if (generation === generationRef.current) {
         restoreRef.current = null;
+        restoreSearchRef.current = null;
+        setRestoreOccurrence(null);
         pendingJumpRef.current = null;
         doneRef.current = true;
         setDone(true);
@@ -413,6 +435,7 @@ export function PreviewDialog({
       newestFirstRef.current = latest;
       setNewestFirst(latest);
       pendingJumpRef.current = null;
+      forgetSearch();
       setFilter("");
       if (await readWindow(latest ? Math.max(0, count - PAGE) : 0, PAGE, true)
           && generation === generationRef.current) viewportRef.current?.scrollTo({ top: 0 });
@@ -424,7 +447,7 @@ export function PreviewDialog({
         setLoading(false);
       }
     }
-  }, [provider, readWindow, rolloutPath, totalEvents, waitForIdle]);
+  }, [provider, readWindow, rolloutPath, totalEvents, waitForIdle, forgetSearch]);
 
   /** 拉取全量用户提问（时间线数据）；属于增强功能，失败时静默降级为无时间线 */
   const loadPrompts = useCallback(async () => {
@@ -454,6 +477,7 @@ export function PreviewDialog({
     setGapExpansion({ key: "", indices: [] });
     setReadingNotice("");
     setSearchHit(null);
+    setRestoreOccurrence(null);
     setContextExpansion({ key: "", before: 0, after: 0 });
     startOffsetRef.current = 0;
     newestFirstRef.current = false;
@@ -493,8 +517,16 @@ export function PreviewDialog({
     setDeleteSelectedTarget(null);
     setDeletePlan(null);
     restoreRef.current = null;
+    restoreSearchRef.current = null;
     if (positionKey && !initialJump) {
-      try { restoreRef.current = readPositions(window.localStorage).find((p) => p.key === positionKey) ?? null; } catch { /* Storage may be disabled. */ }
+      try {
+        const search = readSearchStates(window.localStorage).find((p) => p.key === positionKey);
+        if (search) {
+          restoreSearchRef.current = search;
+          restoreRef.current = search.position;
+          setFilter(search.query);
+        } else restoreRef.current = readPositions(window.localStorage).find((p) => p.key === positionKey) ?? null;
+      } catch { /* Storage may be disabled. */ }
     }
     resetAndReload();
     return () => {
@@ -594,6 +626,17 @@ export function PreviewDialog({
   const rows = useMemo(() => newestFirst ? [...chronologicalRows].reverse() : chronologicalRows, [chronologicalRows, newestFirst]);
   const searchUpdating = filter.trim().toLowerCase() !== normalizedFilter;
   const occurrences = usePreviewOccurrences(viewportRef, activeSearchHit, normalizedFilter, open);
+  useEffect(() => {
+    if (!restoreOccurrence || loading || searchUpdating) return;
+    if (restoreOccurrence.query !== normalizedFilter || restoreOccurrence.eventIndex !== activeSearchHit) {
+      setRestoreOccurrence(null);
+      return;
+    }
+    if (!occurrences.ready) return;
+    occurrences.restore(restoreOccurrence.index);
+    setRestoreOccurrence(null);
+  }, [restoreOccurrence, loading, searchUpdating, normalizedFilter, activeSearchHit, occurrences.ready, occurrences.total]);
+
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => viewportRef.current,
@@ -692,6 +735,7 @@ export function PreviewDialog({
 
   const navigateSearchHit = (direction: 1 | -1) => {
     if (loading || loadingAll || searchUpdating) return;
+    setRestoreOccurrence(null);
     const index = stepPreviewSearchHit(searchHitIndices, activeSearchHit, direction);
     if (index !== null) {
       contextRequestRef.current += 1;
@@ -760,6 +804,10 @@ export function PreviewDialog({
   };
 
   const changeSearchQuery = (query: string) => {
+    setRestoreOccurrence(null);
+    restoreRef.current = null;
+    restoreSearchRef.current = null;
+    if (!query.trim()) forgetSearch();
     setGapExpansion({ key: "", indices: [] });
     contextRequestRef.current += 1;
     setContextRead(null);
@@ -796,10 +844,11 @@ export function PreviewDialog({
       setActiveTimelineIndex(prompt.index);
       pendingJumpRef.current = prompt.index;
       // 文本过滤可能把目标消息隐藏，跳转时清空
+      forgetSearch();
       setFilter("");
       void loadUpTo(prompt.offset).then(() => scrollPendingIntoView());
     },
-    [loadUpTo, scrollPendingIntoView],
+    [loadUpTo, scrollPendingIntoView, forgetSearch],
   );
 
   // 加载/过滤变化后：完成待跳转的定位。搜索期间无需扫描整段 DOM 更新时间线。
@@ -818,9 +867,32 @@ export function PreviewDialog({
     };
   }, []);
 
+  const captureSearch = useCallback(() => {
+    if (!open || !positionKey || !rolloutPath || initialJump || loadingRef.current || loadingAllRef.current
+        || readFailure || searchUpdating || restoreRef.current || restoreSearchRef.current || restoreOccurrence) return;
+    try {
+      if (!filter.trim()) { removeSearchState(window.localStorage, positionKey); return; }
+      const ordinal = events.findIndex(event => event.index === activeSearchHit);
+      const position: ReadingPosition | null = ordinal < 0 ? null : {
+        key: positionKey, eventIndex: events[ordinal].index, eventOffset: startOffsetRef.current + ordinal,
+        signature: readingEventSignature(events[ordinal]), newestFirst, onlyMessages: onlyMsg, savedAt: Date.now(),
+      };
+      saveSearchState(window.localStorage, { key: positionKey, query: filter, position,
+        occurrenceIndex: occurrences.index, savedAt: Date.now() });
+    } catch { /* Search remains available when storage is disabled. */ }
+  }, [open, positionKey, rolloutPath, initialJump, readFailure, searchUpdating, restoreOccurrence,
+    filter, events, activeSearchHit, newestFirst, onlyMsg, occurrences.index]);
+  useEffect(() => { captureSearchRef.current = captureSearch; }, [captureSearch]);
+  useEffect(() => {
+    if (!open || loading) return;
+    const timer = setTimeout(captureSearch, 400);
+    return () => clearTimeout(timer);
+  }, [captureSearch, open, loading]);
+
   // Read from the current render at flush time; never retain transcript text in storage.
   // Do not replace a good bookmark with an error, search result, or pending jump.
   const captureReading = useCallback(() => {
+    captureSearchRef.current();
     if (!positionKey || !rolloutPath || loadingRef.current || readFailure || normalizedFilter
         || initialJump || restoreRef.current || pendingJumpRef.current !== null) return;
     const viewport = viewportRef.current;
