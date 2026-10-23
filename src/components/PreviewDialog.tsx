@@ -100,6 +100,7 @@ import { useSettings } from "@/stores/settings";
 import { toast } from "sonner";
 import { previewReadFailure, previewEmptyMessage, type PreviewReadFailure } from "@/lib/preview-read-state";
 
+import { readMemoryPolicy, setMemoryEnabled, clearPreviewMemories } from "@/lib/preview-memory";
 import { readSearchStates, saveSearchState, removeSearchState, type SearchState } from "@/lib/preview-search-state";
 import { matchesReadingPosition, readingEventSignature, readingPositionKey, readPositions, saveReadingPosition, type ReadingPosition } from "@/lib/preview-reading-position";
 
@@ -172,15 +173,25 @@ export function PreviewDialog({
   const provider = session?.provider ?? "codex";
   const manualDisclosures = useMemo(() => new Map<string, boolean>(), [open, provider, rolloutPath]);
   const positionKey = customRolloutPath ? null : readingPositionKey(provider, rolloutPath);
+  const [memoryPolicy, setMemoryPolicy] = useState({ enabled: false, revision: 0 });
+  const memoryRevisionRef = useRef(-1);
+  const memoryPausedRef = useRef(false);
+  const [memoryMessage, setMemoryMessage] = useState("");
+  const canRemember = useCallback(() => {
+    try {
+      const policy = readMemoryPolicy(window.localStorage);
+      return policy.enabled && !memoryPausedRef.current && policy.revision === memoryRevisionRef.current;
+    } catch { return false; }
+  }, []);
   const restoreRef = useRef<ReadingPosition | null>(null);
   const restoreSearchRef = useRef<SearchState | null>(null);
   const captureSearchRef = useRef<() => void>(() => {});
   const [restoreOccurrence, setRestoreOccurrence] = useState<{ query: string; eventIndex: number; index: number } | null>(null);
   const [readingNotice, setReadingNotice] = useState("");
   const forgetSearch = useCallback(() => {
-    if (!positionKey || initialJump) return;
+    if (!canRemember() || !positionKey || initialJump) return;
     try { removeSearchState(window.localStorage, positionKey); } catch { /* Optional storage. */ }
-  }, [positionKey, initialJump]);
+  }, [positionKey, initialJump, canRemember]);
   const captureReadingRef = useRef<() => void>(() => {});
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [readFailure, setReadFailure] = useState<PreviewReadFailure | null>(null);
@@ -313,6 +324,10 @@ export function PreviewDialog({
     try {
       let next = await api.previewRange(provider, rolloutPath, start, count);
       if (generation !== generationRef.current) return false;
+      if (!canRemember()) {
+        restoreRef.current = null;
+        restoreSearchRef.current = null;
+      }
       const remembered = restoreRef.current;
       if (remembered && replace) {
         restoreRef.current = null;
@@ -332,7 +347,7 @@ export function PreviewDialog({
           next = await api.previewRange(provider, rolloutPath, 0, count);
           if (generation !== generationRef.current) return false;
           setRestoreOccurrence(null);
-          setReadingNotice(restoreSearchRef.current ? "原搜索命中已变化，保留搜索词并从最早一页重新搜索" : "原阅读位置已变化，已从最早位置打开");
+          if (canRemember()) setReadingNotice(restoreSearchRef.current ? "原搜索命中已变化，保留搜索词并从最早一页重新搜索" : "原阅读位置已变化，已从最早位置打开");
         }
       }
       restoreSearchRef.current = null;
@@ -377,7 +392,61 @@ export function PreviewDialog({
         setLoading(false);
       }
     }
-  }, [provider, rolloutPath]);
+  }, [provider, rolloutPath, canRemember]);
+
+  const cancelMemoryRestore = useCallback(() => {
+    restoreRef.current = null;
+    restoreSearchRef.current = null;
+    setRestoreOccurrence(null);
+    pendingJumpRef.current = null;
+    setReadingNotice("");
+    if (saveTimerRef.current !== null) clearTimeout(saveTimerRef.current);
+  }, []);
+  useEffect(() => {
+    if (!open) return;
+    const sync = () => {
+      try {
+        const policy = readMemoryPolicy(window.localStorage);
+        setMemoryPolicy(policy);
+        if (policy.revision !== memoryRevisionRef.current) {
+          memoryPausedRef.current = true;
+          cancelMemoryRestore();
+          setMemoryMessage("记忆设置已变化；当前预览暂停保存，重新打开后生效。");
+        }
+      } catch { memoryPausedRef.current = true; }
+    };
+    window.addEventListener("storage", sync);
+    window.addEventListener("agentvault-preview-memory", sync);
+    return () => {
+      window.removeEventListener("storage", sync);
+      window.removeEventListener("agentvault-preview-memory", sync);
+    };
+  }, [open, cancelMemoryRestore]);
+  const changeMemoryEnabled = (enabled: boolean) => {
+    memoryPausedRef.current = true;
+    cancelMemoryRestore();
+    try {
+      if (!setMemoryEnabled(window.localStorage, enabled)) throw new Error("storage");
+      const policy = readMemoryPolicy(window.localStorage);
+      memoryRevisionRef.current = policy.revision;
+      memoryPausedRef.current = !enabled;
+      setMemoryPolicy(policy);
+      setMemoryMessage(enabled ? "已开启自动记忆，将保存后续阅读和搜索位置。" : "已关闭自动记忆；已有记录保留，但不再保存或恢复。");
+      window.dispatchEvent(new Event("agentvault-preview-memory"));
+    } catch { setMemoryMessage("设置未保存，当前预览已暂停记忆。请检查本机存储后重试。"); }
+  };
+  const clearMemories = (all: boolean) => {
+    if (!all && !positionKey) return;
+    memoryPausedRef.current = true;
+    cancelMemoryRestore();
+    try {
+      const ok = clearPreviewMemories(window.localStorage, all ? undefined : positionKey!);
+      setMemoryPolicy(readMemoryPolicy(window.localStorage));
+      window.dispatchEvent(new Event("agentvault-preview-memory"));
+      setMemoryMessage(ok ? `${all ? "全部" : "当前会话"}阅读与搜索记忆已清除；已打开的预览暂停保存，重新打开后按开关设置记忆。`
+        : "清除未完整完成，可能仅清除了部分记录；当前预览已暂停保存，请重试。");
+    } catch { setMemoryMessage("清除失败，当前预览已暂停保存，请检查本机存储后重试。"); }
+  };
 
   const loadMore = useCallback(async () => {
     if (loadingRef.current || loadingAllRef.current || doneRef.current || !rolloutPath) return;
@@ -518,7 +587,16 @@ export function PreviewDialog({
     setDeletePlan(null);
     restoreRef.current = null;
     restoreSearchRef.current = null;
-    if (positionKey && !initialJump) {
+    memoryPausedRef.current = false;
+    setMemoryMessage("");
+    let remember = false;
+    try {
+      const policy = readMemoryPolicy(window.localStorage);
+      setMemoryPolicy(policy);
+      memoryRevisionRef.current = policy.revision;
+      remember = policy.enabled;
+    } catch { memoryRevisionRef.current = -1; }
+    if (remember && positionKey && !initialJump) {
       try {
         const search = readSearchStates(window.localStorage).find((p) => p.key === positionKey);
         if (search) {
@@ -628,6 +706,7 @@ export function PreviewDialog({
   const occurrences = usePreviewOccurrences(viewportRef, activeSearchHit, normalizedFilter, open);
   useEffect(() => {
     if (!restoreOccurrence || loading || searchUpdating) return;
+    if (!canRemember()) { setRestoreOccurrence(null); return; }
     if (restoreOccurrence.query !== normalizedFilter || restoreOccurrence.eventIndex !== activeSearchHit) {
       setRestoreOccurrence(null);
       return;
@@ -635,7 +714,7 @@ export function PreviewDialog({
     if (!occurrences.ready) return;
     occurrences.restore(restoreOccurrence.index);
     setRestoreOccurrence(null);
-  }, [restoreOccurrence, loading, searchUpdating, normalizedFilter, activeSearchHit, occurrences.ready, occurrences.total]);
+  }, [restoreOccurrence, loading, searchUpdating, normalizedFilter, activeSearchHit, occurrences.ready, occurrences.total, canRemember]);
 
   const virtualizer = useVirtualizer({
     count: rows.length,
@@ -868,7 +947,7 @@ export function PreviewDialog({
   }, []);
 
   const captureSearch = useCallback(() => {
-    if (!open || !positionKey || !rolloutPath || initialJump || loadingRef.current || loadingAllRef.current
+    if (!canRemember() || !open || !positionKey || !rolloutPath || initialJump || loadingRef.current || loadingAllRef.current
         || readFailure || searchUpdating || restoreRef.current || restoreSearchRef.current || restoreOccurrence) return;
     try {
       if (!filter.trim()) { removeSearchState(window.localStorage, positionKey); return; }
@@ -881,7 +960,7 @@ export function PreviewDialog({
         occurrenceIndex: occurrences.index, savedAt: Date.now() });
     } catch { /* Search remains available when storage is disabled. */ }
   }, [open, positionKey, rolloutPath, initialJump, readFailure, searchUpdating, restoreOccurrence,
-    filter, events, activeSearchHit, newestFirst, onlyMsg, occurrences.index]);
+    filter, events, activeSearchHit, newestFirst, onlyMsg, occurrences.index, canRemember]);
   useEffect(() => { captureSearchRef.current = captureSearch; }, [captureSearch]);
   useEffect(() => {
     if (!open || loading) return;
@@ -893,7 +972,7 @@ export function PreviewDialog({
   // Do not replace a good bookmark with an error, search result, or pending jump.
   const captureReading = useCallback(() => {
     captureSearchRef.current();
-    if (!positionKey || !rolloutPath || loadingRef.current || readFailure || normalizedFilter
+    if (!canRemember() || !positionKey || !rolloutPath || loadingRef.current || readFailure || normalizedFilter
         || initialJump || restoreRef.current || pendingJumpRef.current !== null) return;
     const viewport = viewportRef.current;
     if (!viewport) return;
@@ -911,7 +990,7 @@ export function PreviewDialog({
         eventOffset: startOffsetRef.current + ordinal, signature: readingEventSignature(events[ordinal]),
         newestFirst: newestFirstRef.current, onlyMessages: onlyMsg, savedAt: Date.now() });
     } catch { /* Reading remains available when storage is disabled. */ }
-  }, [events, initialJump, normalizedFilter, onlyMsg, positionKey, readFailure, rolloutPath, rows]);
+  }, [events, initialJump, normalizedFilter, onlyMsg, positionKey, readFailure, rolloutPath, rows, canRemember]);
   useEffect(() => { captureReadingRef.current = captureReading; }, [captureReading]);
   useEffect(() => {
     if (!open) return;
@@ -1529,6 +1608,22 @@ export function PreviewDialog({
                 )}
               </>
             )}
+            <Popover>
+              <PopoverTrigger asChild><Button variant="ghost" size="sm" className="h-8 text-xs" aria-label="阅读与搜索记忆管理">记忆</Button></PopoverTrigger>
+              <PopoverContent align="end" aria-label="阅读与搜索记忆管理" className="w-80 max-w-[calc(100vw-2rem)] max-h-[var(--radix-popover-content-available-height)] overflow-y-auto space-y-3 text-xs">
+                <p className="font-medium">阅读与搜索记忆</p>
+                <div className="flex items-center justify-between gap-2">
+                  <Label htmlFor="preview-auto-memory" className="text-xs">自动记忆</Label>
+                  <Switch id="preview-auto-memory" checked={memoryPolicy.enabled} onCheckedChange={changeMemoryEnabled} />
+                </div>
+                <p className="text-muted-foreground">仅保存在本机。关闭后不再保存或恢复，已有记录保留。清除不会删除原始会话。</p>
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" size="sm" className="text-xs" disabled={!positionKey} onClick={() => clearMemories(false)}>清除当前会话记忆</Button>
+                  <Button variant="outline" size="sm" className="text-xs" onClick={() => clearMemories(true)}>清除全部记忆</Button>
+                </div>
+                {memoryMessage && <p role="status">{memoryMessage}</p>}
+              </PopoverContent>
+            </Popover>
             <PreviewToolbarActions
               hasSession={!!session}
               canCopyResume={!["qoder", "workbuddy", "grok", "pi", "dsh", "hermes", "zcode", "qwen", "cline", "copilot", "antigravity"].includes(provider)}
