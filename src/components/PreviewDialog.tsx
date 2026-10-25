@@ -23,6 +23,7 @@ import { SearchHighlightContext, SearchMarkdown, SearchText, SearchJson } from "
 import "react-json-view-lite/dist/index.css";
 import { usePreviewOccurrences } from "@/components/usePreviewOccurrences";
 import { collectPreviewOccurrences } from "@/lib/preview-search-occurrences";
+import { previewSearchShortcut } from "@/lib/preview-search-shortcuts";
 import { SearchDisclosureContext, useSearchDisclosure, type DisclosureMemory } from "@/components/SearchDisclosure";
 
 import {
@@ -199,6 +200,7 @@ export function PreviewDialog({
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
   const [filter, setFilter] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [searchHit, setSearchHit] = useState<{ query: string; index: number } | null>(null);
   const [contextExpansion, setContextExpansion] = useState({ key: "", before: 0, after: 0 });
   const [gapExpansion, setGapExpansion] = useState<{ key: string; indices: number[] }>({ key: "", indices: [] });
@@ -1014,6 +1016,26 @@ export function PreviewDialog({
 
   const onPreviewKeyDown = useCallback(
     (e: ReactKeyboardEvent<HTMLDivElement>) => {
+      // React portals bubble through this handler, even outside this dialog's DOM.
+      const target = e.target;
+      if (!open || e.defaultPrevented || e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229 || !(target instanceof Element) ||
+        !e.currentTarget.contains(target) || target.closest('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]') !== e.currentTarget) return;
+      const shortcut = previewSearchShortcut({ ...e, key: e.key, isComposing: e.nativeEvent.isComposing, keyCode: e.nativeEvent.keyCode }, {
+        inPreview: true, inSearch: target === searchInputRef.current, editing: shouldIgnoreTextEditingHotkey(target),
+      });
+      if (shortcut) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (shortcut === "focus") {
+          searchInputRef.current?.focus();
+          searchInputRef.current?.select();
+        } else if (shortcut === "next-message" || shortcut === "previous-message") {
+          navigateSearchHit(shortcut === "next-message" ? 1 : -1);
+        } else if (!loading && !loadingAll && !searchUpdating && occurrences.total > 1) {
+          occurrences.step(shortcut === "next-occurrence" ? 1 : -1);
+        }
+        return;
+      }
       if (shouldIgnoreTextEditingHotkey(e.target)) return;
 
       const viewport = viewportRef.current;
@@ -1064,7 +1086,7 @@ export function PreviewDialog({
         void loadMore();
       }
     },
-    [loadMore],
+    [loadMore, open, navigateSearchHit, loading, loadingAll, searchUpdating, occurrences],
   );
 
   const copyResume = async () => {
@@ -1423,33 +1445,44 @@ export function PreviewDialog({
 
           <div className="mt-3.5 flex flex-wrap items-center gap-2">
             <Input
+              ref={searchInputRef}
               placeholder="在事件中过滤…"
               value={filter}
               aria-label="搜索正文消息"
+              aria-keyshortcuts="Control+f Meta+f Enter Shift+Enter Alt+Enter Alt+Shift+Enter F3 Shift+F3"
+              title="查找：Ctrl/Cmd+F；上/下条：Shift+Enter / Enter；本条上/下一处：Alt+Shift+Enter / Alt+Enter"
               onChange={(e) => changeSearchQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  navigateSearchHit(e.shiftKey ? -1 : 1);
-                }
-              }}
               className="h-8 w-64 max-w-full border-border/70"
             />
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-8 text-xs" aria-label="正文查找快捷键帮助">快捷键</Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" aria-label="正文查找快捷键帮助" className="max-h-[var(--radix-popover-content-available-height)] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto p-3 text-xs">
+                <p className="mb-2 font-medium">正文查找快捷键</p>
+                <dl className="space-y-2">
+                  <div><dt className="font-medium">Ctrl+F / ⌘F</dt><dd className="text-muted-foreground">聚焦搜索框并选中搜索词</dd></div>
+                  <div><dt className="font-medium">Enter / Shift+Enter</dt><dd className="text-muted-foreground">搜索框中：下一条 / 上一条命中消息</dd></div>
+                  <div><dt className="font-medium">F3 / Shift+F3</dt><dd className="text-muted-foreground">预览中：下一条 / 上一条命中消息</dd></div>
+                  <div><dt className="font-medium">Alt+Enter / Alt+Shift+Enter</dt><dd className="text-muted-foreground">搜索框中：本条下一处 / 上一处关键词</dd></div>
+                </dl>
+                <p className="mt-3 text-muted-foreground">首尾循环，仅查找已加载范围。本条仅定位已展开正文。弹出面板内不触发；其他编辑框中不使用 F3。部分键盘需配合 Fn 键。</p>
+              </PopoverContent>
+            </Popover>
             {filter.trim() && <div className="flex flex-wrap items-center gap-1.5 text-xs" aria-label="正文命中导航">
               <span role="status" aria-live="polite" className="tabular-nums">
                 {searchUpdating ? "更新命中…" : `${activeSearchHit === null ? 0 : searchHitIndices.indexOf(activeSearchHit) + 1} / ${searchHitIndices.length} 条命中消息`}
               </span>
-              <Button variant="outline" size="sm" className="h-8 text-xs" aria-label="上一处命中" title="上一处命中（Shift+Enter），首尾循环"
+              <Button variant="outline" size="sm" className="h-8 text-xs" aria-label="上一处命中" aria-keyshortcuts="Shift+F3" title="上一条命中消息（Shift+F3；搜索框中 Shift+Enter），首尾循环"
                 disabled={loading || loadingAll || searchUpdating || searchHitIndices.length < 2} onClick={() => navigateSearchHit(-1)}>上条</Button>
-              <Button variant="outline" size="sm" className="h-8 text-xs" aria-label="下一处命中" title="下一处命中（Enter），首尾循环"
+              <Button variant="outline" size="sm" className="h-8 text-xs" aria-label="下一处命中" aria-keyshortcuts="F3" title="下一条命中消息（F3；搜索框中 Enter），首尾循环"
                 disabled={loading || loadingAll || searchUpdating || searchHitIndices.length < 2} onClick={() => navigateSearchHit(1)}>下条</Button>
               <span className="border-l pl-2 tabular-nums" role="status" aria-live="polite" aria-label="本条关键词命中">
                 {searchUpdating ? "更新定位…" : `本条 ${occurrences.total ? occurrences.index + 1 : 0} / ${occurrences.total} 处`}
               </span>
-              <Button variant="outline" size="sm" className="h-8 text-xs" aria-label="本条上一处" title="当前消息内上一处关键词，首尾循环"
+              <Button variant="outline" size="sm" className="h-8 text-xs" aria-label="本条上一处" title="当前消息内上一处关键词（搜索框中 Alt+Shift+Enter），首尾循环"
                 disabled={loading || loadingAll || searchUpdating || occurrences.total < 2} onClick={() => occurrences.step(-1)}>上一处</Button>
-              <Button variant="outline" size="sm" className="h-8 text-xs" aria-label="本条下一处" title="当前消息内下一处关键词，首尾循环"
+              <Button variant="outline" size="sm" className="h-8 text-xs" aria-label="本条下一处" title="当前消息内下一处关键词（搜索框中 Alt+Enter），首尾循环"
                 disabled={loading || loadingAll || searchUpdating || occurrences.total < 2} onClick={() => occurrences.step(1)}>下一处</Button>
               <Popover key={gapKey}>
                 <PopoverTrigger asChild>
