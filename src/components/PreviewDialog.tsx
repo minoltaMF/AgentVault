@@ -106,6 +106,7 @@ import { readSearchStates, saveSearchState, removeSearchState, type SearchState 
 import { matchesReadingPosition, readingEventSignature, readingPositionKey, readPositions, saveReadingPosition, type ReadingPosition } from "@/lib/preview-reading-position";
 
 import { contextPageRequest, previewTailReached } from "@/lib/preview-context-page";
+import { previewSearchScope as previewSearchCoverage } from "@/lib/preview-search-scope";
 import { previewSearchGaps, gapExpansionIndices } from "@/lib/preview-search-gaps";
 import { previewSearchContext } from "@/lib/preview-search-context";
 import { selectPreviewSearchHit, stepPreviewSearchHit, previewSearchScope } from "@/lib/preview-search-navigation";
@@ -206,6 +207,7 @@ export function PreviewDialog({
   const [gapExpansion, setGapExpansion] = useState<{ key: string; indices: number[] }>({ key: "", indices: [] });
   const [contextRead, setContextRead] = useState<{ key: string; direction: "before" | "after"; status: "loading" | "failed" | "loaded" } | null>(null);
   const contextRequestRef = useRef(0);
+  const [searchPageRead, setSearchPageRead] = useState<{ key: string; direction: "before" | "after"; status: "loading" | "failed" | "loaded" } | null>(null);
   const [onlyMsg, setOnlyMsg] = useState(true);
   const [processDefaultCollapsed, setProcessDefaultCollapsed] = useState(true);
   const [processExpansionOverrides, setProcessExpansionOverrides] = useState<
@@ -286,7 +288,7 @@ export function PreviewDialog({
       setRestoreOccurrence(null);
       pendingJumpRef.current = null;
       contextRequestRef.current += 1;
-      setContextRead(null);
+      setContextRead(null); setSearchPageRead(null);
       setGapExpansion({ key: "", indices: [] });
       setOnlyMsg(checked);
       persistPreviewPreference({ preview_only_messages: checked });
@@ -495,7 +497,7 @@ export function PreviewDialog({
 
   const navigateEdge = useCallback(async (latest: boolean) => {
     contextRequestRef.current += 1;
-    setContextRead(null);
+    setContextRead(null); setSearchPageRead(null);
     if (loadingAllRef.current || !await waitForIdle()) return;
     const generation = generationRef.current;
     loadingRef.current = true;
@@ -543,7 +545,7 @@ export function PreviewDialog({
   const resetAndReload = useCallback(() => {
     generationRef.current += 1;
     contextRequestRef.current += 1;
-    setContextRead(null);
+    setContextRead(null); setSearchPageRead(null);
     tailReachedRef.current = false;
     setGapExpansion({ key: "", indices: [] });
     setReadingNotice("");
@@ -820,7 +822,7 @@ export function PreviewDialog({
     const index = stepPreviewSearchHit(searchHitIndices, activeSearchHit, direction);
     if (index !== null) {
       contextRequestRef.current += 1;
-      setContextRead(null);
+      setContextRead(null); setSearchPageRead(null);
       setContextExpansion({ key: "", before: 0, after: 0 });
       setSearchHit({ query: normalizedFilter, index });
     }
@@ -837,6 +839,22 @@ export function PreviewDialog({
   const contextBeforePage = contextPageRequest("before", context.remainingBefore, startOffsetRef.current, offsetRef.current, tailReachedRef.current, PAGE);
   const contextAfterPage = contextPageRequest("after", context.remainingAfter, startOffsetRef.current, offsetRef.current, tailReachedRef.current, PAGE);
   const currentContextRead = contextRead?.key === contextKey ? contextRead : null;
+  const searchScope = previewSearchCoverage(startOffsetRef.current, offsetRef.current, tailReachedRef.current,
+    !!readFailure, loading || loadingAll || searchUpdating, searchHitIndices.length, PAGE);
+  const currentSearchPageRead = searchPageRead?.key === gapKey ? searchPageRead : null;
+  const continueSearch = async (direction: "before" | "after") => {
+    if (!normalizedFilter || loadingRef.current || loadingAllRef.current || searchUpdating) return;
+    const page = direction === "before" ? searchScope.before : searchScope.after;
+    if (!page) return;
+    const request = ++contextRequestRef.current;
+    const generation = generationRef.current;
+    // Preserve an explicit hit while prepending matches; no-hit searches select the new first hit.
+    if (activeSearchHit !== null) setSearchHit({ query: normalizedFilter, index: activeSearchHit });
+    setSearchPageRead({ key: gapKey, direction, status: "loading" });
+    const succeeded = await readWindow(page.start, page.count, false);
+    if (generation !== generationRef.current || request !== contextRequestRef.current) return;
+    setSearchPageRead({ key: gapKey, direction, status: succeeded ? "loaded" : "failed" });
+  };
 
   const changeContext = async (direction: "before" | "after" | "collapse") => {
     if (activeSearchHit === null || loadingRef.current || loadingAllRef.current || searchUpdating) return;
@@ -847,7 +865,7 @@ export function PreviewDialog({
     // Fix the identity before newly loaded matches can change the default selection.
     setSearchHit({ query: normalizedFilter, index: activeSearchHit });
     const page = direction === "collapse" ? null : direction === "before" ? contextBeforePage : contextAfterPage;
-    setContextRead(null);
+    setContextRead(null); setSearchPageRead(null);
     if (page && direction !== "collapse") {
       setContextRead({ key: contextKey, direction, status: "loading" });
       const succeeded = await readWindow(page.start, page.count, false);
@@ -891,7 +909,7 @@ export function PreviewDialog({
     if (!query.trim()) forgetSearch();
     setGapExpansion({ key: "", indices: [] });
     contextRequestRef.current += 1;
-    setContextRead(null);
+    setContextRead(null); setSearchPageRead(null);
     setContextExpansion({ key: "", before: 0, after: 0 });
     if (jumpSettleRafRef.current) cancelAnimationFrame(jumpSettleRafRef.current);
     jumpSettleRafRef.current = 0;
@@ -920,7 +938,7 @@ export function PreviewDialog({
   const jumpToTimelineMessage = useCallback(
     (prompt: UserPromptBrief) => {
       contextRequestRef.current += 1;
-      setContextRead(null);
+      setContextRead(null); setSearchPageRead(null);
       setContextExpansion({ key: "", before: 0, after: 0 });
       setActiveTimelineIndex(prompt.index);
       pendingJumpRef.current = prompt.index;
@@ -1069,7 +1087,7 @@ export function PreviewDialog({
       const clampedScrollTop = Math.max(0, Math.min(nextScrollTop, maxScrollTop));
       viewport.scrollTo({ top: clampedScrollTop });
 
-      if (keepAtBottomAfterLoad) {
+      if (keepAtBottomAfterLoad && !normalizedFilter) {
         void loadMore().then(() => {
           requestAnimationFrame(() => {
             const nextViewport = viewportRef.current;
@@ -1082,11 +1100,11 @@ export function PreviewDialog({
         return;
       }
 
-      if (maxScrollTop - clampedScrollTop < 200) {
+      if (!normalizedFilter && maxScrollTop - clampedScrollTop < 200) {
         void loadMore();
       }
     },
-    [loadMore, open, navigateSearchHit, loading, loadingAll, searchUpdating, occurrences],
+    [loadMore, open, navigateSearchHit, loading, loadingAll, searchUpdating, occurrences, normalizedFilter],
   );
 
   const copyResume = async () => {
@@ -1670,6 +1688,18 @@ export function PreviewDialog({
           </div>
         </DialogHeader>
 
+        {filter.trim() && <div className="shrink-0 border-b px-6 py-2 text-xs" aria-label="正文搜索范围">
+          <p role="status" aria-live="polite">{searchScope.result} · {searchScope.range} · {onlyMsg ? "仅对话消息" : "全部事件"}</p>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <span className="text-muted-foreground">{searchScope.before ? "前方未读" : "已到开头"} · {searchScope.after ? "后方未读或待确认末尾" : "已到末尾"}</span>
+            {searchScope.before && <Button variant="outline" size="sm" className="h-7 text-xs" disabled={loading || loadingAll || searchUpdating}
+              onClick={() => void continueSearch("before")}>{currentSearchPageRead?.status === "failed" && currentSearchPageRead.direction === "before" ? "重试向前查找" : "向前查找一页"}</Button>}
+            {searchScope.after && <Button variant="outline" size="sm" className="h-7 text-xs" disabled={loading || loadingAll || searchUpdating}
+              onClick={() => void continueSearch("after")}>{currentSearchPageRead?.status === "failed" && currentSearchPageRead.direction === "after" ? "重试向后查找" : "向后查找一页"}</Button>}
+            {currentSearchPageRead?.status === "failed" && <span role="status" className="text-destructive">本页读取失败，已保留此前内容。</span>}
+          </div>
+          <p className="mt-1 text-muted-foreground">每次最多读取 200 条原始事件，不自动连读。结果按当前筛选及本次已读取内容计算；原会话新增或变化后请重新读取。</p>
+        </div>}
         {readingNotice && !readFailure && <div role="status" className="flex shrink-0 flex-wrap items-center gap-2 border-b px-6 py-2 text-xs text-muted-foreground">
           <span>{readingNotice}</span>
           <Button variant="ghost" size="sm" disabled={loading || loadingAll} onClick={() => { setReadingNotice(""); void navigateEdge(false); }}>从最早位置阅读</Button>
@@ -1696,12 +1726,12 @@ export function PreviewDialog({
                 <div className="flex flex-col items-center justify-center gap-2 py-16 text-center text-muted-foreground">
                   <Sparkles className="h-8 w-8 opacity-50" />
                   <div className="text-sm">
-                    {previewEmptyMessage(events.length, startOffsetRef.current, !!normalizedFilter)}
+                    {normalizedFilter ? searchScope.result : previewEmptyMessage(events.length, startOffsetRef.current, false)}
                   </div>
                 </div>
               )}
 
-              {startOffsetRef.current > 0 && !newestFirst && (
+              {startOffsetRef.current > 0 && !newestFirst && !normalizedFilter && (
                 <Button variant="outline" size="sm" disabled={loading || loadingAll}
                   onClick={() => { void readWindow(Math.max(0, startOffsetRef.current - PAGE), PAGE, true); }}>
                   查看前一页
@@ -1846,7 +1876,7 @@ export function PreviewDialog({
               {loading && (
                 <div className="flex justify-center py-4 text-xs text-muted-foreground">加载中…</div>
               )}
-              {!done && events.length > 0 && (
+              {!done && events.length > 0 && !normalizedFilter && (
                 <div className="flex justify-center pt-2">
                   <Button
                     variant="outline"
@@ -1859,7 +1889,7 @@ export function PreviewDialog({
                   </Button>
                 </div>
               )}
-              {!readFailure && done && events.length > 0 && (
+              {!readFailure && done && events.length > 0 && !normalizedFilter && (
                 <div className="flex justify-center pt-4 text-xs text-muted-foreground/70">
                   {newestFirst ? "— 已到最早 —" : "— 会话末尾 —"}
                 </div>
