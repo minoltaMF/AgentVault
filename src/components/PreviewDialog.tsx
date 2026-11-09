@@ -107,6 +107,7 @@ import { matchesReadingPosition, readingEventSignature, readingPositionKey, read
 
 import { contextPageRequest, previewTailReached } from "@/lib/preview-context-page";
 import { previewSearchScope as previewSearchCoverage } from "@/lib/preview-search-scope";
+import { continuePreviewSearch } from "@/lib/preview-continuous-search";
 import { previewSearchGaps, gapExpansionIndices } from "@/lib/preview-search-gaps";
 import { previewSearchContext } from "@/lib/preview-search-context";
 import { selectPreviewSearchHit, stepPreviewSearchHit, previewSearchScope } from "@/lib/preview-search-navigation";
@@ -208,6 +209,14 @@ export function PreviewDialog({
   const [contextRead, setContextRead] = useState<{ key: string; direction: "before" | "after"; status: "loading" | "failed" | "loaded" } | null>(null);
   const contextRequestRef = useRef(0);
   const [searchPageRead, setSearchPageRead] = useState<{ key: string; direction: "before" | "after"; status: "loading" | "failed" | "loaded" } | null>(null);
+  const continuousRef = useRef<{ cancelled: boolean } | null>(null);
+  const [continuousBusy, setContinuousBusy] = useState(false);
+  const [continuousStatus, setContinuousStatus] = useState<{ key: string; text: string } | null>(null);
+  const cancelContinuousSearch = useCallback(() => {
+    if (continuousRef.current) continuousRef.current.cancelled = true;
+    setContinuousBusy(false);
+    setContinuousStatus(previous => previous ? { ...previous, text: "已取消，保留已读取内容；未返回的页面不会加入结果。" } : null);
+  }, []);
   const [onlyMsg, setOnlyMsg] = useState(true);
   const [processDefaultCollapsed, setProcessDefaultCollapsed] = useState(true);
   const [processExpansionOverrides, setProcessExpansionOverrides] = useState<
@@ -288,6 +297,8 @@ export function PreviewDialog({
       setRestoreOccurrence(null);
       pendingJumpRef.current = null;
       contextRequestRef.current += 1;
+      if (continuousRef.current) continuousRef.current.cancelled = true;
+      setContinuousBusy(false); setContinuousStatus(null);
       setContextRead(null); setSearchPageRead(null);
       setGapExpansion({ key: "", indices: [] });
       setOnlyMsg(checked);
@@ -321,13 +332,13 @@ export function PreviewDialog({
     [processDefaultCollapsed],
   );
 
-  const readWindow = useCallback(async (start: number, count: number, replace: boolean) => {
+  const readWindow = useCallback(async (start: number, count: number, replace: boolean, canAccept: () => boolean = () => true) => {
     const generation = generationRef.current;
     loadingRef.current = true;
     setLoading(true);
     try {
       let next = await api.previewRange(provider, rolloutPath, start, count);
-      if (generation !== generationRef.current) return false;
+      if (generation !== generationRef.current || !canAccept()) return null;
       if (!canRemember()) {
         restoreRef.current = null;
         restoreSearchRef.current = null;
@@ -349,13 +360,13 @@ export function PreviewDialog({
           newestFirstRef.current = false;
           setNewestFirst(false);
           next = await api.previewRange(provider, rolloutPath, 0, count);
-          if (generation !== generationRef.current) return false;
+          if (generation !== generationRef.current || !canAccept()) return null;
           setRestoreOccurrence(null);
           if (canRemember()) setReadingNotice(restoreSearchRef.current ? "原搜索命中已变化，保留搜索词并从最早一页重新搜索" : "原阅读位置已变化，已从最早位置打开");
         }
       }
       restoreSearchRef.current = null;
-      if (generation !== generationRef.current) return false;
+      if (generation !== generationRef.current || !canAccept()) return null;
       if (!replace && start < startOffsetRef.current && next.length !== count) {
         throw new Error("会话在读取期间发生变化，请重新打开预览");
       }
@@ -378,9 +389,9 @@ export function PreviewDialog({
       const finished = newestFirstRef.current ? startOffsetRef.current === 0 : tailReachedRef.current;
       doneRef.current = finished;
       setDone(finished);
-      return true;
+      return next;
     } catch (error) {
-      if (generation === generationRef.current) {
+      if (generation === generationRef.current && canAccept()) {
         restoreRef.current = null;
         restoreSearchRef.current = null;
         setRestoreOccurrence(null);
@@ -389,7 +400,7 @@ export function PreviewDialog({
         setDone(true);
         setReadFailure(previewReadFailure(error));
       }
-      return false;
+      return null;
     } finally {
       if (generation === generationRef.current) {
         loadingRef.current = false;
@@ -453,7 +464,7 @@ export function PreviewDialog({
   };
 
   const loadMore = useCallback(async () => {
-    if (loadingRef.current || loadingAllRef.current || doneRef.current || !rolloutPath) return;
+    if (loadingRef.current || loadingAllRef.current || !!continuousRef.current || doneRef.current || !rolloutPath) return;
     const start = newestFirstRef.current ? Math.max(0, startOffsetRef.current - PAGE) : offsetRef.current;
     const count = newestFirstRef.current ? startOffsetRef.current - start : PAGE;
     if (count === 0) return;
@@ -462,7 +473,7 @@ export function PreviewDialog({
 
   const waitForIdle = useCallback(async () => {
     const generation = generationRef.current;
-    while (loadingRef.current && generation === generationRef.current) {
+    while ((loadingRef.current || continuousRef.current?.cancelled) && generation === generationRef.current) {
       await new Promise((resolve) => setTimeout(resolve, 40));
     }
     return generation === generationRef.current;
@@ -470,13 +481,17 @@ export function PreviewDialog({
 
   // Offset is an ordinal position; event.index remains the original source line.
   const loadUpTo = useCallback(async (targetOffset: number) => {
-    if (loadingAllRef.current || !await waitForIdle() || !rolloutPath) return;
+    const request = contextRequestRef.current;
+    const generation = generationRef.current;
+    if ((continuousRef.current && !continuousRef.current.cancelled) || loadingAllRef.current || !await waitForIdle() || !rolloutPath) return;
+    const accepts = () => request === contextRequestRef.current && generation === generationRef.current;
+    if (!accepts()) return;
     if (targetOffset >= startOffsetRef.current && targetOffset < offsetRef.current) return;
-    await readWindow(previewWindowStart(targetOffset, PAGE), PAGE, true);
+    await readWindow(previewWindowStart(targetOffset, PAGE), PAGE, true, accepts);
   }, [readWindow, rolloutPath, waitForIdle]);
 
   const loadAll = useCallback(async () => {
-    if (!await waitForIdle() || !rolloutPath) return;
+    if (continuousRef.current || !await waitForIdle() || !rolloutPath) return;
     setLoadingAll(true);
     loadingAllRef.current = true;
     const generation = generationRef.current;
@@ -497,8 +512,10 @@ export function PreviewDialog({
 
   const navigateEdge = useCallback(async (latest: boolean) => {
     contextRequestRef.current += 1;
+    if (continuousRef.current) continuousRef.current.cancelled = true;
+    setContinuousBusy(false); setContinuousStatus(null);
     setContextRead(null); setSearchPageRead(null);
-    if (loadingAllRef.current || !await waitForIdle()) return;
+    if (continuousRef.current || loadingAllRef.current || !await waitForIdle()) return;
     const generation = generationRef.current;
     loadingRef.current = true;
     setLoading(true);
@@ -545,7 +562,10 @@ export function PreviewDialog({
   const resetAndReload = useCallback(() => {
     generationRef.current += 1;
     contextRequestRef.current += 1;
+    if (continuousRef.current) continuousRef.current.cancelled = true;
+    setContinuousBusy(false); setContinuousStatus(null);
     setContextRead(null); setSearchPageRead(null);
+    continuousRef.current = null;
     tailReachedRef.current = false;
     setGapExpansion({ key: "", indices: [] });
     setReadingNotice("");
@@ -615,6 +635,7 @@ export function PreviewDialog({
       captureReadingRef.current();
       if (saveTimerRef.current !== null) clearTimeout(saveTimerRef.current);
       generationRef.current += 1;
+      if (continuousRef.current) continuousRef.current.cancelled = true;
     };
   }, [open, rolloutPath, positionKey, initialJump, resetAndReload]);
 
@@ -631,22 +652,15 @@ export function PreviewDialog({
     [events],
   );
 
-  const eligibleEvents = useMemo(() => {
-    return searchableEvents.filter(({ event }) => {
-      if (
-        onlyMsg &&
-        (!isConversationMessage(event)
-          || !isVisibleConversationEvent(
-            event,
-            timelineIndexSet,
-            initialJump?.eventIndex ?? null,
-          ))
-      ) {
-        return false;
-      }
-      return true;
-    });
-  }, [initialJump?.eventIndex, onlyMsg, searchableEvents, timelineIndexSet]);
+  const isEligibleEvent = useCallback((event: PreviewEvent) => !onlyMsg ||
+    (isConversationMessage(event) && isVisibleConversationEvent(event, timelineIndexSet, initialJump?.eventIndex ?? null)),
+  [onlyMsg, timelineIndexSet, initialJump?.eventIndex]);
+  const eligibleEvents = useMemo(() => searchableEvents.filter(({ event }) => isEligibleEvent(event)),
+    [searchableEvents, isEligibleEvent]);
+  // A newly loaded timeline can change which conversation events are visible.
+  useEffect(() => {
+    if (continuousRef.current) cancelContinuousSearch();
+  }, [isEligibleEvent, cancelContinuousSearch]);
 
   const matchingEvents = useMemo(() => eligibleEvents.filter(({ searchText }) =>
     !normalizedFilter || searchText.includes(normalizedFilter)).map(({ event }) => event), [eligibleEvents, normalizedFilter]);
@@ -808,20 +822,22 @@ export function PreviewDialog({
   const scrollSearchRef = useRef(scrollPendingIntoView);
   useEffect(() => { scrollSearchRef.current = scrollPendingIntoView; }, [scrollPendingIntoView]);
   useEffect(() => {
-    if (!open || loading || loadingAll || searchUpdating || !normalizedFilter || activeSearchHit === null) return;
+    if (!open || loading || loadingAll || continuousBusy || searchUpdating || !normalizedFilter || activeSearchHit === null) return;
     if (jumpSettleRafRef.current) cancelAnimationFrame(jumpSettleRafRef.current);
     jumpSettleRafRef.current = 0;
     pendingJumpRef.current = activeSearchHit;
     setSearchHit({ query: normalizedFilter, index: activeSearchHit });
     scrollSearchRef.current();
-  }, [activeSearchHit, normalizedFilter, occurrences.index, open, loading, loadingAll, searchUpdating]);
+  }, [activeSearchHit, normalizedFilter, occurrences.index, open, loading, loadingAll, continuousBusy, searchUpdating]);
 
   const navigateSearchHit = (direction: 1 | -1) => {
-    if (loading || loadingAll || searchUpdating) return;
+    if (loading || loadingAll || continuousBusy || searchUpdating) return;
     setRestoreOccurrence(null);
     const index = stepPreviewSearchHit(searchHitIndices, activeSearchHit, direction);
     if (index !== null) {
       contextRequestRef.current += 1;
+      if (continuousRef.current) continuousRef.current.cancelled = true;
+      setContinuousBusy(false); setContinuousStatus(null);
       setContextRead(null); setSearchPageRead(null);
       setContextExpansion({ key: "", before: 0, after: 0 });
       setSearchHit({ query: normalizedFilter, index });
@@ -840,10 +856,47 @@ export function PreviewDialog({
   const contextAfterPage = contextPageRequest("after", context.remainingAfter, startOffsetRef.current, offsetRef.current, tailReachedRef.current, PAGE);
   const currentContextRead = contextRead?.key === contextKey ? contextRead : null;
   const searchScope = previewSearchCoverage(startOffsetRef.current, offsetRef.current, tailReachedRef.current,
-    !!readFailure, loading || loadingAll || searchUpdating, searchHitIndices.length, PAGE);
+    !!readFailure, loading || loadingAll || continuousBusy || searchUpdating, searchHitIndices.length, PAGE);
   const currentSearchPageRead = searchPageRead?.key === gapKey ? searchPageRead : null;
+  const searchUntilHit = async (direction: "before" | "after") => {
+    if (!normalizedFilter || loadingRef.current || loadingAllRef.current || continuousRef.current || searchUpdating) return;
+    const controller = { cancelled: false };
+    continuousRef.current = controller;
+    const generation = generationRef.current;
+    const request = ++contextRequestRef.current;
+    const accepts = () => !controller.cancelled && generation === generationRef.current && request === contextRequestRef.current;
+    setContinuousBusy(true);
+    setContextRead(null); setSearchPageRead(null);
+    setContinuousStatus({ key: gapKey, text: "正在连续查找…已读取 0 页" });
+    if (activeSearchHit !== null) setSearchHit({ query: normalizedFilter, index: activeSearchHit });
+    try {
+      const result = await continuePreviewSearch<PreviewEvent>({
+        direction,
+        nextPage: () => contextPageRequest(direction, 0, startOffsetRef.current, offsetRef.current, tailReachedRef.current, PAGE),
+        readPage: page => readWindow(page.start, page.count, false, accepts),
+        matches: event => isEligibleEvent(event) && previewEventSearchText(event).includes(normalizedFilter),
+        isCancelled: () => !accepts(),
+        onProgress: (pages, count) => setContinuousStatus({ key: gapKey, text: `正在${direction === "before" ? "向前" : "向后"}连续查找…已读取 ${pages} 页 / ${count} 条原始事件` }),
+      });
+      if (!accepts()) return;
+      if (result.hit !== null) {
+        setRestoreOccurrence(null);
+        setContextExpansion({ key: "", before: 0, after: 0 });
+        setSearchHit({ query: normalizedFilter, index: result.hit });
+      }
+      const summary = result.status === "found" ? "已找到新命中并停止" : result.status === "boundary"
+        ? `已到${direction === "before" ? "开头" : "末尾"}，本次新增范围无命中`
+        : "连续查找已中断，保留已读取内容，可重试";
+      setContinuousStatus({ key: gapKey, text: `${summary} · 本次读取 ${result.pages} 页 / ${result.events} 条原始事件` });
+    } finally {
+      if (continuousRef.current === controller) {
+        continuousRef.current = null;
+        setContinuousBusy(false);
+      }
+    }
+  };
   const continueSearch = async (direction: "before" | "after") => {
-    if (!normalizedFilter || loadingRef.current || loadingAllRef.current || searchUpdating) return;
+    if (!normalizedFilter || loadingRef.current || loadingAllRef.current || !!continuousRef.current || searchUpdating) return;
     const page = direction === "before" ? searchScope.before : searchScope.after;
     if (!page) return;
     const request = ++contextRequestRef.current;
@@ -857,7 +910,7 @@ export function PreviewDialog({
   };
 
   const changeContext = async (direction: "before" | "after" | "collapse") => {
-    if (activeSearchHit === null || loadingRef.current || loadingAllRef.current || searchUpdating) return;
+    if (activeSearchHit === null || loadingRef.current || loadingAllRef.current || !!continuousRef.current || searchUpdating) return;
     const request = ++contextRequestRef.current;
     const generation = generationRef.current;
     if (jumpSettleRafRef.current) cancelAnimationFrame(jumpSettleRafRef.current);
@@ -881,7 +934,7 @@ export function PreviewDialog({
   };
 
   const expandSearchGap = (beforeIndex: number) => {
-    if (loadingRef.current || loadingAllRef.current || searchUpdating) return;
+    if (loadingRef.current || loadingAllRef.current || !!continuousRef.current || searchUpdating) return;
     const gap = searchGaps.get(beforeIndex);
     if (!gap) return;
     const added = gapExpansionIndices(gap);
@@ -909,6 +962,8 @@ export function PreviewDialog({
     if (!query.trim()) forgetSearch();
     setGapExpansion({ key: "", indices: [] });
     contextRequestRef.current += 1;
+    if (continuousRef.current) continuousRef.current.cancelled = true;
+    setContinuousBusy(false); setContinuousStatus(null);
     setContextRead(null); setSearchPageRead(null);
     setContextExpansion({ key: "", before: 0, after: 0 });
     if (jumpSettleRafRef.current) cancelAnimationFrame(jumpSettleRafRef.current);
@@ -938,6 +993,8 @@ export function PreviewDialog({
   const jumpToTimelineMessage = useCallback(
     (prompt: UserPromptBrief) => {
       contextRequestRef.current += 1;
+      if (continuousRef.current) continuousRef.current.cancelled = true;
+      setContinuousBusy(false); setContinuousStatus(null);
       setContextRead(null); setSearchPageRead(null);
       setContextExpansion({ key: "", before: 0, after: 0 });
       setActiveTimelineIndex(prompt.index);
@@ -967,7 +1024,7 @@ export function PreviewDialog({
   }, []);
 
   const captureSearch = useCallback(() => {
-    if (!canRemember() || !open || !positionKey || !rolloutPath || initialJump || loadingRef.current || loadingAllRef.current
+    if (!canRemember() || !open || !positionKey || !rolloutPath || initialJump || loadingRef.current || loadingAllRef.current || !!continuousRef.current
         || readFailure || searchUpdating || restoreRef.current || restoreSearchRef.current || restoreOccurrence) return;
     try {
       if (!filter.trim()) { removeSearchState(window.localStorage, positionKey); return; }
@@ -1049,7 +1106,7 @@ export function PreviewDialog({
           searchInputRef.current?.select();
         } else if (shortcut === "next-message" || shortcut === "previous-message") {
           navigateSearchHit(shortcut === "next-message" ? 1 : -1);
-        } else if (!loading && !loadingAll && !searchUpdating && occurrences.total > 1) {
+        } else if (!loading && !loadingAll && !continuousBusy && !searchUpdating && occurrences.total > 1) {
           occurrences.step(shortcut === "next-occurrence" ? 1 : -1);
         }
         return;
@@ -1104,7 +1161,7 @@ export function PreviewDialog({
         void loadMore();
       }
     },
-    [loadMore, open, navigateSearchHit, loading, loadingAll, searchUpdating, occurrences, normalizedFilter],
+    [loadMore, open, navigateSearchHit, loading, loadingAll, continuousBusy, searchUpdating, occurrences, normalizedFilter],
   );
 
   const copyResume = async () => {
@@ -1390,14 +1447,14 @@ export function PreviewDialog({
 
   return (
     <>
-    <Dialog open={open} onOpenChange={(next) => { if (!next) captureReadingRef.current(); onOpenChange(next); }}>
+    <Dialog open={open} onOpenChange={(next) => { if (!next) { cancelContinuousSearch(); captureReadingRef.current(); } onOpenChange(next); }}>
       <DialogContent
         className="flex h-[90vh] max-w-[96vw] min-w-0 flex-col gap-0 overflow-hidden p-0 sm:max-w-[1200px]"
         onKeyDown={onPreviewKeyDown}
         onCloseAutoFocus={onCloseAutoFocus ? event => { event.preventDefault(); onCloseAutoFocus(); } : undefined}
       >
         <DialogHeader className="relative min-w-0 border-b border-border/60 px-6 pb-3.5 pt-4 after:pointer-events-none after:absolute after:inset-x-0 after:-bottom-px after:h-px after:bg-gradient-to-r after:from-transparent after:via-border/50 after:to-transparent">
-          {returnLabel && <Button size="sm" variant="outline" className="mb-3" onClick={() => { captureReadingRef.current(); onOpenChange(false); }}>{returnLabel}</Button>}
+          {returnLabel && <Button size="sm" variant="outline" className="mb-3" onClick={() => { cancelContinuousSearch(); captureReadingRef.current(); onOpenChange(false); }}>{returnLabel}</Button>}
           <div className="flex items-start gap-3.5">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-gradient-to-br from-muted to-muted/40 shadow-sm">
               <Sparkles className="h-[18px] w-[18px] text-muted-foreground" />
@@ -1492,16 +1549,16 @@ export function PreviewDialog({
                 {searchUpdating ? "更新命中…" : `${activeSearchHit === null ? 0 : searchHitIndices.indexOf(activeSearchHit) + 1} / ${searchHitIndices.length} 条命中消息`}
               </span>
               <Button variant="outline" size="sm" className="h-8 text-xs" aria-label="上一处命中" aria-keyshortcuts="Shift+F3" title="上一条命中消息（Shift+F3；搜索框中 Shift+Enter），首尾循环"
-                disabled={loading || loadingAll || searchUpdating || searchHitIndices.length < 2} onClick={() => navigateSearchHit(-1)}>上条</Button>
+                disabled={loading || loadingAll || continuousBusy || searchUpdating || searchHitIndices.length < 2} onClick={() => navigateSearchHit(-1)}>上条</Button>
               <Button variant="outline" size="sm" className="h-8 text-xs" aria-label="下一处命中" aria-keyshortcuts="F3" title="下一条命中消息（F3；搜索框中 Enter），首尾循环"
-                disabled={loading || loadingAll || searchUpdating || searchHitIndices.length < 2} onClick={() => navigateSearchHit(1)}>下条</Button>
+                disabled={loading || loadingAll || continuousBusy || searchUpdating || searchHitIndices.length < 2} onClick={() => navigateSearchHit(1)}>下条</Button>
               <span className="border-l pl-2 tabular-nums" role="status" aria-live="polite" aria-label="本条关键词命中">
                 {searchUpdating ? "更新定位…" : `本条 ${occurrences.total ? occurrences.index + 1 : 0} / ${occurrences.total} 处`}
               </span>
               <Button variant="outline" size="sm" className="h-8 text-xs" aria-label="本条上一处" title="当前消息内上一处关键词（搜索框中 Alt+Shift+Enter），首尾循环"
-                disabled={loading || loadingAll || searchUpdating || occurrences.total < 2} onClick={() => occurrences.step(-1)}>上一处</Button>
+                disabled={loading || loadingAll || continuousBusy || searchUpdating || occurrences.total < 2} onClick={() => occurrences.step(-1)}>上一处</Button>
               <Button variant="outline" size="sm" className="h-8 text-xs" aria-label="本条下一处" title="当前消息内下一处关键词（搜索框中 Alt+Enter），首尾循环"
-                disabled={loading || loadingAll || searchUpdating || occurrences.total < 2} onClick={() => occurrences.step(1)}>下一处</Button>
+                disabled={loading || loadingAll || continuousBusy || searchUpdating || occurrences.total < 2} onClick={() => occurrences.step(1)}>下一处</Button>
               <Popover key={gapKey}>
                 <PopoverTrigger asChild>
                   <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" aria-label="上下文与搜索选项">
@@ -1512,26 +1569,26 @@ export function PreviewDialog({
                   <p className="mb-2 font-medium">上下文与间隔</p>
                   <div className="flex flex-wrap items-center gap-1.5" aria-label="命中上下文">
                     <Button variant="outline" size="sm" className="h-8 text-xs" aria-label="展开前 3 条上下文" title="按时间顺序展开更早的消息；不足时最多读取相邻一页"
-                      disabled={loading || loadingAll || searchUpdating || activeSearchHit === null || (!context.remainingBefore && !contextBeforePage)} onClick={() => void changeContext("before")}>{!context.remainingBefore && contextBeforePage ? "加载更早一页" : "前 3 条"}</Button>
+                      disabled={loading || loadingAll || continuousBusy || searchUpdating || activeSearchHit === null || (!context.remainingBefore && !contextBeforePage)} onClick={() => void changeContext("before")}>{!context.remainingBefore && contextBeforePage ? "加载更早一页" : "前 3 条"}</Button>
                     <Button variant="outline" size="sm" className="h-8 text-xs" aria-label="展开后 3 条上下文" title="按时间顺序展开更晚的消息；不足时最多读取相邻一页"
-                      disabled={loading || loadingAll || searchUpdating || activeSearchHit === null || (!context.remainingAfter && !contextAfterPage)} onClick={() => void changeContext("after")}>{!context.remainingAfter && contextAfterPage ? "加载更晚一页" : "后 3 条"}</Button>
+                      disabled={loading || loadingAll || continuousBusy || searchUpdating || activeSearchHit === null || (!context.remainingAfter && !contextAfterPage)} onClick={() => void changeContext("after")}>{!context.remainingAfter && contextAfterPage ? "加载更晚一页" : "后 3 条"}</Button>
                     <span role="status" aria-label="上下文范围" className="text-muted-foreground">前 {context.before} / 后 {context.after} 条 · 已加载范围</span>
                     {(context.before > 0 || context.after > 0) && <Button variant="ghost" size="sm" className="h-8 text-xs"
-                      disabled={loading || loadingAll || searchUpdating} onClick={() => void changeContext("collapse")}>收起上下文</Button>}
+                      disabled={loading || loadingAll || continuousBusy || searchUpdating} onClick={() => void changeContext("collapse")}>收起上下文</Button>}
                     {currentContextRead && <span role="status" aria-label="上下文读取状态" className="text-muted-foreground">
                       {currentContextRead.status === "loading" ? "正在读取相邻页…" : currentContextRead.status === "failed" ? "读取失败，已保留当前命中" : "已读取一页；仅展开符合当前筛选的相邻消息"}
                     </span>}
                     {currentContextRead?.status === "failed" && <Button variant="outline" size="sm" className="h-8 text-xs"
-                      disabled={loading || loadingAll || searchUpdating} onClick={() => void changeContext(currentContextRead.direction)}>重试上下文读取</Button>}
+                      disabled={loading || loadingAll || continuousBusy || searchUpdating} onClick={() => void changeContext(currentContextRead.direction)}>重试上下文读取</Button>}
                   </div>
                   <span className="mt-3 block text-muted-foreground" title="本条计数仅包含已展开正文，折叠区域展开后更新；跨格式的同一匹配只计一次">本条按已展开正文定位</span>
                   <span className="mt-1 block text-muted-foreground">{previewSearchScope(startOffsetRef.current, offsetRef.current, totalEvents, newestFirst, done, !!readFailure)} · 每条消息计一次</span>
                   {gapExpansion.key === gapKey && gapExpansion.indices.length > 0 && <Button variant="ghost" size="sm" className="h-8 text-xs"
-                    disabled={loading || loadingAll || searchUpdating} onClick={collapseSearchGaps}>收起已展开间隔</Button>}
+                    disabled={loading || loadingAll || continuousBusy || searchUpdating} onClick={collapseSearchGaps}>收起已展开间隔</Button>}
                 </PopoverContent>
               </Popover>
               <Button variant="ghost" size="sm" className="h-8 text-xs" aria-label="返回当前命中"
-                  disabled={loading || loadingAll || searchUpdating || activeSearchHit === null} onClick={returnToSearchHit}>返回命中</Button>
+                  disabled={loading || loadingAll || continuousBusy || searchUpdating || activeSearchHit === null} onClick={returnToSearchHit}>返回命中</Button>
               {currentContextRead?.status === "loading" && <span role="status">正在读取上下文…</span>}
               {currentContextRead?.status === "failed" && <span role="status" className="text-destructive">上下文读取失败，可在选项中重试</span>}
               <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => changeSearchQuery("")}>清除搜索</Button>
@@ -1580,20 +1637,20 @@ export function PreviewDialog({
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            <Button variant="outline" size="sm" className="h-8 text-xs" disabled={loading || loadingAll}
+            <Button variant="outline" size="sm" className="h-8 text-xs" disabled={loading || loadingAll || continuousBusy}
               onClick={() => void navigateEdge(!newestFirst)} aria-label="切换对话排序">
               {newestFirst ? "最新在前 ↓" : "最早在前 ↑"}
             </Button>
-            <Button variant="ghost" size="sm" className="h-8 text-xs" disabled={loading || loadingAll}
+            <Button variant="ghost" size="sm" className="h-8 text-xs" disabled={loading || loadingAll || continuousBusy}
               onClick={() => void navigateEdge(false)}>最早</Button>
-            <Button variant="ghost" size="sm" className="h-8 text-xs" disabled={loading || loadingAll}
+            <Button variant="ghost" size="sm" className="h-8 text-xs" disabled={loading || loadingAll || continuousBusy}
               onClick={() => void navigateEdge(true)}>最新</Button>
             {events.length > 0 && (startOffsetRef.current > 0 || !done) && (
               <Button
                 variant="outline"
                 size="sm"
                 className="h-8 gap-1.5 border-border/70 bg-muted/30 px-2.5 text-xs font-normal hover:bg-muted/50"
-                disabled={loading || loadingAll}
+                disabled={loading || loadingAll || continuousBusy}
                 onClick={() => void loadAll()}
               >
                 {loadingAll ? (
@@ -1692,23 +1749,35 @@ export function PreviewDialog({
           <p role="status" aria-live="polite">{searchScope.result} · {searchScope.range} · {onlyMsg ? "仅对话消息" : "全部事件"}</p>
           <div className="mt-1 flex flex-wrap items-center gap-2">
             <span className="text-muted-foreground">{searchScope.before ? "前方未读" : "已到开头"} · {searchScope.after ? "后方未读或待确认末尾" : "已到末尾"}</span>
-            {searchScope.before && <Button variant="outline" size="sm" className="h-7 text-xs" disabled={loading || loadingAll || searchUpdating}
+            {searchScope.before && <Button variant="outline" size="sm" className="h-7 text-xs" disabled={loading || loadingAll || continuousBusy || searchUpdating}
               onClick={() => void continueSearch("before")}>{currentSearchPageRead?.status === "failed" && currentSearchPageRead.direction === "before" ? "重试向前查找" : "向前查找一页"}</Button>}
-            {searchScope.after && <Button variant="outline" size="sm" className="h-7 text-xs" disabled={loading || loadingAll || searchUpdating}
+            {searchScope.after && <Button variant="outline" size="sm" className="h-7 text-xs" disabled={loading || loadingAll || continuousBusy || searchUpdating}
               onClick={() => void continueSearch("after")}>{currentSearchPageRead?.status === "failed" && currentSearchPageRead.direction === "after" ? "重试向后查找" : "向后查找一页"}</Button>}
+            {!continuousBusy && (searchScope.before || searchScope.after) && <Popover>
+              <PopoverTrigger asChild><Button variant="outline" size="sm" className="h-7 text-xs" disabled={loading || loadingAll || searchUpdating}>连续查找</Button></PopoverTrigger>
+              <PopoverContent align="start" className="w-64 max-w-[calc(100vw-2rem)] space-y-2 p-3 text-xs" aria-label="连续查找方向">
+                <p>从已加载边界继续，按时间顺序读取；找到新命中或到达边界即停止。</p>
+                <div className="flex flex-wrap gap-2">
+                  {searchScope.before && <Button variant="outline" size="sm" onClick={() => void searchUntilHit("before")}>向前连续查找</Button>}
+                  {searchScope.after && <Button variant="outline" size="sm" onClick={() => void searchUntilHit("after")}>向后连续查找</Button>}
+                </div>
+              </PopoverContent>
+            </Popover>}
+            {continuousBusy && <Button variant="outline" size="sm" className="h-7 text-xs" onClick={cancelContinuousSearch}>取消连续查找</Button>}
             {currentSearchPageRead?.status === "failed" && <span role="status" className="text-destructive">本页读取失败，已保留此前内容。</span>}
           </div>
-          <p className="mt-1 text-muted-foreground">每次最多读取 200 条原始事件，不自动连读。结果按当前筛选及本次已读取内容计算；原会话新增或变化后请重新读取。</p>
+          {continuousStatus?.key === gapKey && <p role="status" aria-live="polite" className="mt-1">{continuousStatus.text}</p>}
+          <p className="mt-1 text-muted-foreground">每页最多 200 条原始事件，连续查找需主动开启，可随时取消；已发出的读取仍需结束。结果按当前筛选及已读取内容计算，原会话变化后请重新读取。</p>
         </div>}
         {readingNotice && !readFailure && <div role="status" className="flex shrink-0 flex-wrap items-center gap-2 border-b px-6 py-2 text-xs text-muted-foreground">
           <span>{readingNotice}</span>
-          <Button variant="ghost" size="sm" disabled={loading || loadingAll} onClick={() => { setReadingNotice(""); void navigateEdge(false); }}>从最早位置阅读</Button>
+          <Button variant="ghost" size="sm" disabled={loading || loadingAll || continuousBusy} onClick={() => { setReadingNotice(""); void navigateEdge(false); }}>从最早位置阅读</Button>
         </div>}
         {readFailure && <div role="alert" className="shrink-0 space-y-2 border-b px-6 py-3 text-sm">
           <p className="font-medium text-destructive">{readFailure.kind === "unavailable" ? "会话文件已失效" : "正文读取失败"}</p>
           <p className="text-xs text-muted-foreground">{readFailure.kind === "unavailable" ? "文件可能已移动、删除或不再是可读取的会话文件。请检查来源；文件恢复后可重试。" : "可能存在权限、文件内容或连接问题，请查看错误详情后重试。"}{events.length > 0 ? " 下方仅保留此前已读取的部分内容，不代表完整会话。" : " 这不表示会话为空。"}</p>
           <details className="text-xs"><summary className="cursor-pointer">读取错误详情</summary><p className="max-h-24 overflow-auto whitespace-pre-wrap break-all">{readFailure.detail}</p></details>
-          <Button size="sm" variant="outline" disabled={loading || loadingAll || !rolloutPath} onClick={resetAndReload}>{loading ? "正在重试…" : "重新读取正文"}</Button>
+          <Button size="sm" variant="outline" disabled={loading || loadingAll || continuousBusy || !rolloutPath} onClick={resetAndReload}>{loading ? "正在重试…" : "重新读取正文"}</Button>
           <span className="ml-2 text-xs text-muted-foreground">从最早位置重新读取，不修改原文件。</span>
         </div>}
         <div className="relative min-h-0 flex-1">
@@ -1732,7 +1801,7 @@ export function PreviewDialog({
               )}
 
               {startOffsetRef.current > 0 && !newestFirst && !normalizedFilter && (
-                <Button variant="outline" size="sm" disabled={loading || loadingAll}
+                <Button variant="outline" size="sm" disabled={loading || loadingAll || continuousBusy}
                   onClick={() => { void readWindow(Math.max(0, startOffsetRef.current - PAGE), PAGE, true); }}>
                   查看前一页
                 </Button>
@@ -1751,7 +1820,7 @@ export function PreviewDialog({
                   <span className="text-[11px]">已加载 · 符合当前筛选</span>
                   <Button variant="outline" size="sm" className="h-7 text-xs"
                     aria-label={`展开间隔中的 ${Math.min(20, gap.indices.length)} 条消息`}
-                    disabled={loading || loadingAll || searchUpdating} onClick={() => expandSearchGap(row.event.index)}>展开 {Math.min(20, gap.indices.length)} 条</Button>
+                    disabled={loading || loadingAll || continuousBusy || searchUpdating} onClick={() => expandSearchGap(row.event.index)}>展开 {Math.min(20, gap.indices.length)} 条</Button>
                 </div>}
                 {row.type === "process" ? (
                   <ProcessTurnGroup
