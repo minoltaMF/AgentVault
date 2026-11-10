@@ -89,7 +89,6 @@ import {
   isStableForkNode,
   parseDiffCommentPrompt,
   payloadType,
-  previewEventSearchText,
   rawType,
   subagentEventLabel,
   subagentEventTime,
@@ -108,6 +107,7 @@ import { matchesReadingPosition, readingEventSignature, readingPositionKey, read
 import { contextPageRequest, previewTailReached } from "@/lib/preview-context-page";
 import { previewSearchScope as previewSearchCoverage } from "@/lib/preview-search-scope";
 import { continuePreviewSearch } from "@/lib/preview-continuous-search";
+import { createPreviewSearchProjection } from "@/lib/preview-search-projection";
 import { previewSearchGaps, gapExpansionIndices } from "@/lib/preview-search-gaps";
 import { previewSearchContext } from "@/lib/preview-search-context";
 import { selectPreviewSearchHit, stepPreviewSearchHit, previewSearchScope } from "@/lib/preview-search-navigation";
@@ -647,23 +647,19 @@ export function PreviewDialog({
   const deferredFilter = useDeferredValue(filter);
   const normalizedFilter = deferredFilter.trim().toLowerCase();
   const disclosureMemory = useMemo<DisclosureMemory>(() => ({ manual: manualDisclosures, search: new Map() }), [manualDisclosures, normalizedFilter]);
-  const searchableEvents = useMemo(
-    () => events.map((event) => ({ event, searchText: previewEventSearchText(event) })),
-    [events],
-  );
+  const searchProjection = useMemo(() => createPreviewSearchProjection(), [open, provider, rolloutPath]);
 
   const isEligibleEvent = useCallback((event: PreviewEvent) => !onlyMsg ||
     (isConversationMessage(event) && isVisibleConversationEvent(event, timelineIndexSet, initialJump?.eventIndex ?? null)),
   [onlyMsg, timelineIndexSet, initialJump?.eventIndex]);
-  const eligibleEvents = useMemo(() => searchableEvents.filter(({ event }) => isEligibleEvent(event)),
-    [searchableEvents, isEligibleEvent]);
+  const { eligibleEvents, eligibleIndices, matchingEvents } = useMemo(
+    () => searchProjection.select(events, normalizedFilter, isEligibleEvent),
+    [searchProjection, events, normalizedFilter, isEligibleEvent]);
   // A newly loaded timeline can change which conversation events are visible.
   useEffect(() => {
     if (continuousRef.current) cancelContinuousSearch();
   }, [isEligibleEvent, cancelContinuousSearch]);
 
-  const matchingEvents = useMemo(() => eligibleEvents.filter(({ searchText }) =>
-    !normalizedFilter || searchText.includes(normalizedFilter)).map(({ event }) => event), [eligibleEvents, normalizedFilter]);
   const searchHitIndices = useMemo(() => {
     const indices = normalizedFilter ? matchingEvents.map(event => event.index) : [];
     return newestFirst ? indices.reverse() : indices;
@@ -672,19 +668,20 @@ export function PreviewDialog({
     searchHit?.query === normalizedFilter ? searchHit.index : null,
     initialJump?.query.trim().toLowerCase() === normalizedFilter ? initialJump.eventIndex : null);
   const contextKey = JSON.stringify([open, rolloutPath, normalizedFilter, activeSearchHit, onlyMsg]);
-  const context = useMemo(() => previewSearchContext(eligibleEvents.map(({ event }) => event.index), activeSearchHit,
+  const context = useMemo(() => previewSearchContext(eligibleIndices, activeSearchHit,
     contextExpansion.key === contextKey ? contextExpansion.before : 0,
-    contextExpansion.key === contextKey ? contextExpansion.after : 0), [eligibleEvents, activeSearchHit, contextExpansion, contextKey]);
+    contextExpansion.key === contextKey ? contextExpansion.after : 0), [eligibleIndices, activeSearchHit, contextExpansion, contextKey]);
   const hitSet = useMemo(() => new Set(searchHitIndices), [searchHitIndices]);
   const gapKey = JSON.stringify([open, provider, rolloutPath, normalizedFilter, onlyMsg]);
   const filtered = useMemo(() => {
-    if (!normalizedFilter) return matchingEvents;
+    if (!normalizedFilter || (context.before === 0 && context.after === 0 &&
+      (gapExpansion.key !== gapKey || gapExpansion.indices.length === 0))) return matchingEvents;
     const visible = new Set([...searchHitIndices, ...context.indices, ...(gapExpansion.key === gapKey ? gapExpansion.indices : [])]);
-    return eligibleEvents.filter(({ event }) => visible.has(event.index)).map(({ event }) => event);
+    return eligibleEvents.filter(event => visible.has(event.index));
   }, [eligibleEvents, matchingEvents, normalizedFilter, searchHitIndices, context, gapExpansion, gapKey]);
-  const searchGaps = useMemo(() => normalizedFilter
-    ? previewSearchGaps(eligibleEvents.map(({ event }) => event.index), filtered.map(event => event.index), newestFirst)
-    : new Map(), [eligibleEvents, filtered, newestFirst, normalizedFilter]);
+  const searchGaps = useMemo(() => normalizedFilter && filtered.length > 1
+    ? previewSearchGaps(eligibleIndices, filtered.map(event => event.index), newestFirst)
+    : new Map(), [eligibleIndices, filtered, newestFirst, normalizedFilter]);
 
   useEffect(() => {
     if (!open || loading || done || normalizedFilter || pendingJumpRef.current !== null) return;
@@ -874,7 +871,7 @@ export function PreviewDialog({
         direction,
         nextPage: () => contextPageRequest(direction, 0, startOffsetRef.current, offsetRef.current, tailReachedRef.current, PAGE),
         readPage: page => readWindow(page.start, page.count, false, accepts),
-        matches: event => isEligibleEvent(event) && previewEventSearchText(event).includes(normalizedFilter),
+        matches: event => searchProjection.matches(event, normalizedFilter, isEligibleEvent),
         isCancelled: () => !accepts(),
         onProgress: (pages, count) => setContinuousStatus({ key: gapKey, text: `正在${direction === "before" ? "向前" : "向后"}连续查找…已读取 ${pages} 页 / ${count} 条原始事件` }),
       });
