@@ -75,18 +75,17 @@ pub fn preview_range(path: &str, offset: usize, limit: usize) -> AppResult<Vec<P
             }
         };
         parsed_lines += 1;
-        {
-            if let Some(event) = classify_preview(i, raw) {
-                if event_index < offset {
-                    event_index += 1;
-                    continue;
-                }
-                out.push(event);
-                event_index += 1;
-                if out.len() >= limit {
-                    break;
-                }
-            }
+        // Every valid JSON value produces an event, including metadata and
+        // non-message values. Skip only classification, never parsing: offsets
+        // count valid events while PreviewEvent.index retains the physical line.
+        if event_index < offset {
+            event_index += 1;
+            continue;
+        }
+        out.push(build_preview_event(i, raw));
+        event_index += 1;
+        if out.len() >= limit {
+            break;
         }
     }
     // Preserve tolerant mixed-file previews, but do not label wholly malformed
@@ -494,6 +493,11 @@ pub(crate) fn parse_session_normalized(
 }
 
 pub(crate) fn classify_preview(index: usize, raw: Value) -> Option<PreviewEvent> {
+    // Keep the shared provider adapter signature; Claude itself is a total mapping.
+    Some(build_preview_event(index, raw))
+}
+
+fn build_preview_event(index: usize, raw: Value) -> PreviewEvent {
     let timestamp = raw
         .get("timestamp")
         .and_then(Value::as_str)
@@ -505,17 +509,17 @@ pub(crate) fn classify_preview(index: usize, raw: Value) -> Option<PreviewEvent>
         .unwrap_or("message")
         .to_string();
     if raw.get("isMeta").and_then(Value::as_bool) == Some(true) {
-        return Some(PreviewEvent {
+        return PreviewEvent {
             index,
             timestamp,
             role: "meta".into(),
             kind,
             text_summary: claude_non_message_summary(&raw),
             raw,
-        });
+        };
     }
     let Some(message) = raw.get("message") else {
-        return Some(PreviewEvent {
+        return PreviewEvent {
             index,
             timestamp,
             role: if matches!(kind.as_str(), "summary" | "custom-title") {
@@ -526,7 +530,7 @@ pub(crate) fn classify_preview(index: usize, raw: Value) -> Option<PreviewEvent>
             kind,
             text_summary: claude_non_message_summary(&raw),
             raw,
-        });
+        };
     };
     let mut role = message
         .get("role")
@@ -546,14 +550,14 @@ pub(crate) fn classify_preview(index: usize, raw: Value) -> Option<PreviewEvent>
     } else {
         content.map(extract_text).unwrap_or_default()
     };
-    Some(PreviewEvent {
+    PreviewEvent {
         index,
         timestamp,
         role,
         kind,
         text_summary: truncate_summary(&text, 120),
         raw,
-    })
+    }
 }
 
 fn claude_non_message_summary(raw: &Value) -> String {
@@ -895,6 +899,9 @@ fn read_head_tail_lines(
     }
     Ok((head, tail.into_iter().collect()))
 }
+
+#[cfg(test)]
+mod preview_tests;
 
 #[cfg(test)]
 mod tests {
